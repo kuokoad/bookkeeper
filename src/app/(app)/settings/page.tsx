@@ -35,6 +35,7 @@ export default async function SettingsPage() {
     taxLabel: settings.taxLabel,
     lowStock: toQtyInputString(settings.lowStockThresholdMilli as Qty),
     allowNegativeStock: settings.allowNegativeStock,
+    financialYearStartMonth: settings.financialYearStartMonth,
   };
 
   return (

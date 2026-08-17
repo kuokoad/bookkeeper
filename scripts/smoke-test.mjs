@@ -664,6 +664,36 @@ if (staffToken) {
   check('an unknown area is not echoed back', !bogusHtml.includes('<script>alert(1)</script>'));
 }
 
+console.log('\nYear-end pack:');
+const yeRes = await fetch(`${base}/reports/year-end`, { headers: { cookie }, redirect: 'manual' });
+const yeHtml = yeRes.status === 200 ? await yeRes.text() : '';
+check('GET /reports/year-end', yeRes.status === 200, `status ${yeRes.status}`);
+check('names the shop', appearsIn(yeHtml, shopName));
+check('states the period covered', yeHtml.includes('Financial statements for the year'));
+check('has a profit and loss', yeHtml.includes('Profit and Loss'));
+check('has a balance sheet', yeHtml.includes('Balance Sheet'));
+check('has a trial balance', yeHtml.includes('Trial Balance'));
+check("shows the movement in the owner's stake", yeHtml.includes("Movement in the Owner"));
+check('explains the basis of preparation', yeHtml.includes('Basis of preparation'));
+check('states the checks performed', yeHtml.includes('Checks performed'));
+// React separates adjacent text nodes with `<!-- -->` markers when it renders
+// on the server, so "Trial balance {verdict}" arrives split. Strip the markers
+// before matching, or correct output reads as a failure.
+const yeText = yeHtml.replace(/<!--.*?-->/g, '');
+// The pack must assert its own integrity, not merely present tidy numbers.
+check('reports the trial balance as balancing', yeText.includes('Trial balance balances'));
+check('does NOT report a broken book', !yeText.includes('DOES NOT BALANCE'));
+check("owner's stake reconciles", yeText.includes('stake reconciles'));
+check('is honest that the year is still open', yeHtml.includes('not closed') || yeHtml.includes('PROVISIONAL') || yeHtml.includes('has not finished'));
+
+const yeCsv = await fetch(`${base}/api/reports/year-end`, { headers: { cookie }, redirect: 'manual' });
+const yeCsvBody = yeCsv.status === 200 ? await yeCsv.text() : '';
+check('year-end CSV downloads', yeCsv.status === 200, `status ${yeCsv.status}`);
+check('CSV carries the statements', yeCsvBody.includes('PROFIT AND LOSS') && yeCsvBody.includes('BALANCE SHEET'));
+check('CSV carries the checks', yeCsvBody.includes('CHECKS PERFORMED'));
+// And that they actually passed — a pack that says "NO" is the thing to catch.
+check('CSV reports the books as sound', !/,NO,/.test(yeCsvBody), 'a check reported NO');
+
 console.log('\nSettings:');
 const setRes = await fetch(`${base}/settings`, { headers: { cookie }, redirect: 'manual' });
 const setHtml = setRes.status === 200 ? await setRes.text() : '';

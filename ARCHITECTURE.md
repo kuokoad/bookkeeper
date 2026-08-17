@@ -509,6 +509,38 @@ the schema but are read by no code. They are deliberately **not** on the screen:
 a control that does nothing is worse than an absent one. They are either wired
 up or dropped, as a separate decision.
 
+---
+
+## 13. The year-end pack
+
+Composed entirely from the existing reporting services. A pack that recomputed
+its own figures could disagree with the on-screen Profit & Loss, and there would
+be no way to tell which was right — so it calls the same functions the app uses
+all year, over a fixed period, with the prior year alongside.
+
+**The movement in the owner's stake** is the one statement that exists only
+here, and it exists because of a documented trade-off: there is no year-end
+close, so revenue and expense accumulate and the balance sheet folds all-time
+profit into equity. The balance sheet therefore cannot show what *this* year did
+to the owner's stake. This reconciles them:
+
+```
+opening + capital introduced − drawings + opening balances brought in + profit
+```
+
+**A bug the statement caught in itself.** The first version omitted the movement
+in Opening Balance Equity — the account used when stock or a bank balance is
+entered as a starting position rather than bought or earned. On the demo data
+that left GHS 2,285.50 unexplained, and the pack reported `Owner's stake
+reconciles: NO` rather than presenting a tidy but wrong statement. That is the
+behaviour worth keeping: the check is on the page, so the pack tells on itself.
+
+`financial_year_start_month`, one of the two columns previously read by no code,
+now decides the period. All date arithmetic is on `YYYY-MM-DD` strings in
+`domain/financial-year.ts` — a `Date` carries a timezone, and parsing
+"2025-12-31" west of UTC yields the 30th, which would file a year-end sale in
+the wrong year.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.

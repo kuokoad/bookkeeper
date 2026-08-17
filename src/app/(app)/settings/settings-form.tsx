@@ -25,7 +25,23 @@ export interface SettingsFormValues {
   /** Whole units as typed, e.g. "5" or "2.5". */
   lowStock: string;
   allowNegativeStock: boolean;
+  financialYearStartMonth: number;
 }
+
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 function SaveButton() {
   const { pending } = useFormStatus();
@@ -300,6 +316,40 @@ export function SettingsForm({
             defaultChecked={values.allowNegativeStock}
           />
         </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-content">Financial year</h2>
+        <p className="mb-4 text-sm text-content-muted">
+          Decides the period covered by the year-end pack you give your accountant. Ghana commonly
+          uses January.
+        </p>
+
+        <Field
+          label="My financial year starts in"
+          htmlFor="financialYearStartMonth"
+          required
+          error={state.fieldErrors?.['financialYearStartMonth']}
+        >
+          <select
+            id="financialYearStartMonth"
+            name="financialYearStartMonth"
+            defaultValue={String(values.financialYearStartMonth)}
+            className="h-11 w-full max-w-56 rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
+          >
+            {MONTHS.map((month, index) => (
+              <option key={month} value={index + 1}>
+                {month}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <p className="mt-3 text-xs text-content-subtle">
+          Changing this does not alter a single transaction, but it does change which year each one
+          is reported in — a pack you have already given your accountant would no longer come out
+          the same. Set it once, at the start.
+        </p>
       </Card>
 
       <div className="flex justify-end">

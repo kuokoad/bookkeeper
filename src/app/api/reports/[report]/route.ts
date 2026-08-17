@@ -16,6 +16,8 @@ import {
   getStockValuation,
 } from '@/services/reporting/operations.service';
 import { getReceivablesAgeing, getPayablesAgeing } from '@/services/reporting/ledger.service';
+import { availableFinancialYears, getYearEndPack } from '@/services/reporting/year-end.service';
+import type { Minor } from '@/domain/money';
 import { csvFilename, csvMoney, csvQty, csvResponse, toCsv, type CsvValue } from '@/lib/csv';
 import { toBusinessDate, isValidBusinessDate } from '@/lib/format';
 import { isDomainError } from '@/domain/errors';
@@ -287,6 +289,103 @@ function buildTable(report: string, request: NextRequest): Table | null {
         ],
         rows,
       };
+    }
+
+    case 'year-end': {
+      // The whole pack as one file, laid out as labelled sections rather than
+      // eight separate downloads. An accountant opens it in a spreadsheet and
+      // reads it top to bottom, so the section headings carry the structure.
+      const requested = Number(request.nextUrl.searchParams.get('year'));
+      const years = availableFinancialYears(db);
+      const chosen = years.find((year) => year.startYear === requested) ?? years[0];
+      if (!chosen) return null;
+
+      const pack = getYearEndPack(db, chosen.startYear);
+      const pl = pack.profitAndLoss;
+      const previousPl = pack.previousProfitAndLoss;
+      const bs = pack.balanceSheet;
+      const previousBs = pack.previousBalanceSheet;
+
+      /** A blank row, so sections are readable when opened in a spreadsheet. */
+      const gap = (): CsvValue[] => ['', '', ''];
+      const heading = (title: string): CsvValue[] => [title, pack.year.label, pack.previous.label];
+      // `number` rather than `Minor`: an expense absent from the prior year has
+      // no branded zero to offer, and a plain 0 is the honest comparative.
+      const line = (label: string, now: Minor, before?: number): CsvValue[] => [
+        label,
+        csvMoney(now),
+        before === undefined ? '' : csvMoney(before as Minor),
+      ];
+
+      const rows: CsvValue[][] = [
+        [pack.shop.name, '', ''],
+        [`Financial statements for ${pack.year.label}`, '', ''],
+        [`${pack.year.start} to ${pack.year.end}`, `All figures in ${pack.shop.currencyCode}`, ''],
+        [
+          pack.isProvisional ? 'PROVISIONAL — the year has not finished' : 'Final',
+          `${pack.entryCount} journal entries`,
+          '',
+        ],
+        gap(),
+
+        heading('PROFIT AND LOSS'),
+        line('Sales', pl.salesRevenue, previousPl.salesRevenue),
+        line('Less discounts', pl.salesDiscounts, previousPl.salesDiscounts),
+        line('Less returns', pl.salesReturns, previousPl.salesReturns),
+        line('Net sales', pl.netSales, previousPl.netSales),
+        line('Cost of goods sold', pl.costOfGoodsSold, previousPl.costOfGoodsSold),
+        line('Gross profit', pl.grossProfit, previousPl.grossProfit),
+        line('Other income', pl.totalOtherIncome, previousPl.totalOtherIncome),
+        ...pl.expenses.map((expense): CsvValue[] =>
+          line(
+            `Expense: ${expense.name}`,
+            expense.amount,
+            previousPl.expenses.find((other) => other.accountId === expense.accountId)?.amount ?? 0,
+          ),
+        ),
+        line('Total expenses', pl.totalExpenses, previousPl.totalExpenses),
+        line('NET PROFIT', pl.netProfit, previousPl.netProfit),
+        gap(),
+
+        heading('BALANCE SHEET'),
+        line('Cash, mobile money and bank', bs.totalCash, previousBs.totalCash),
+        line('Owed by customers', bs.receivables, previousBs.receivables),
+        line('Stock on hand', bs.inventory, previousBs.inventory),
+        line('TOTAL ASSETS', bs.totalAssets, previousBs.totalAssets),
+        line('Owed to suppliers', bs.payables, previousBs.payables),
+        line('Tax payable', bs.taxPayable, previousBs.taxPayable),
+        line('TOTAL LIABILITIES', bs.totalLiabilities, previousBs.totalLiabilities),
+        line("OWNER'S STAKE", bs.totalEquity, previousBs.totalEquity),
+        gap(),
+
+        heading("MOVEMENT IN THE OWNER'S STAKE"),
+        line(`Balance at ${pack.previous.end}`, pack.equity.openingEquity),
+        line('Capital introduced', pack.equity.capitalIntroduced),
+        line('Drawings', pack.equity.drawings),
+        line('Opening balances brought in', pack.equity.openingBalancesRecognised),
+        line('Profit for the year', pack.equity.profitForYear),
+        line(`Balance at ${pack.year.end}`, pack.equity.closingEquity),
+        gap(),
+
+        ['TRIAL BALANCE', 'Debit', 'Credit'],
+        ...pack.trialBalance.lines.map((row): CsvValue[] => [
+          `${row.code} ${row.name}`,
+          csvMoney(row.totalDebit),
+          csvMoney(row.totalCredit),
+        ]),
+        ['Total', csvMoney(pack.trialBalance.totalDebit), csvMoney(pack.trialBalance.totalCredit)],
+        gap(),
+
+        ['CHECKS PERFORMED', '', ''],
+        ['Trial balance balances', pack.integrity.trialBalanced ? 'yes' : 'NO', ''],
+        ['Balance sheet balances', bs.balances ? 'yes' : 'NO', ''],
+        ['Owed by customers agrees', pack.integrity.receivablesMatch ? 'yes' : 'NO', ''],
+        ['Owed to suppliers agrees', pack.integrity.payablesMatch ? 'yes' : 'NO', ''],
+        ["Owner's stake reconciles", pack.equity.reconciles ? 'yes' : 'NO', ''],
+        ['Year closed to further entries', pack.isLocked ? 'yes' : 'no', ''],
+      ];
+
+      return { headers: ['Item', pack.year.label, pack.previous.label], rows };
     }
 
     default:

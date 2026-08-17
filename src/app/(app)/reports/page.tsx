@@ -13,6 +13,17 @@ export const dynamic = 'force-dynamic';
 
 const REPORTS = [
   {
+    group: 'For your accountant',
+    items: [
+      {
+        href: '/reports/year-end',
+        title: 'Year-end pack',
+        description:
+          'A full set of statements for one financial year, with last year alongside. Print it or send the file.',
+      },
+    ],
+  },
+  {
     group: 'Money',
     items: [
       {

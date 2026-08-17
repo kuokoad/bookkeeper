@@ -19,6 +19,21 @@ export interface Actor {
   username: string;
 }
 
+export const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
+
 export type BusinessSettings = typeof businessSettings.$inferSelect;
 
 export function getSettings(db: Db): BusinessSettings {
@@ -49,6 +64,9 @@ export interface SettingsInput {
 
   lowStockThresholdMilli: number;
   allowNegativeStock: boolean;
+
+  /** Month the financial year starts, 1-12. Decides the year-end pack period. */
+  financialYearStartMonth: number;
 }
 
 /** Reports a changed value the way a person would read it. */
@@ -101,6 +119,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         taxLabel: input.taxLabel,
         lowStockThresholdMilli: input.lowStockThresholdMilli,
         allowNegativeStock: input.allowNegativeStock,
+        financialYearStartMonth: input.financialYearStartMonth,
         updatedAt: now,
       })
       .where(eq(businessSettings.id, 1))
@@ -126,6 +145,11 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         input.lowStockThresholdMilli / 1000,
       ),
       describeChange('Allow negative stock', before.allowNegativeStock, input.allowNegativeStock),
+      describeChange(
+        'Financial year starts',
+        MONTH_NAMES[before.financialYearStartMonth - 1],
+        MONTH_NAMES[input.financialYearStartMonth - 1],
+      ),
     ].filter((change): change is string => change !== null);
 
     if (changes.length === 0) return;

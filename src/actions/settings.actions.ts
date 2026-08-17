@@ -65,6 +65,12 @@ const settingsSchema = z.object({
     .min(0, 'A low stock level cannot be negative.')
     .max(1_000_000_000),
   allowNegativeStock: z.boolean(),
+
+  financialYearStartMonth: z
+    .number()
+    .int()
+    .min(1, 'Choose the month your financial year starts.')
+    .max(12, 'Choose the month your financial year starts.'),
 });
 
 const checkbox = (formData: FormData, name: string): boolean => formData.get(name) === 'on';
@@ -120,6 +126,7 @@ export async function updateSettingsAction(
     taxLabel: formData.get('taxLabel'),
     lowStockThresholdMilli,
     allowNegativeStock: checkbox(formData, 'allowNegativeStock'),
+    financialYearStartMonth: Number(formData.get('financialYearStartMonth') ?? 1),
   });
 
   if (!parsed.success) {

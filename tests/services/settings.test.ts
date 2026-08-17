@@ -47,6 +47,7 @@ function currentAsInput(): SettingsInput {
     taxLabel: settings.taxLabel,
     lowStockThresholdMilli: settings.lowStockThresholdMilli,
     allowNegativeStock: settings.allowNegativeStock,
+    financialYearStartMonth: settings.financialYearStartMonth,
   };
 }
 
@@ -196,6 +197,14 @@ describe('the audit trail', () => {
 
     const summary = listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' })[0]?.summary ?? '';
     expect(summary).toMatch(/Allow negative stock: off → on/);
+  });
+
+  it('names the month when the financial year changes', () => {
+    updateSettings(context.db, { ...currentAsInput(), financialYearStartMonth: 4 }, ACTOR);
+
+    const summary = listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' })[0]?.summary ?? '';
+    // "1 → 4" would mean nothing to whoever reads this later.
+    expect(summary).toMatch(/Financial year starts: January → April/);
   });
 
   it('reports a tax rate as a percentage, the way it was entered', () => {

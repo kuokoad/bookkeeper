@@ -132,6 +132,34 @@ back — no sale, no stock movement, no payment.
 
 ---
 
+## The year-end pack
+
+**Reports → Year-end pack** produces the statements an accountant asks for, for
+one financial year, with the previous year alongside every figure. Print it, or
+download the whole pack as one CSV.
+
+It contains a Profit & Loss, a Balance Sheet, the **Movement in the Owner's
+Stake**, a Trial Balance, notes on the basis of preparation, and the checks the
+system performed on itself.
+
+The movement statement is the one that does not appear anywhere else. Because
+there is no year-end closing entry (see below), the Balance Sheet carries
+all-time profit inside the owner's stake, so it cannot show what *this year* did
+to it. The movement statement reconciles the two:
+
+```
+opening stake + capital introduced − drawings + opening balances brought in
+              + profit for the year = closing stake
+```
+
+That must come out exactly, and the pack says whether it did. Everything is
+drawn from the same reporting code the app uses all year — nothing is
+recomputed, so the pack cannot disagree with the on-screen reports.
+
+The financial year is whatever you set under Settings; a year that has not
+finished yet is clearly marked provisional rather than presented as final
+accounts.
+
 ## Settings
 
 Under **Settings** the owner sets the shop's name and contact details (they print
