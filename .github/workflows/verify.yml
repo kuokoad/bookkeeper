@@ -1,0 +1,107 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Lets the checks be run by hand against any branch from the Actions tab.
+  workflow_dispatch:
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Required by the validated environment module, which refuses to start
+  # without one. Not a secret: it signs nothing that leaves this runner, and
+  # the runner is destroyed afterwards. It is deliberately not the placeholder
+  # from env.example, which the app rejects in production.
+  SESSION_SECRET: ci0000000000000000000000000000000000000000000000000000000000000f
+
+jobs:
+  verify:
+    name: Typecheck, lint, migrations, tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the minimum the package declares; 24 is what it is developed on.
+        # Running both catches "works on my machine" before a shop does.
+        node: ['22', '24']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `npm ci` rather than `npm install`: the lockfile is the contract, and a
+      # build that quietly resolves different versions is not the one that was
+      # tested.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck, lint, migration check, tests
+        run: npm run verify
+
+      # Proves the migrations still build a working database from nothing, not
+      # just that they apply to the one on a developer's machine.
+      - name: Migrations apply to an empty database
+        run: npm run db:migrate
+
+      - name: Production build
+        run: npm run build
+
+  smoke:
+    name: End-to-end against a running server
+    runs-on: ubuntu-latest
+
+    # These exercise real HTTP, real session cookies and real refusals — the
+    # checks that caught a page-level refusal returning 200 instead of a
+    # redirect. Unit tests cannot see that.
+    env:
+      SEED_DEMO_DATA: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Create and seed a demo database
+        run: npm run setup
+
+      - name: Start the server
+        run: nohup npm run dev > dev.log 2>&1 &
+
+      - name: Wait for it to answer
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:3000/login; then
+              echo "up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "The server never came up. Its output:" >&2
+          cat dev.log >&2
+          exit 1
+
+      - name: Smoke test
+        run: npm run smoke
+
+      # Whatever happened, the server's own output explains it. Hiding it would
+      # turn every CI failure into a guess.
+      - name: Server log
+        if: always()
+        run: cat dev.log
