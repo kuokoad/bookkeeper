@@ -1,0 +1,64 @@
+{
+  "name": "bookkeeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bookkeeping, inventory, sales and accounts for a small retail shop",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "env:init": "node scripts/init-env.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed/index.ts",
+    "db:reset": "tsx src/db/reset.ts",
+    "backup": "tsx src/db/backup.ts",
+    "preflight": "tsx src/db/preflight.ts",
+    "benchmark": "tsx scripts/benchmark.ts",
+    "db:studio": "drizzle-kit studio",
+    "smoke": "node scripts/smoke-test.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "setup": "npm run db:migrate && npm run db:seed",
+    "db:check": "drizzle-kit check",
+    "verify": "npm run typecheck && npm run lint && npm run db:check && npm run test"
+  },
+  "dependencies": {
+    "better-sqlite3": "12.11.1",
+    "clsx": "2.1.1",
+    "drizzle-orm": "^0.45.2",
+    "next": "^16.3.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "3.3.1",
+    "zod": "4.1.11"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.14",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "24.6.2",
+    "@types/react": "19.1.16",
+    "@types/react-dom": "19.1.9",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "9.36.0",
+    "eslint-config-next": "^16.3.1",
+    "tailwindcss": "4.1.14",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "@tailwindcss/oxide": true,
+    "sharp": true,
+    "esbuild": true,
+    "unrs-resolver": true
+  }
+}

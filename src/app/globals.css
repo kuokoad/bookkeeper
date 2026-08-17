@@ -1,0 +1,147 @@
+@import 'tailwindcss';
+
+/*
+  Design tokens.
+
+  Light and dark are both defined here so the app is legible in a bright shop
+  during the day and on a phone at night. Colours are referenced by role
+  (surface, muted, danger) rather than by hue, so a future rebrand touches this
+  file only.
+*/
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+
+  /* Brand: a calm green — money and growth, without shouting. */
+  --color-brand-50: oklch(0.97 0.02 165);
+  --color-brand-100: oklch(0.94 0.04 165);
+  --color-brand-200: oklch(0.88 0.07 165);
+  --color-brand-300: oklch(0.8 0.1 165);
+  --color-brand-400: oklch(0.72 0.13 165);
+  --color-brand-500: oklch(0.64 0.14 165);
+  --color-brand-600: oklch(0.55 0.13 165);
+  --color-brand-700: oklch(0.46 0.11 165);
+  --color-brand-800: oklch(0.38 0.09 165);
+  --color-brand-900: oklch(0.3 0.07 165);
+}
+
+:root {
+  --surface: oklch(0.99 0.002 250);
+  --surface-raised: oklch(1 0 0);
+  --surface-sunken: oklch(0.96 0.004 250);
+  --border: oklch(0.9 0.006 250);
+  --border-strong: oklch(0.82 0.008 250);
+  --text: oklch(0.25 0.01 250);
+  --text-muted: oklch(0.52 0.012 250);
+  --text-subtle: oklch(0.64 0.01 250);
+
+  --accent: oklch(0.55 0.13 165);
+  --accent-text: oklch(0.99 0 0);
+  --accent-soft: oklch(0.95 0.03 165);
+
+  --danger: oklch(0.55 0.19 25);
+  --danger-soft: oklch(0.96 0.03 25);
+  --warning: oklch(0.68 0.15 75);
+  --warning-soft: oklch(0.96 0.05 75);
+  --success: oklch(0.55 0.14 150);
+  --success-soft: oklch(0.95 0.04 150);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: oklch(0.19 0.008 250);
+    --surface-raised: oklch(0.23 0.009 250);
+    --surface-sunken: oklch(0.15 0.008 250);
+    --border: oklch(0.32 0.01 250);
+    --border-strong: oklch(0.42 0.012 250);
+    --text: oklch(0.95 0.004 250);
+    --text-muted: oklch(0.72 0.008 250);
+    --text-subtle: oklch(0.6 0.01 250);
+
+    --accent: oklch(0.72 0.13 165);
+    --accent-text: oklch(0.16 0.01 165);
+    --accent-soft: oklch(0.28 0.05 165);
+
+    --danger: oklch(0.68 0.17 25);
+    --danger-soft: oklch(0.28 0.06 25);
+    --warning: oklch(0.78 0.13 75);
+    --warning-soft: oklch(0.3 0.06 75);
+    --success: oklch(0.7 0.13 150);
+    --success-soft: oklch(0.27 0.05 150);
+  }
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-content: var(--text);
+  --color-content-muted: var(--text-muted);
+  --color-content-subtle: var(--text-subtle);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  /* Stop layout shifting sideways when a long report adds a scrollbar. */
+  scrollbar-gutter: stable;
+}
+
+body {
+  background-color: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+  Money and quantities are tabular figures everywhere. Columns of amounts that
+  do not line up are genuinely harder to check, and checking is the point.
+*/
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Visible keyboard focus. Staff use this on a till with a keyboard. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Respect a user's reduced-motion preference; we use little motion anyway. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+}
