@@ -143,6 +143,7 @@ export const JOURNAL_SOURCE_TYPES = [
   'CAPITAL',
   'DRAWINGS',
   'REVERSAL',
+  'YEAR_END_CLOSE',
 ] as const;
 
 export const journalEntries = sqliteTable(
@@ -164,6 +165,17 @@ export const journalEntries = sqliteTable(
 
     /** Opening balances are flagged so reports never mix them with trading activity. */
     isOpening: boolean('is_opening').notNull().default(false),
+
+    /**
+     * A year-end closing entry, which sweeps the year's revenue and expenses
+     * into Retained Earnings.
+     *
+     * Flagged rather than inferred from `sourceType` because the Profit & Loss
+     * MUST exclude these. A closing entry dated 31 December falls inside that
+     * year, and counting it would net the year's own profit to zero — the
+     * report would show nothing earned in a year the shop traded well.
+     */
+    isClosing: boolean('is_closing').notNull().default(false),
 
     /** Reversal linkage — history is corrected by addition, never by deletion. */
     reversesEntryId: integer('reverses_entry_id'),
@@ -193,7 +205,7 @@ export const journalEntries = sqliteTable(
     // opening balance is allowed to have no source row.
     check(
       'ck_journal_entries_traceable',
-      sql`${t.sourceId} IS NOT NULL OR ${t.sourceType} = 'OPENING_BALANCE'`,
+      sql`${t.sourceId} IS NOT NULL OR ${t.sourceType} IN ('OPENING_BALANCE', 'YEAR_END_CLOSE')`,
     ),
   ],
 );
@@ -264,6 +276,62 @@ export const journalLines = sqliteTable(
   ],
 );
 
+/**
+ * One row per financial year that has been closed.
+ *
+ * The closing journal entry alone would say what happened but not that a close
+ * was *declared*, nor let a second close be refused. This does both, and keeps
+ * the reversal linked to the close it undoes rather than floating free.
+ */
+export const yearEndClosings = sqliteTable(
+  'year_end_closings',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+
+    /** The calendar year the financial year STARTS in — how a year is named. */
+    startYear: integer('start_year').notNull(),
+    periodStart: businessDate('period_start').notNull(),
+    periodEnd: businessDate('period_end').notNull(),
+
+    /** The closing entry itself. */
+    journalEntryId: integer('journal_entry_id')
+      .notNull()
+      .references(() => journalEntries.id, { onDelete: 'restrict' }),
+
+    /** Snapshotted at the moment of closing, so the figures cannot drift. */
+    profitMinor: moneyMinor('profit_minor').notNull(),
+    drawingsMinor: moneyMinor('drawings_minor').notNull(),
+
+    closedBy: integer('closed_by').references(() => users.id, { onDelete: 'set null' }),
+    closedAt: timestampMs('closed_at').notNull(),
+
+    /** Reopening does not delete this row — it records the undoing. */
+    reversedAt: timestampMs('reversed_at'),
+    reversedBy: integer('reversed_by').references(() => users.id, { onDelete: 'set null' }),
+    reversalEntryId: integer('reversal_entry_id').references(() => journalEntries.id, {
+      onDelete: 'restrict',
+    }),
+
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // A year can only be open once and closed once at a time. Partial unique
+    // index: a reopened year may be closed again, and both rows remain.
+    uniqueIndex('uq_year_end_closings_open')
+      .on(t.startYear)
+      .where(sql`${t.reversedAt} IS NULL`),
+    index('idx_year_end_closings_year').on(t.startYear),
+    check('ck_year_end_closings_period', sql`${t.periodEnd} > ${t.periodStart}`),
+    // Reversal details arrive together or not at all.
+    check(
+      'ck_year_end_closings_reversal',
+      sql`(${t.reversedAt} IS NULL AND ${t.reversalEntryId} IS NULL)
+          OR (${t.reversedAt} IS NOT NULL AND ${t.reversalEntryId} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export type YearEndClosing = typeof yearEndClosings.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type PaymentAccount = typeof paymentAccounts.$inferSelect;

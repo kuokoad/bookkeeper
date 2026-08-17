@@ -12,6 +12,9 @@ import { money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
 import { Card, PageHeader, Stat } from '@/components/ui/page';
 import { BooksLockForm } from './books-lock-form';
+import { YearEndForm, type YearOption } from './year-end-form';
+import { availableFinancialYears } from '@/services/reporting/year-end.service';
+import { isYearClosed } from '@/services/year-end-close.service';
 
 export const metadata: Metadata = { title: 'Accounting' };
 export const dynamic = 'force-dynamic';
@@ -46,6 +49,15 @@ const SECTIONS = [
 
 export default async function AccountingPage() {
   const user = await requirePageAccess('accounts', 'view');
+
+  const today = toBusinessDate();
+  const yearOptions: YearOption[] = availableFinancialYears(db).map((year) => ({
+    startYear: year.startYear,
+    label: year.label,
+    end: year.end,
+    closed: isYearClosed(db, year.startYear),
+    finished: today > year.end,
+  }));
 
   const integrity = checkBooksIntegrity(db);
   const receivables = getTotalReceivables(db);
@@ -108,7 +120,8 @@ export default async function AccountingPage() {
       </div>
 
       {can(user, 'settings', 'edit') && (
-        <div className="mb-6">
+        <div className="mb-6 space-y-4">
+          <YearEndForm years={yearOptions} />
           <BooksLockForm
             lockedBefore={lock.lockedBefore}
             entriesLocked={lock.entriesLocked}

@@ -20,6 +20,14 @@ export interface DateRange {
   from?: string;
   /** Inclusive 'YYYY-MM-DD'. */
   to?: string;
+  /**
+   * Leave out year-end closing entries.
+   *
+   * Needed when working out what a year *traded*, as opposed to what its
+   * accounts hold now. Closing a year already closed would otherwise sweep the
+   * previous sweep and post a second, opposite entry.
+   */
+  excludeClosing?: boolean;
 }
 
 export interface AccountBalance {
@@ -47,6 +55,7 @@ function periodConditions(range: DateRange): SQL[] {
   const conditions: SQL[] = [];
   if (range.from) conditions.push(gte(journalEntries.entryDate, range.from));
   if (range.to) conditions.push(lte(journalEntries.entryDate, range.to));
+  if (range.excludeClosing) conditions.push(eq(journalEntries.isClosing, false));
   return conditions;
 }
 
@@ -111,8 +120,18 @@ export function getAccountBalanceByCode(
   return account.balance;
 }
 
+export interface TrialBalanceLine {
+  accountId: number;
+  code: string;
+  name: string;
+  type: AccountType;
+  /** The account's NET balance, on whichever side it falls. One is always zero. */
+  debit: Minor;
+  credit: Minor;
+}
+
 export interface TrialBalance {
-  lines: AccountBalance[];
+  lines: TrialBalanceLine[];
   totalDebit: Minor;
   totalCredit: Minor;
   difference: Minor;
@@ -123,14 +142,41 @@ export interface TrialBalance {
   balanced: boolean;
 }
 
+/**
+ * A trial balance of BALANCES, not of gross totals.
+ *
+ * Each account appears once, with its net balance in the debit or credit
+ * column, and an account whose debits and credits cancel does not appear at
+ * all. The gross form — every account listing everything ever posted to both
+ * sides — made a closed year unreadable: after a year-end close, Sales Revenue
+ * would still show a year of sales on one side and the closing entry on the
+ * other, when the account in fact holds nothing.
+ *
+ * The totals still tie: since debits equal credits over the whole ledger, the
+ * positive nets sum to the negative nets.
+ */
 export function getTrialBalance(db: Db, range: DateRange = {}): TrialBalance {
-  // Headings are excluded so amounts are not counted twice.
-  const lines = getAccountBalances(db, range).filter(
-    (line) => !line.isHeader && !(line.totalDebit === 0 && line.totalCredit === 0),
-  );
+  const lines: TrialBalanceLine[] = [];
 
-  const totalDebit = sum(lines.map((line) => line.totalDebit));
-  const totalCredit = sum(lines.map((line) => line.totalCredit));
+  // Headings are excluded so amounts are not counted twice.
+  for (const account of getAccountBalances(db, range)) {
+    if (account.isHeader) continue;
+
+    const net = account.totalDebit - account.totalCredit;
+    if (net === 0) continue;
+
+    lines.push({
+      accountId: account.accountId,
+      code: account.code,
+      name: account.name,
+      type: account.type,
+      debit: minor(net > 0 ? net : 0),
+      credit: minor(net < 0 ? -net : 0),
+    });
+  }
+
+  const totalDebit = sum(lines.map((line) => line.debit));
+  const totalCredit = sum(lines.map((line) => line.credit));
   const difference = subtract(totalDebit, totalCredit);
 
   return { lines, totalDebit, totalCredit, difference, balanced: difference === 0 };

@@ -405,10 +405,10 @@ export default async function YearEndPackPage({
               {row.code} {row.name}
             </td>
             <td className="tabular py-1 text-right text-content">
-              {row.totalDebit === 0 ? '' : moneyAccounting(row.totalDebit, { currencyCode: c })}
+              {row.debit === 0 ? '' : moneyAccounting(row.debit, { currencyCode: c })}
             </td>
             <td className="tabular py-1 pl-6 text-right text-content">
-              {row.totalCredit === 0 ? '' : moneyAccounting(row.totalCredit, { currencyCode: c })}
+              {row.credit === 0 ? '' : moneyAccounting(row.credit, { currencyCode: c })}
             </td>
           </tr>
         ))}

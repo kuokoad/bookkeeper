@@ -27,6 +27,11 @@ export interface PostEntryInput extends DraftEntry {
   occurredAt?: Date;
   isDemo?: boolean;
   /**
+   * Marks a year-end closing entry, which the Profit & Loss must leave out.
+   * Set only by the year-end close service.
+   */
+  isClosing?: boolean;
+  /**
    * Bypass the books lock. Set ONLY by an owner-level action that has already
    * checked the permission and will record the override in the audit log.
    */
@@ -82,6 +87,7 @@ export function postJournalEntry(
       sourceId: input.sourceId ?? null,
       memo: input.memo ?? null,
       isOpening: input.isOpening ?? false,
+      isClosing: input.isClosing ?? false,
       createdBy: actor?.id ?? null,
       isDemo: input.isDemo ?? false,
       createdAt: occurredAt,
@@ -163,6 +169,15 @@ export function reverseJournalEntry(
     sourceType?: JournalSourceType;
     sourceId?: number;
     occurredAt?: Date;
+    /**
+     * Bypass the books lock. Needed when undoing something that created the
+     * very lock being bypassed — reopening a closed year reverses an entry
+     * dated on the lock date itself. Set only by an owner-level action that
+     * records the override in the audit log.
+     */
+    overridePeriodLock?: boolean;
+    /** Mark the reversal as a closing entry, so the P&L leaves it out too. */
+    isClosing?: boolean;
   },
   actor: Actor | null = null,
 ): PostedEntry {
@@ -204,6 +219,8 @@ export function reverseJournalEntry(
       memo: options.memo ?? `Reversal of ${original.entryNo}`,
       lines: mirrored,
       ...(options.occurredAt !== undefined ? { occurredAt: options.occurredAt } : {}),
+      ...(options.overridePeriodLock === true ? { overridePeriodLock: true } : {}),
+      ...(options.isClosing === true ? { isClosing: true } : {}),
       isDemo: original.isDemo,
     },
     actor,

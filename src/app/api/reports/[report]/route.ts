@@ -399,8 +399,8 @@ function buildTable(report: string, request: NextRequest): Table | null {
         ['TRIAL BALANCE', 'Debit', 'Credit'],
         ...pack.trialBalance.lines.map((row): CsvValue[] => [
           `${row.code} ${row.name}`,
-          csvMoney(row.totalDebit),
-          csvMoney(row.totalCredit),
+          csvMoney(row.debit),
+          csvMoney(row.credit),
         ]),
         ['Total', csvMoney(pack.trialBalance.totalDebit), csvMoney(pack.trialBalance.totalCredit)],
         gap(),

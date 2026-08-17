@@ -40,10 +40,22 @@ interface AccountTotals {
   balance: number;
 }
 
-function loadAccountTotals(db: Db, range: { from?: string; to?: string }): AccountTotals[] {
+function loadAccountTotals(
+  db: Db,
+  range: { from?: string; to?: string; excludeClosing?: boolean },
+): AccountTotals[] {
   const conditions: SQL[] = [];
   if (range.from) conditions.push(gte(journalEntries.entryDate, range.from));
   if (range.to) conditions.push(lte(journalEntries.entryDate, range.to));
+
+  // The Profit & Loss must not count the year's own closing entry. It is dated
+  // inside the year and its whole purpose is to cancel the year's revenue and
+  // expenses, so including it would report every closed year as having earned
+  // exactly nothing.
+  //
+  // The balance sheet is the opposite case and must include it, because that is
+  // how the profit reaches Retained Earnings.
+  if (range.excludeClosing) conditions.push(eq(journalEntries.isClosing, false));
 
   const rows = db
     .select({
@@ -133,7 +145,7 @@ export interface ProfitAndLoss {
 }
 
 export function getProfitAndLoss(db: Db, period: Period): ProfitAndLoss {
-  return buildProfitAndLoss(loadAccountTotals(db, period), period);
+  return buildProfitAndLoss(loadAccountTotals(db, { ...period, excludeClosing: true }), period);
 }
 
 /**
@@ -211,7 +223,7 @@ export interface BalanceSheet {
   ownersCapital: Minor;
   drawings: Minor;
   openingBalanceEquity: Minor;
-  /** All-time profit up to `asAt`. There is no year-end close in v1. */
+  /** Profit closed into the account, plus profit earned since and not closed. */
   retainedEarnings: Minor;
   totalEquity: Minor;
 
@@ -276,9 +288,18 @@ export function getBalanceSheet(db: Db, asAt: string): BalanceSheet {
   const drawings = find(ACCOUNT_CODES.OWNERS_DRAWINGS);
   const openingBalanceEquity = find(ACCOUNT_CODES.OPENING_BALANCE_EQUITY);
 
-  // Profit is not closed into equity at year end in this version, so the
-  // balance sheet folds in all-time profit directly. That keeps the identity
-  // A = L + E true without a closing process the owner would have to run.
+  // Retained earnings is what has been closed into the account, plus whatever
+  // profit has been earned since and not yet closed.
+  //
+  // These cannot double-count, and the reason is worth stating: a closing entry
+  // debits the revenue accounts and credits Retained Earnings, so once a year
+  // is closed its trading accounts sum to zero and contribute nothing to
+  // `allTime` below. An unclosed year contributes its profit here and nothing
+  // to the posted balance. Every year is counted exactly once, whether closed
+  // or not — which is what lets a shop close some years and not others.
+  //
+  // NOTE: `totals` is deliberately loaded WITHOUT `excludeClosing`. The closing
+  // entry is how profit reaches equity; leaving it out here would lose it.
   //
   // `totals` was loaded with { to: asAt } and so ALREADY covers all time up to
   // that date — exactly what the all-time P&L needs. Reusing it avoids running

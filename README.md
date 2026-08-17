@@ -143,7 +143,7 @@ Stake**, a Trial Balance, notes on the basis of preparation, and the checks the
 system performed on itself.
 
 The movement statement is the one that does not appear anywhere else. Because
-there is no year-end closing entry (see below), the Balance Sheet carries
+a year may not be closed yet (see below), the Balance Sheet carries
 all-time profit inside the owner's stake, so it cannot show what *this year* did
 to it. The movement statement reconciles the two:
 
@@ -216,12 +216,36 @@ the transaction, which posts a dated reversal today instead of altering history.
 Moving the lock **backward**, or removing it, reopens a period that was declared
 final. That is recorded distinctly in the audit log, with the user's name.
 
-> There is deliberately **no year-end closing step**. Revenue and expense
-> accounts accumulate, and the balance sheet folds all-time profit straight into
-> your stake. That keeps `assets = liabilities + equity` true at any date
-> without a ritual to remember, at the cost of a permanently-zero Retained
-> Earnings account and a trial balance that shows all-time figures unless you
-> date-filter it.
+## Closing the year
+
+Under **Accounting → Year-end close**, once a financial year has ended you can
+close it. Closing posts one journal entry that sweeps the year's sales and costs
+back to zero and carries what is left — the profit — into **Retained Earnings**.
+Your drawings for the year are cleared the same way, so each year starts fresh
+rather than carrying an ever-growing total.
+
+Closing also **locks the books** to the year end, because figures declared final
+should not be open to a sale dated last March.
+
+Three things it will not let you do, each because the result would look final
+without being it:
+
+- close a year that has not finished
+- close the same year twice
+- close out of order, leaving an earlier year open
+
+**It is reversible.** Reopening reverses the closing entry rather than deleting
+it — both remain in the ledger, the audit log records who reopened it, and the
+lock moves back to the previous closed year. Years reopen newest first.
+
+Closing entries are excluded from the Profit & Loss. A close is dated inside the
+year it closes, and its whole job is to cancel that year's revenue and expenses
+— counted, it would report a year the shop traded well as having earned nothing.
+The Balance Sheet includes them, because that is how profit reaches equity.
+
+You do not have to close at all. An unclosed year still reports correctly: the
+Balance Sheet folds unclosed profit into your stake, so `assets = liabilities +
+equity` holds either way, and closed and unclosed years can sit side by side.
 
 ## Backups
 

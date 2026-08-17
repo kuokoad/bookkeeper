@@ -541,6 +541,45 @@ now decides the period. All date arithmetic is on `YYYY-MM-DD` strings in
 "2025-12-31" west of UTC yields the 30th, which would file a year-end sale in
 the wrong year.
 
+---
+
+## 14. Year-end close
+
+Reverses a trade-off this document previously defended. Closing sweeps a year's
+revenue, expense and drawings accounts to zero and carries the result to
+Retained Earnings, in one journal entry dated on the year end.
+
+**The trap, and the flag that avoids it.** A closing entry is dated *inside* the
+year it closes, and cancels that year's revenue and expenses exactly. Counted by
+the Profit & Loss, it would report a well-traded year as having earned nothing.
+So entries carry `is_closing`, the P&L excludes them, and the balance sheet
+includes them — the latter is how profit reaches equity at all. The reversal
+posted when reopening is dated inside the year too, and is flagged the same way;
+without that, reopening reported the year's profit twice.
+
+**The balance sheet formula did not have to change.** Equity is
+`posted Retained Earnings + all-time profit`. Once a year is closed its trading
+accounts sum to zero and contribute nothing to the second term, while the first
+holds what was swept in. An unclosed year is the reverse. Each year is counted
+exactly once either way, which is what lets closed and unclosed years coexist.
+
+**Trial balance, corrected.** It reported *gross* debits and credits per
+account. After a close that reads absurdly: Sales Revenue shows a year of sales
+on one side and the closing entry on the other, for an account that now holds
+nothing. It now reports each account's **net** balance on its natural side and
+omits accounts that net to zero — a trial balance of balances, which is the
+standard form.
+
+**Refusals.** Closing a year that has not ended, closing twice, and closing out
+of order are all refused: each produces figures that look final and are not.
+Reopening is refused underneath a later closed year, whose figures were computed
+with this one already swept.
+
+**Reversible, and locked.** Closing sets the books lock to the year end.
+Reopening reverses the entry rather than deleting it, moves the lock back to the
+previous closed year, and records both in `year_end_closings` — which keeps the
+close and its reversal linked rather than floating free.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.

@@ -664,6 +664,15 @@ if (staffToken) {
   check('an unknown area is not echoed back', !bogusHtml.includes('<script>alert(1)</script>'));
 }
 
+console.log('\nYear-end close:');
+const closeRes = await fetch(`${base}/accounting`, { headers: { cookie }, redirect: 'manual' });
+const acctPageHtml = closeRes.status === 200 ? await closeRes.text() : '';
+check('accounting page offers the year-end close', acctPageHtml.includes('Year-end close'));
+check('explains what closing does', acctPageHtml.includes('Retained Earnings'));
+check('states nothing recorded is altered', acctPageHtml.includes('Nothing already recorded is altered'));
+// Closing must be reversible, and say so where the button is.
+check('offers reopening or explains none is closable', /Reopen|no finished year/i.test(acctPageHtml));
+
 console.log('\nYear-end pack:');
 const yeRes = await fetch(`${base}/reports/year-end`, { headers: { cookie }, redirect: 'manual' });
 const yeHtml = yeRes.status === 200 ? await yeRes.text() : '';
