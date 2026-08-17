@@ -629,6 +629,28 @@ if (staffToken) {
   check('an unknown area is not echoed back', !bogusHtml.includes('<script>alert(1)</script>'));
 }
 
+console.log('\nSettings:');
+const setRes = await fetch(`${base}/settings`, { headers: { cookie }, redirect: 'manual' });
+const setHtml = setRes.status === 200 ? await setRes.text() : '';
+check('GET /settings', setRes.status === 200, `status ${setRes.status}`);
+check('shows the shop name', setHtml.includes('Adom Provisions'));
+check('offers currency', setHtml.includes('Currency code'));
+check('offers tax', setHtml.includes('Charge tax on sales'));
+check('offers stock policy', setHtml.includes('Allow selling stock you do not have'));
+// The demo database has transactions, so the currency must be pinned.
+check('currency is locked once there are transactions', setHtml.includes('currency is fixed'));
+check('says changes are recorded', setHtml.includes('recorded in the audit log'));
+// Tax is off in the demo shop. The tax fields must still be present in the
+// form, or saving would submit no tax name and fail on a field nobody can see.
+check('tax fields still submit when tax is off', setHtml.includes('name="taxLabel"'));
+check('  and so does "prices include tax"', setHtml.includes('name="taxInclusive"'));
+check('links to its own change history', setHtml.includes('entity=business_settings'));
+
+// The nav promised this page with a "Soon" tag until it existed.
+const dashForNav = await fetch(`${base}/dashboard`, { headers: { cookie } });
+const dashNavHtml = await dashForNav.text();
+check('Settings is no longer marked "Soon"', !/Settings[\s\S]{0,120}?Soon/.test(dashNavHtml));
+
 console.log('\nWhen things are missing or wrong:');
 const unknownPath = await fetch(`${base}/this-page-does-not-exist`, {
   headers: { cookie },

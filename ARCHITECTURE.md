@@ -474,6 +474,41 @@ to the page instead of to the shop's age.
 The whole-ledger aggregates (trial balance 287ms, balance sheet 458ms) genuinely
 read every row, which is what they are for; they stay well under a second.
 
+---
+
+## 12. Settings
+
+The settings table was always consumed by the services — tax by `sale.service`,
+the stock policy by four services, the currency by nearly every page — but
+nothing could edit it. This stage added the screen, and with it the guards that
+editing makes necessary.
+
+**Currency cannot change once the books have entries.** No amount stores its own
+currency; every figure is a count of minor units and the currency code labels
+all of them at render time. Changing it after trading would relabel history
+without touching a row — the same class of harm as editing a past transaction,
+which this application refuses elsewhere. So `updateSettings` refuses it, and
+because the check runs inside the transaction, a rejected currency change rolls
+back the whole save rather than letting the other fields through. The symbol
+stays editable: `₵` and `GH₵` are the same currency.
+
+**Rates are basis points, for the same reason money is pesewas.** 7.3% as a
+float is not exact, and the error would be multiplied by every sale.
+`domain/rate.ts` owns both directions of the conversion, and a property test
+walks all 10,001 rates asserting `parse(format(bp)) === bp` — because the form
+renders with one and saves with the other, and a mismatch would change the tax
+rate on a save that changed nothing.
+
+**The audit entry says what changed, not that something did.** `Tax: off → on`
+and `Allow negative stock: off → on` are the entries an auditor needs. A save
+that changes nothing writes no entry at all, since a log full of no-ops is a log
+nobody reads.
+
+Two columns — `allow_overpayment` and `financial_year_start_month` — exist in
+the schema but are read by no code. They are deliberately **not** on the screen:
+a control that does nothing is worse than an absent one. They are either wired
+up or dropped, as a separate decision.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.

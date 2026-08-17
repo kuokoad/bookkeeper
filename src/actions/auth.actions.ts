@@ -27,6 +27,12 @@ import { env, isProduction } from '@/lib/env';
 export interface FormState {
   error?: string;
   fieldErrors?: Record<string, string>;
+  /**
+   * Confirmation for forms that stay on the page instead of redirecting. A save
+   * that leaves the screen unchanged is indistinguishable from one that failed
+   * silently, which is the thing this application must never do.
+   */
+  success?: string;
 }
 
 const LOGIN_ATTEMPT_LIMIT = 10;

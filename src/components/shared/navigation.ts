@@ -83,7 +83,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { href: '/users', label: 'Users', icon: 'users', module: 'users' },
       { href: '/users/audit', label: 'Audit log', icon: 'reports', module: 'users' },
-      { href: '/settings', label: 'Settings', icon: 'settings', module: 'settings', comingSoon: true },
+      { href: '/settings', label: 'Settings', icon: 'settings', module: 'settings' },
     ],
   },
 ];

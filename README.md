@@ -6,7 +6,7 @@ on the shop's own computer, with no internet required to record a sale.
 Currency defaults to **GHS** and is configurable. Mobile money is first-class, and
 no mobile network is hard-coded.
 
-> **Status: Stages 1–10 complete.**
+> **Status: Stages 1–11 complete.**
 > Foundation (database, double-entry ledger, auth, permissions, audit),
 > Products & Inventory (catalogue, stock ledger, weighted-average costing, stock
 > adjustments, low-stock alerts), Sales (POS, split payments, customer credit,
@@ -19,10 +19,10 @@ no mobile network is hard-coded.
 > Reconciliation (cash/MoMo/bank counts with difference tracking), Users &
 > Permissions (staff accounts, per-area rights, till PINs, insert-only audit
 > log) — with returns in both directions and void-with-reversal throughout —
-> and hardening (error and empty states, verified backups, a production
-> preflight, and a measured performance pass).
-> Menu items marked "Soon" are not yet built — they are shown disabled rather
-> than as links that do nothing.
+> hardening (error and empty states, verified backups, a production preflight,
+> and a measured performance pass), and Settings (shop details, currency, tax
+> and stock policy).
+> Nothing in the menu is a placeholder — every item leads to a working screen.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, database schema and
 accounting model.
@@ -131,6 +131,32 @@ equal its credits before it commits. If they do not, the whole operation rolls
 back — no sale, no stock movement, no payment.
 
 ---
+
+## Settings
+
+Under **Settings** the owner sets the shop's name and contact details (they print
+on receipts), the currency, tax, and the stock policy.
+
+**Currency is fixed once you have transactions.** No amount stores its own
+currency — every figure in the books is a count of minor units, and the currency
+code is what labels all of them. Changing it after trading would silently
+relabel every historical amount: a GHS 5,000 sale from last month would begin
+reading as USD 5,000 without a single row being touched. So it is refused, with
+an explanation. The *symbol* stays editable, because `₵` and `GH₵` are two ways
+of writing the same currency.
+
+**Tax** is held in basis points (12.5% is `1250`), never as a floating-point
+fraction — 7.3% as `0.073` is not exact, and that error would be multiplied by
+every sale. Changing the rate affects sales from then on; sales already recorded
+keep the tax they were recorded with. Switching tax off keeps the rate, so
+switching it back on does not silently resume at zero.
+
+**Allow selling stock you do not have** is off by default, which is safer: a sale
+that would take stock below zero is refused, catching mistakes at the till.
+
+Every change is written to the audit log with what it was before and after, so
+"when did we turn VAT on?" is answerable. Closing the books for a past period is
+under Accounting, beside the ledger it protects.
 
 ## Counting cash, MoMo and bank
 
