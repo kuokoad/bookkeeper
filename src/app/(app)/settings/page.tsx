@@ -43,11 +43,18 @@ export default async function SettingsPage() {
         title="Settings"
         description="How your shop records money and stock."
         actions={
-          <Link href="/users/audit?entity=business_settings">
-            <Button variant="secondary" size="sm">
-              Change history
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/settings/health">
+              <Button variant="secondary" size="sm">
+                Health &amp; backup
+              </Button>
+            </Link>
+            <Link href="/users/audit?entity=business_settings">
+              <Button variant="secondary" size="sm">
+                Change history
+              </Button>
+            </Link>
+          </div>
         }
       />
 

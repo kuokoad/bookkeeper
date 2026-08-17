@@ -79,13 +79,48 @@ const token = mintSession();
 check('session token minted', Boolean(token) && token.length > 20);
 
 const cookie = `bk_session=${token}`;
+
+/**
+ * The shop's name as currently configured, read from the settings form rather
+ * than assumed to be the seeded one. The owner can rename the shop, and a test
+ * that hard-codes the seed value starts failing the moment they do — reporting
+ * a working feature as broken.
+ */
+const shopName = await (async () => {
+  const res = await fetch(`${base}/settings`, { headers: { cookie }, redirect: 'manual' });
+  if (res.status !== 200) return null;
+  const html = await res.text();
+  const match = html.match(/id="businessName"[^>]*value="([^"]*)"/);
+  // HTML-escaped in the attribute; unescape what a shop name can contain.
+  return match
+    ? match[1].replace(/&amp;/g, '&').replace(/&#x27;|&apos;/g, "'").replace(/&quot;/g, '"')
+    : null;
+})();
+check('the shop has a name configured', Boolean(shopName), String(shopName));
+
+/**
+ * React escapes text when it renders, so a shop called "Nuna Trading & Co."
+ * appears in the HTML as "Nuna Trading &amp; Co.". Comparing the raw name
+ * against the page would report correct output as a failure.
+ */
+function appearsIn(html, text) {
+  if (!text) return false;
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+  return html.includes(text) || html.includes(escaped);
+}
+
 const authed = await fetch(`${base}/dashboard`, {
   headers: { cookie },
   redirect: 'manual',
 });
 const authedHtml = authed.status === 200 ? await authed.text() : '';
 check('GET /dashboard with session', authed.status === 200, `status ${authed.status}`);
-check('shows the shop name', authedHtml.includes('Adom Provisions'));
+check('shows the shop name', appearsIn(authedHtml, shopName), `looking for "${shopName}"`);
 check('shows money accounts', authedHtml.includes('MTN MoMo') && authedHtml.includes('Cash'));
 check('renders GHS amounts', authedHtml.includes('GHS'));
 check('reports the books as balanced', authedHtml.includes('Balanced'));
@@ -184,7 +219,7 @@ if (someSaleId) {
   });
   const receiptHtml = receipt.status === 200 ? await receipt.text() : '';
   check('GET /sales/[id]/receipt', receipt.status === 200, `status ${receipt.status}`);
-  check('receipt shows the shop name', receiptHtml.includes('Adom Provisions'));
+  check('receipt shows the shop name', appearsIn(receiptHtml, shopName), `looking for "${shopName}"`);
   check('receipt has a print control', receiptHtml.includes('Print'));
 }
 
@@ -633,7 +668,7 @@ console.log('\nSettings:');
 const setRes = await fetch(`${base}/settings`, { headers: { cookie }, redirect: 'manual' });
 const setHtml = setRes.status === 200 ? await setRes.text() : '';
 check('GET /settings', setRes.status === 200, `status ${setRes.status}`);
-check('shows the shop name', setHtml.includes('Adom Provisions'));
+check('shows the shop name', appearsIn(setHtml, shopName), `looking for "${shopName}"`);
 check('offers currency', setHtml.includes('Currency code'));
 check('offers tax', setHtml.includes('Charge tax on sales'));
 check('offers stock policy', setHtml.includes('Allow selling stock you do not have'));
@@ -650,6 +685,36 @@ check('links to its own change history', setHtml.includes('entity=business_setti
 const dashForNav = await fetch(`${base}/dashboard`, { headers: { cookie } });
 const dashNavHtml = await dashForNav.text();
 check('Settings is no longer marked "Soon"', !/Settings[\s\S]{0,120}?Soon/.test(dashNavHtml));
+
+console.log('\nHealth & backup (the no-terminal path):');
+const healthRes = await fetch(`${base}/settings/health`, { headers: { cookie }, redirect: 'manual' });
+const healthHtml = healthRes.status === 200 ? await healthRes.text() : '';
+check('GET /settings/health', healthRes.status === 200, `status ${healthRes.status}`);
+check('runs the readiness checks', healthHtml.includes('The books balance'));
+check('offers a backup download', healthHtml.includes('/api/backup'));
+
+const backupRes = await fetch(`${base}/api/backup`, { headers: { cookie }, redirect: 'manual' });
+check('backup downloads', backupRes.status === 200, `status ${backupRes.status}`);
+check(
+  'as a file, not a web page',
+  (backupRes.headers.get('content-disposition') ?? '').includes('attachment'),
+);
+const backupBody = backupRes.status === 200 ? Buffer.from(await backupRes.arrayBuffer()) : Buffer.alloc(0);
+// Every SQLite file starts with this. Proves a real database came back rather
+// than an error page with a 200 on it.
+check('and it is a real SQLite database', backupBody.subarray(0, 15).toString() === 'SQLite format 3');
+check('of a plausible size', backupBody.byteLength > 10_000, `${backupBody.byteLength} bytes`);
+
+if (staffTokenForLock) {
+  const staffBackup = await fetch(`${base}/api/backup`, {
+    headers: { cookie: `bk_session=${staffTokenForLock}` },
+    redirect: 'manual',
+  });
+  // A backup is a complete copy of every customer and every figure.
+  check('staff CANNOT download a backup', staffBackup.status === 403, `status ${staffBackup.status}`);
+}
+const anonBackup = await fetch(`${base}/api/backup`, { redirect: 'manual' });
+check('a backup requires signing in', anonBackup.status === 401, `status ${anonBackup.status}`);
 
 console.log('\nWhen things are missing or wrong:');
 const unknownPath = await fetch(`${base}/this-page-does-not-exist`, {
