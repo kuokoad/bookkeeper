@@ -367,6 +367,35 @@ function buildTable(report: string, request: NextRequest): Table | null {
         line(`Balance at ${pack.year.end}`, pack.equity.closingEquity),
         gap(),
 
+        ['CASH FLOW', 'In', 'Out'],
+        [`Balance at ${pack.previous.end}`, csvMoney(pack.cashFlow.openingBalance), ''],
+        ...pack.cashFlow.lines.map((flow): CsvValue[] => [
+          flow.label,
+          csvMoney(flow.inMinor),
+          csvMoney(flow.outMinor),
+        ]),
+        ['Total', csvMoney(pack.cashFlow.totalIn), csvMoney(pack.cashFlow.totalOut)],
+        [`Balance at ${pack.year.end}`, csvMoney(pack.cashFlow.closingBalance), ''],
+        gap(),
+
+        ['OWED BY CUSTOMERS', 'Over 90 days', 'Total'],
+        ...pack.receivables.map((row): CsvValue[] => [
+          row.partyName,
+          csvMoney(row.over90),
+          csvMoney(row.total),
+        ]),
+        ['Total owed to the shop', '', csvMoney(bs.receivables)],
+        gap(),
+
+        ['OWED TO SUPPLIERS', 'Over 90 days', 'Total'],
+        ...pack.payables.map((row): CsvValue[] => [
+          row.partyName,
+          csvMoney(row.over90),
+          csvMoney(row.total),
+        ]),
+        ['Total owed by the shop', '', csvMoney(bs.payables)],
+        gap(),
+
         ['TRIAL BALANCE', 'Debit', 'Credit'],
         ...pack.trialBalance.lines.map((row): CsvValue[] => [
           `${row.code} ${row.name}`,
@@ -382,6 +411,7 @@ function buildTable(report: string, request: NextRequest): Table | null {
         ['Owed by customers agrees', pack.integrity.receivablesMatch ? 'yes' : 'NO', ''],
         ['Owed to suppliers agrees', pack.integrity.payablesMatch ? 'yes' : 'NO', ''],
         ["Owner's stake reconciles", pack.equity.reconciles ? 'yes' : 'NO', ''],
+        ['Cash flow reconciles', pack.cashFlow.reconciles ? 'yes' : 'NO', ''],
         ['Year closed to further entries', pack.isLocked ? 'yes' : 'no', ''],
       ];
 

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { requirePageAccess } from '@/lib/auth/current-user';
+import { can } from '@/lib/auth/permissions';
 import { runPreflight } from '@/db/preflight';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,11 @@ const LABELS = { pass: 'OK', warn: 'Check', fail: 'Problem' } as const;
  * `runPreflight` the command runs, rendered.
  */
 export default async function HealthPage() {
-  await requirePageAccess('settings', 'view');
+  const user = await requirePageAccess('settings', 'view');
+  // Taking a backup needs the same permission the download route enforces.
+  // Showing the button to someone the server would refuse is a button that
+  // does nothing.
+  const canBackUp = can(user, 'settings', 'edit');
   const checks = runPreflight();
 
   const failures = checks.filter((check) => check.status === 'fail');
@@ -54,11 +59,17 @@ export default async function HealthPage() {
         </p>
 
         {/* A plain link, not a form: the browser downloads the response. */}
-        <div className="mt-4">
-          <a href="/api/backup" download>
-            <Button>Download a backup</Button>
-          </a>
-        </div>
+        {canBackUp ? (
+          <div className="mt-4">
+            <a href="/api/backup" download>
+              <Button>Download a backup</Button>
+            </a>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-content-subtle">
+            Only the shop owner can take a backup — it contains every customer and every figure.
+          </p>
+        )}
       </Card>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">

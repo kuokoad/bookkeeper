@@ -14,6 +14,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import { assertDatabaseHealthy, configureConnection } from './pragmas';
+import { isDirectRun } from './_cli';
 import { env } from '@/lib/env';
 
 const MIGRATIONS_FOLDER = resolve(process.cwd(), 'src/db/migrations');
@@ -45,12 +46,6 @@ export function runMigrations(databasePath: string = env.DATABASE_PATH): void {
   } finally {
     connection.close();
   }
-}
-
-function isDirectRun(): boolean {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  return import.meta.url.replace(/\\/g, '/').endsWith(entry.replace(/\\/g, '/').split('/').pop() ?? '');
 }
 
 /**
@@ -91,7 +86,7 @@ function hintFor(error: unknown): string | null {
   return null;
 }
 
-if (isDirectRun()) {
+if (isDirectRun(import.meta.url)) {
   try {
     runMigrations();
     console.log(`Migrations applied successfully to ${env.DATABASE_PATH}`);

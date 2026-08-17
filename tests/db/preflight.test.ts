@@ -81,17 +81,32 @@ describe('production preflight', () => {
     expect(find(runPreflight(context.connection.name), 'An owner can sign in').status).toBe('pass');
   });
 
-  it('BLOCKS on accounts using the published demo usernames', async () => {
+  it('BLOCKS on demo accounts when the database really was demo-seeded', async () => {
     await createUser(
       context.db,
       { username: 'owner', displayName: 'Demo Owner', password: 'demo-owner-2026', role: 'OWNER' },
       null,
     );
+    context.connection.prepare('UPDATE business_settings SET has_demo_data = 1 WHERE id = 1').run();
 
     const check = find(runPreflight(context.connection.name), 'No demo accounts');
     expect(check.status).toBe('fail');
     // The reason must be stated, not just the verdict.
     expect(check.detail).toMatch(/README/);
+  });
+
+  it('does NOT block a real shop whose own user happens to be called "owner"', async () => {
+    // The username alone proves nothing. Failing here would be crying wolf,
+    // and a check that cries wolf stops being read.
+    await createUser(
+      context.db,
+      { username: 'owner', displayName: 'Kwame Owusu', password: 'a-real-password-2026', role: 'OWNER' },
+      null,
+    );
+
+    const check = find(runPreflight(context.connection.name), 'No demo accounts');
+    expect(check.status).toBe('warn');
+    expect(check.detail).toMatch(/your own/i);
   });
 
   it('BLOCKS on demo records left in the books', () => {

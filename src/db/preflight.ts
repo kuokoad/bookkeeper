@@ -9,10 +9,11 @@
  * Usage: npm run preflight
  */
 import { existsSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 
 import { configureConnection } from '@/db/pragmas';
+import { isDirectRun } from '@/db/_cli';
 import { env } from '@/lib/env';
 
 export type CheckStatus = 'pass' | 'warn' | 'fail';
@@ -163,17 +164,42 @@ export function runPreflight(databasePath: string = env.DATABASE_PATH): Check[] 
     );
 
     // Demo credentials must not survive into production.
+    //
+    // The username alone does not prove anything: a real shop may perfectly
+    // well have a person whose account is called "owner", and failing that
+    // shop's preflight would be crying wolf — which is how a check stops being
+    // read. What settles it is `has_demo_data`, set by the demo seeder itself.
+    const seededDemo =
+      (
+        connection.prepare('SELECT has_demo_data AS flag FROM business_settings WHERE id = 1').get() as
+          | { flag: number }
+          | undefined
+      )?.flag === 1;
+
     const demoUsers = connection
       .prepare("SELECT COUNT(*) AS count FROM users WHERE username IN ('owner', 'ama')")
       .get() as { count: number };
-    if (demoUsers.count > 0) {
+
+    if (seededDemo && demoUsers.count > 0) {
       add(
         'No demo accounts',
         'fail',
-        `${demoUsers.count} account(s) using published demo usernames. Their passwords are in the README.`,
+        `${demoUsers.count} seeded demo account(s) can still sign in, and their passwords are published in the README.`,
+      );
+    } else if (demoUsers.count > 0) {
+      add(
+        'No demo accounts',
+        'warn',
+        `${demoUsers.count} account(s) are named "owner" or "ama". This database was not demo-seeded, so these look like your own — but those names appear with passwords in the README, so make sure the passwords differ.`,
+      );
+    } else if (seededDemo) {
+      add(
+        'No demo accounts',
+        'warn',
+        'This database was seeded with demo data at some point. The demo sign-ins are gone, but check the records too.',
       );
     } else {
-      add('No demo accounts', 'pass', 'no published demo usernames present');
+      add('No demo accounts', 'pass', 'never demo-seeded, and no published demo usernames');
     }
   } finally {
     connection.close();
@@ -182,10 +208,7 @@ export function runPreflight(databasePath: string = env.DATABASE_PATH): Check[] 
   return checks;
 }
 
-const isDirectRun =
-  process.argv[1] !== undefined && basename(process.argv[1]).startsWith('preflight');
-
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
   const checks = runPreflight();
   const symbol = { pass: '  ok  ', warn: ' warn ', fail: ' FAIL ' } as const;
 

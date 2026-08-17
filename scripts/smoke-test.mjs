@@ -674,6 +674,9 @@ check('has a profit and loss', yeHtml.includes('Profit and Loss'));
 check('has a balance sheet', yeHtml.includes('Balance Sheet'));
 check('has a trial balance', yeHtml.includes('Trial Balance'));
 check("shows the movement in the owner's stake", yeHtml.includes("Movement in the Owner"));
+check('has a cash flow', yeHtml.includes('Cash Flow'));
+check('lists what customers owe', yeHtml.includes('Owed by Customers'));
+check('lists what is owed to suppliers', yeHtml.includes('Owed to Suppliers'));
 check('explains the basis of preparation', yeHtml.includes('Basis of preparation'));
 check('states the checks performed', yeHtml.includes('Checks performed'));
 // React separates adjacent text nodes with `<!-- -->` markers when it renders
@@ -689,7 +692,12 @@ check('is honest that the year is still open', yeHtml.includes('not closed') || 
 const yeCsv = await fetch(`${base}/api/reports/year-end`, { headers: { cookie }, redirect: 'manual' });
 const yeCsvBody = yeCsv.status === 200 ? await yeCsv.text() : '';
 check('year-end CSV downloads', yeCsv.status === 200, `status ${yeCsv.status}`);
-check('CSV carries the statements', yeCsvBody.includes('PROFIT AND LOSS') && yeCsvBody.includes('BALANCE SHEET'));
+check(
+  'CSV carries the statements',
+  ['PROFIT AND LOSS', 'BALANCE SHEET', 'CASH FLOW', 'OWED BY CUSTOMERS', 'TRIAL BALANCE'].every(
+    (section) => yeCsvBody.includes(section),
+  ),
+);
 check('CSV carries the checks', yeCsvBody.includes('CHECKS PERFORMED'));
 // And that they actually passed — a pack that says "NO" is the thing to catch.
 check('CSV reports the books as sound', !/,NO,/.test(yeCsvBody), 'a check reported NO');

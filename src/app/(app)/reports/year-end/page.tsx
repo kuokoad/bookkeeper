@@ -10,8 +10,8 @@ import {
 } from '@/services/reporting/year-end.service';
 import { MONTH_NAMES } from '@/services/settings.service';
 import { moneyAccounting } from '@/lib/format';
-import { formatDate } from '@/lib/format';
-import type { Minor } from '@/domain/money';
+import { formatDate, toBusinessDate } from '@/lib/format';
+import { minor, negate, type Minor } from '@/domain/money';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page';
@@ -206,7 +206,7 @@ export default async function YearEndPackPage({
           {formatDate(pack.year.start)} to {formatDate(pack.year.end)} · all figures in {c}
         </p>
         <p className="mt-1 text-xs text-content-subtle">
-          Prepared {formatDate(new Date().toISOString().slice(0, 10))} from {pack.entryCount}{' '}
+          Prepared {formatDate(toBusinessDate())} from {pack.entryCount}{' '}
           journal entries dated in the year
           {pack.isProvisional ? ' · PROVISIONAL, the year has not finished' : ''}
         </p>
@@ -219,13 +219,13 @@ export default async function YearEndPackPage({
       >
         <Row label="Sales" value={pl.salesRevenue} previous={previousPl.salesRevenue} currency={c} />
         {pl.salesDiscounts !== 0 && (
-          <Row label="Less discounts" value={-pl.salesDiscounts as Minor} previous={-previousPl.salesDiscounts as Minor} currency={c} indent />
+          <Row label="Less discounts" value={negate(pl.salesDiscounts)} previous={negate(previousPl.salesDiscounts)} currency={c} indent />
         )}
         {pl.salesReturns !== 0 && (
-          <Row label="Less returns" value={-pl.salesReturns as Minor} previous={-previousPl.salesReturns as Minor} currency={c} indent />
+          <Row label="Less returns" value={negate(pl.salesReturns)} previous={negate(previousPl.salesReturns)} currency={c} indent />
         )}
         <Row label="Net sales" value={pl.netSales} previous={previousPl.netSales} currency={c} rule />
-        <Row label="Cost of goods sold" value={-pl.costOfGoodsSold as Minor} previous={-previousPl.costOfGoodsSold as Minor} currency={c} />
+        <Row label="Cost of goods sold" value={negate(pl.costOfGoodsSold)} previous={negate(previousPl.costOfGoodsSold)} currency={c} />
         <Row label="Gross profit" value={pl.grossProfit} previous={previousPl.grossProfit} currency={c} bold rule />
 
         {pl.totalOtherIncome !== 0 && (
@@ -238,14 +238,14 @@ export default async function YearEndPackPage({
             <Row
               key={line.accountId}
               label={line.name}
-              value={-line.amount as Minor}
-              previous={-(before?.amount ?? 0) as Minor}
+              value={negate(line.amount)}
+              previous={negate(before?.amount ?? minor(0))}
               currency={c}
               indent
             />
           );
         })}
-        <Row label="Total expenses" value={-pl.totalExpenses as Minor} previous={-previousPl.totalExpenses as Minor} currency={c} rule />
+        <Row label="Total expenses" value={negate(pl.totalExpenses)} previous={negate(previousPl.totalExpenses)} currency={c} rule />
         <Row label="Net profit for the year" value={pl.netProfit} previous={previousPl.netProfit} currency={c} bold rule />
       </Statement>
 
@@ -286,7 +286,7 @@ export default async function YearEndPackPage({
       >
         <Row label={`Balance at ${formatDate(pack.previous.end)}`} value={pack.equity.openingEquity} currency={c} />
         <Row label="Capital introduced" value={pack.equity.capitalIntroduced} currency={c} indent />
-        <Row label="Drawings" value={-pack.equity.drawings as Minor} currency={c} indent />
+        <Row label="Drawings" value={negate(pack.equity.drawings)} currency={c} indent />
         {pack.equity.openingBalancesRecognised !== 0 && (
           <Row
             label="Opening balances brought in"
@@ -298,6 +298,105 @@ export default async function YearEndPackPage({
         <Row label="Profit for the year" value={pack.equity.profitForYear} currency={c} indent />
         <Row label={`Balance at ${formatDate(pack.year.end)}`} value={pack.equity.closingEquity} currency={c} bold rule />
       </Statement>
+
+      <Statement
+        title="Cash Flow"
+        note={`Money in and out over the year ended ${formatDate(pack.year.end)}`}
+        headers={['', 'In', 'Out']}
+      >
+        <tr>
+          <td className="py-1.5 pr-4 text-content-muted">
+            Balance at {formatDate(pack.previous.end)}
+          </td>
+          <td className="tabular py-1.5 text-right text-content">
+            {moneyAccounting(pack.cashFlow.openingBalance, { currencyCode: c })}
+          </td>
+          <td />
+        </tr>
+        {pack.cashFlow.lines.map((flow) => (
+          <tr key={flow.sourceType}>
+            <td className="py-1.5 pl-4 pr-4 text-content-muted">{flow.label}</td>
+            <td className="tabular py-1.5 text-right text-content">
+              {flow.inMinor === 0 ? '' : moneyAccounting(flow.inMinor, { currencyCode: c })}
+            </td>
+            <td className="tabular py-1.5 pl-6 text-right text-content">
+              {flow.outMinor === 0 ? '' : moneyAccounting(flow.outMinor, { currencyCode: c })}
+            </td>
+          </tr>
+        ))}
+        <tr className="border-t border-line-strong font-semibold">
+          <td className="py-1.5 pr-4 text-content">Total</td>
+          <td className="tabular py-1.5 text-right text-content">
+            {moneyAccounting(pack.cashFlow.totalIn, { currencyCode: c })}
+          </td>
+          <td className="tabular py-1.5 pl-6 text-right text-content">
+            {moneyAccounting(pack.cashFlow.totalOut, { currencyCode: c })}
+          </td>
+        </tr>
+        <tr>
+          <td className="py-1.5 pr-4 font-semibold text-content">
+            Balance at {formatDate(pack.year.end)}
+          </td>
+          <td className="tabular py-1.5 text-right font-semibold text-content">
+            {moneyAccounting(pack.cashFlow.closingBalance, { currencyCode: c })}
+          </td>
+          <td />
+        </tr>
+      </Statement>
+
+      {pack.receivables.length > 0 && (
+        <Statement
+          title="Owed by Customers"
+          note={`Outstanding at ${formatDate(pack.year.end)}, by how long it has been owed`}
+          headers={['Customer', 'Over 90 days', 'Total']}
+        >
+          {pack.receivables.map((row) => (
+            <tr key={row.partyId}>
+              <td className="py-1 pr-4 text-content-muted">{row.partyName}</td>
+              <td className="tabular py-1 text-right text-content">
+                {row.over90 === 0 ? '' : moneyAccounting(row.over90, { currencyCode: c })}
+              </td>
+              <td className="tabular py-1 pl-6 text-right text-content">
+                {moneyAccounting(row.total, { currencyCode: c })}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-line-strong font-semibold">
+            <td className="py-1.5 pr-4 text-content">Total owed to the shop</td>
+            <td />
+            <td className="tabular py-1.5 pl-6 text-right text-content">
+              {moneyAccounting(bs.receivables, { currencyCode: c })}
+            </td>
+          </tr>
+        </Statement>
+      )}
+
+      {pack.payables.length > 0 && (
+        <Statement
+          title="Owed to Suppliers"
+          note={`Outstanding at ${formatDate(pack.year.end)}, by how long it has been owed`}
+          headers={['Supplier', 'Over 90 days', 'Total']}
+        >
+          {pack.payables.map((row) => (
+            <tr key={row.partyId}>
+              <td className="py-1 pr-4 text-content-muted">{row.partyName}</td>
+              <td className="tabular py-1 text-right text-content">
+                {row.over90 === 0 ? '' : moneyAccounting(row.over90, { currencyCode: c })}
+              </td>
+              <td className="tabular py-1 pl-6 text-right text-content">
+                {moneyAccounting(row.total, { currencyCode: c })}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-line-strong font-semibold">
+            <td className="py-1.5 pr-4 text-content">Total owed by the shop</td>
+            <td />
+            <td className="tabular py-1.5 pl-6 text-right text-content">
+              {moneyAccounting(bs.payables, { currencyCode: c })}
+            </td>
+          </tr>
+        </Statement>
+      )}
 
       <Statement title="Trial Balance" note={`As at ${formatDate(pack.year.end)}`} headers={['Account', 'Debit', 'Credit']}>
         {pack.trialBalance.lines.map((row) => (
@@ -385,11 +484,16 @@ export default async function YearEndPackPage({
             Owner&apos;s stake {pack.equity.reconciles ? 'reconciles' : 'DOES NOT RECONCILE'} from
             opening to closing
           </li>
+          <li>
+            Cash flow {pack.cashFlow.reconciles ? 'reconciles' : 'DOES NOT RECONCILE'} — opening plus
+            movement equals closing
+          </li>
         </ul>
       </section>
 
       <p className="mt-6 text-xs text-content-subtle">
-        Financial year starting in {MONTH_NAMES[pack.year.start.slice(5, 7) === '01' ? 0 : Number(pack.year.start.slice(5, 7)) - 1]}. Change it under Settings.
+        Financial year starting in {MONTH_NAMES[Number(pack.year.start.slice(5, 7)) - 1]}. Change it
+        under Settings.
       </p>
     </div>
   );

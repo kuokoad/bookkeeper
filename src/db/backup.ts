@@ -16,10 +16,11 @@
  * Usage: npm run backup [-- --keep=30] [--dir=path]
  */
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 
 import { configureConnection, assertDatabaseHealthy } from '@/db/pragmas';
+import { isDirectRun } from '@/db/_cli';
 import { env } from '@/lib/env';
 
 const FILE_PREFIX = 'bookkeeper-';
@@ -174,10 +175,7 @@ export async function createBackup(
   return { path: target, bytes: statSync(target).size, entries, removed };
 }
 
-const isDirectRun =
-  process.argv[1] !== undefined && basename(process.argv[1]).startsWith('backup');
-
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
   const keepArg = process.argv.find((arg) => arg.startsWith('--keep='));
   const dirArg = process.argv.find((arg) => arg.startsWith('--dir='));
 

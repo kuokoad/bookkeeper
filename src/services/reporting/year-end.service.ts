@@ -10,6 +10,7 @@ import {
   type FinancialYear,
 } from '@/domain/financial-year';
 import { getSettings } from '@/services/settings.service';
+import { toBusinessDate } from '@/lib/format';
 import {
   getBalanceSheet,
   getCashFlow,
@@ -109,7 +110,7 @@ export function availableFinancialYears(db: Db): FinancialYear[] {
 
   if (!span?.earliest || !span.latest) {
     // Nothing posted yet. Offer the year we are in, so the page still works.
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toBusinessDate();
     return [financialYearsBetween(today, today, startMonth)[0] as FinancialYear];
   }
 
@@ -186,7 +187,10 @@ export function getYearEndPack(db: Db, startYear: number): YearEndPack {
     .from(businessSettings)
     .get()?.lockedBefore ?? null;
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The shop's local day, not UTC. `toISOString()` would give the UTC date,
+  // which east of UTC is tomorrow for part of every evening — and would mark a
+  // finished year as still in progress, or the reverse.
+  const today = toBusinessDate();
 
   return {
     year,
