@@ -763,6 +763,38 @@ if (staffTokenForLock) {
 const anonBackup = await fetch(`${base}/api/backup`, { redirect: 'manual' });
 check('a backup requires signing in', anonBackup.status === 401, `status ${anonBackup.status}`);
 
+const LOGO_HEADER = String.fromCharCode(10) + 'Shop logo:';
+const RASTER_TYPES = new RegExp('^image/(png|jpeg|webp)$');
+
+console.log(LOGO_HEADER);
+const logoPage = await fetch(`${base}/settings`, { headers: { cookie }, redirect: 'manual' });
+const logoPageHtml = logoPage.status === 200 ? await logoPage.text() : '';
+check('settings offers a logo upload', logoPageHtml.includes('name="logo"'));
+check(
+  'accepts only raster formats in the picker',
+  logoPageHtml.includes('image/png,image/jpeg,image/webp'),
+);
+check('says SVG is not accepted, and why', logoPageHtml.includes('SVG files are not accepted'));
+check('says it is kept in the database', logoPageHtml.includes('included in every backup'));
+
+const logoRes = await fetch(`${base}/api/logo`, { redirect: 'manual' });
+// Either a real image or a plain 404 - never a page, never a guessable type.
+check(
+  'logo route answers definitively',
+  logoRes.status === 200 || logoRes.status === 404,
+  `status ${logoRes.status}`,
+);
+check(
+  'and forbids content-type sniffing',
+  logoRes.headers.get('x-content-type-options') === 'nosniff',
+);
+if (logoRes.status === 200) {
+  const type = logoRes.headers.get('content-type') ?? '';
+  check('serves a raster image type', RASTER_TYPES.test(type), type);
+  check('never serves SVG', !type.includes('svg'));
+}
+
+
 console.log('\nWhen things are missing or wrong:');
 const unknownPath = await fetch(`${base}/this-page-does-not-exist`, {
   headers: { cookie },

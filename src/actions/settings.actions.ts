@@ -5,7 +5,8 @@ import { z } from 'zod';
 
 import { db } from '@/db/client';
 import { requirePermission } from '@/lib/auth/current-user';
-import { updateSettings } from '@/services/settings.service';
+import { clearLogo, setLogo, updateSettings } from '@/services/settings.service';
+import { MAX_IMAGE_BYTES, inspectImage } from '@/lib/image';
 import { parsePercentToBasisPoints } from '@/domain/rate';
 import { parseQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
@@ -148,4 +149,57 @@ export async function updateSettingsAction(
   // The shop name, currency and tax appear on nearly every screen.
   revalidatePath('/', 'layout');
   return { success: 'Settings saved.' };
+}
+
+/**
+ * Uploading the shop's logo.
+ *
+ * The file is confirmed to be an image from its own bytes before anything is
+ * stored — the browser's declared type and the filename are never consulted,
+ * and the filename never touches a path. See `src/lib/image.ts` for why SVG is
+ * refused.
+ */
+export async function uploadLogoAction(
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await requirePermission('settings', 'edit');
+
+  const file = formData.get('logo');
+  if (!(file instanceof File) || file.size === 0) {
+    return { fieldErrors: { logo: 'Choose an image to upload.' } };
+  }
+
+  // Checked before reading the whole thing into memory, so an oversized upload
+  // is refused rather than buffered.
+  if (file.size > MAX_IMAGE_BYTES) {
+    return {
+      fieldErrors: {
+        logo: `That image is ${(file.size / 1_000_000).toFixed(1)} MB. Please use one under ${MAX_IMAGE_BYTES / 1_000_000} MB.`,
+      },
+    };
+  }
+
+  const data = new Uint8Array(await file.arrayBuffer());
+
+  try {
+    const image = inspectImage(data);
+    setLogo(
+      db,
+      { data, mime: image.mime, width: image.width, height: image.height },
+      { id: actor.id, username: actor.username },
+    );
+  } catch (error) {
+    if (isDomainError(error)) return { fieldErrors: { logo: error.userMessage } };
+    throw error;
+  }
+
+  revalidatePath('/', 'layout');
+  return { success: 'Logo updated. It will appear on your receipts.' };
+}
+
+export async function removeLogoAction(): Promise<void> {
+  const actor = await requirePermission('settings', 'edit');
+  clearLogo(db, { id: actor.id, username: actor.username });
+  revalidatePath('/', 'layout');
 }

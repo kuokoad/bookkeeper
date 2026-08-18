@@ -57,6 +57,17 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
 
       <article className="rounded-xl border border-line bg-surface-raised p-6 text-sm">
         <header className="mb-4 text-center">
+          {settings?.logoData && (
+            // A plain <img>: the source is a route reading a blob from the
+            // database, so there is nothing for the image optimiser to do. The
+            // upload time busts the cache when the logo changes.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/logo?v=${settings.logoUpdatedAt?.getTime() ?? 0}`}
+              alt=""
+              className="mx-auto mb-2 max-h-16 max-w-40 object-contain"
+            />
+          )}
           <h1 className="text-lg font-semibold text-content">
             {settings?.businessName ?? 'Shop Bookkeeper'}
           </h1>

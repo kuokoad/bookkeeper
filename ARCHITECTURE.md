@@ -580,6 +580,37 @@ Reopening reverses the entry rather than deleting it, moves the lock back to the
 previous closed year, and records both in `year_end_closings` — which keeps the
 close and its reversal linked rather than floating free.
 
+---
+
+## 15. The logo, and the first untrusted binary
+
+The schema carried a `logo_path` column, read by nothing, whose name presumed a
+file on disk. Two facts made that the wrong answer, both learned elsewhere in
+this project: `createBackup` copies `env.DATABASE_PATH` and nothing else, so a
+file beside the database would be missing from every backup and a restore would
+be silently incomplete; and on a managed host the application folder is
+rewritten on each deploy. The image is stored in the database instead, and the
+column was replaced rather than inherited.
+
+**Every other input so far has been text through Zod.** A file upload is the
+first untrusted binary, and `src/lib/image.ts` is the boundary:
+
+- The format is read from **magic bytes**. The browser's `Content-Type` and the
+  filename are chosen by whoever uploads, so neither is consulted, and the
+  filename never reaches a path.
+- **SVG is refused by name in the error message.** It is a document that can
+  execute, and one served from the app's own origin would run with the viewer's
+  session on the machine of whoever opens a receipt.
+- Byte length **and pixel dimensions** are capped: a small compressed file can
+  decompress into something enormous.
+- The stored mime type is the sniffed one, and it is what the serving route
+  sends back with `nosniff` — otherwise the uploader would choose the
+  `Content-Type` their file is served with.
+
+The dimension parsers for PNG, JPEG and WebP are hand-written and tested against
+real encoder output, because a parser tested only against bytes we wrote
+ourselves proves nothing about a file a shop owner uploads.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.

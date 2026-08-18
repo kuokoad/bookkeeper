@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  clearLogo,
+  getLogo,
+  getLogoSummary,
+  setLogo,
   getSettings,
   hasPostedTransactions,
   updateSettings,
@@ -229,5 +233,88 @@ describe('the audit trail', () => {
     ).toThrow();
 
     expect(listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' })).toHaveLength(0);
+  });
+});
+
+describe('the shop logo', () => {
+  // A real 1x1 PNG. The service stores whatever it is given; the bytes are
+  // confirmed to be an image before it gets here (see tests/lib/image.test.ts).
+  const PNG = new Uint8Array(
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  );
+
+  it('stores the image and reports what it is', () => {
+    setLogo(context.db, { data: PNG, mime: 'image/png', width: 1, height: 1 }, ACTOR);
+
+    const summary = getLogoSummary(context.db);
+    expect(summary.hasLogo).toBe(true);
+    expect(summary.mime).toBe('image/png');
+    expect(summary.bytes).toBe(PNG.length);
+    expect(summary.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it('gives back exactly the bytes it was given', () => {
+    setLogo(context.db, { data: PNG, mime: 'image/png', width: 1, height: 1 }, ACTOR);
+
+    const logo = getLogo(context.db);
+    // A logo that came back altered would print as a broken image on receipts.
+    expect(logo?.mime).toBe('image/png');
+    expect(new Uint8Array(logo!.data)).toEqual(PNG);
+  });
+
+  it('lives in the database, so a backup carries it', () => {
+    setLogo(context.db, { data: PNG, mime: 'image/png', width: 1, height: 1 }, ACTOR);
+
+    // Read through a separate connection to the same file: proof it is in the
+    // database rather than held in memory or written beside it.
+    const row = context.connection
+      .prepare('SELECT logo_data, logo_mime FROM business_settings WHERE id = 1')
+      .get() as { logo_data: Buffer; logo_mime: string };
+
+    expect(row.logo_mime).toBe('image/png');
+    expect(new Uint8Array(row.logo_data)).toEqual(PNG);
+  });
+
+  it('reports no logo before one is set', () => {
+    expect(getLogoSummary(context.db).hasLogo).toBe(false);
+    expect(getLogo(context.db)).toBeNull();
+  });
+
+  it('removes it, leaving nothing behind', () => {
+    setLogo(context.db, { data: PNG, mime: 'image/png', width: 1, height: 1 }, ACTOR);
+    clearLogo(context.db, ACTOR);
+
+    expect(getLogo(context.db)).toBeNull();
+    const summary = getLogoSummary(context.db);
+    expect(summary.hasLogo).toBe(false);
+    expect(summary.mime).toBeNull();
+    expect(summary.bytes).toBe(0);
+  });
+
+  it('records both setting and removing in the audit log', () => {
+    setLogo(context.db, { data: PNG, mime: 'image/png', width: 1, height: 1 }, ACTOR);
+    clearLogo(context.db, ACTOR);
+
+    const summaries = listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' }).map((e) => e.summary);
+    expect(summaries.some((s) => /Logo removed/.test(s))).toBe(true);
+    expect(summaries.some((s) => /Logo updated .*image\/png/.test(s))).toBe(true);
+  });
+
+  it('writes nothing when removing a logo that was never there', () => {
+    clearLogo(context.db, ACTOR);
+    expect(listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' })).toHaveLength(0);
+  });
+
+  it('replacing one keeps only the newest', () => {
+    const other = new Uint8Array([...PNG, 0, 0, 0]);
+    setLogo(context.db, { data: PNG, mime: 'image/png', width: 1, height: 1 }, ACTOR);
+    setLogo(context.db, { data: other, mime: 'image/webp', width: 2, height: 2 }, ACTOR);
+
+    const summary = getLogoSummary(context.db);
+    expect(summary.mime).toBe('image/webp');
+    expect(summary.bytes).toBe(other.length);
   });
 });

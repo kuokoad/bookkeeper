@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { blob, check, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { boolean, businessDate, createdAt, timestampMs, updatedAt } from './_shared';
 import { oneOf } from './_check';
 
@@ -16,7 +16,25 @@ export const businessSettings = sqliteTable(
     address: text('address'),
     phone: text('phone'),
     email: text('email'),
-    logoPath: text('logo_path'),
+    /**
+     * The shop's logo, stored IN the database rather than as a path to a file.
+     *
+     * Two reasons, both learned the hard way elsewhere in this project. A file
+     * on disk is not copied by `npm run backup`, which copies the database and
+     * nothing else — a restore would bring back every sale and every balance
+     * but leave a broken image on every receipt, and a backup that is silently
+     * incomplete is worse than one that fails loudly. And on a managed host the
+     * application folder is rewritten on every deploy, so a file beside the app
+     * would vanish without a word.
+     *
+     * A logo is tens of kilobytes against a database measured in megabytes.
+     */
+    logoData: blob('logo_data', { mode: 'buffer' }),
+    /** Confirmed from the file's own bytes, never from what the browser said. */
+    logoMime: text('logo_mime'),
+    logoWidth: integer('logo_width'),
+    logoHeight: integer('logo_height'),
+    logoUpdatedAt: timestampMs('logo_updated_at'),
 
     // Currency is configurable — GHS is the default, not an assumption.
     currencyCode: text('currency_code').notNull().default('GHS'),

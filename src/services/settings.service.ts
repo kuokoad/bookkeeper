@@ -77,6 +77,104 @@ function describeChange(label: string, before: unknown, after: unknown): string 
   return `${label}: ${show(before)} → ${show(after)}`;
 }
 
+export interface LogoSummary {
+  hasLogo: boolean;
+  mime: string | null;
+  width: number | null;
+  height: number | null;
+  bytes: number;
+  updatedAt: Date | null;
+}
+
+/** What the settings screen needs to describe the logo, without the bytes. */
+export function getLogoSummary(db: Db): LogoSummary {
+  const settings = getSettings(db);
+  return {
+    hasLogo: settings.logoData !== null,
+    mime: settings.logoMime,
+    width: settings.logoWidth,
+    height: settings.logoHeight,
+    bytes: settings.logoData?.length ?? 0,
+    updatedAt: settings.logoUpdatedAt,
+  };
+}
+
+/** The image itself, for the route that serves it. */
+export function getLogo(db: Db): { data: Buffer; mime: string; updatedAt: Date | null } | null {
+  const settings = getSettings(db);
+  if (!settings.logoData || !settings.logoMime) return null;
+  return { data: settings.logoData, mime: settings.logoMime, updatedAt: settings.logoUpdatedAt };
+}
+
+/**
+ * Stores a logo that has ALREADY been confirmed to be an image.
+ *
+ * The mime type recorded here is the one read from the file's own bytes by
+ * `inspectImage`, never the one the browser announced — it is what the serving
+ * route will send back, so trusting the upload would let someone choose the
+ * Content-Type their file is served with.
+ */
+export function setLogo(
+  db: Db,
+  image: { data: Uint8Array; mime: string; width: number; height: number },
+  actor: Actor,
+): void {
+  db.transaction((tx) => {
+    const now = new Date();
+    tx.update(businessSettings)
+      .set({
+        logoData: Buffer.from(image.data),
+        logoMime: image.mime,
+        logoWidth: image.width,
+        logoHeight: image.height,
+        logoUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(businessSettings.id, 1))
+      .run();
+
+    writeAudit(tx, {
+      action: 'SETTINGS_CHANGE',
+      entityType: 'business_settings',
+      entityId: 1,
+      userId: actor.id,
+      username: actor.username,
+      summary: `Logo updated (${image.mime}, ${image.width}x${image.height}, ${image.data.length} bytes)`,
+      at: now,
+    });
+  });
+}
+
+export function clearLogo(db: Db, actor: Actor): void {
+  db.transaction((tx) => {
+    const existing = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
+    if (!existing?.logoData) return;
+
+    const now = new Date();
+    tx.update(businessSettings)
+      .set({
+        logoData: null,
+        logoMime: null,
+        logoWidth: null,
+        logoHeight: null,
+        logoUpdatedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(businessSettings.id, 1))
+      .run();
+
+    writeAudit(tx, {
+      action: 'SETTINGS_CHANGE',
+      entityType: 'business_settings',
+      entityId: 1,
+      userId: actor.id,
+      username: actor.username,
+      summary: 'Logo removed',
+      at: now,
+    });
+  });
+}
+
 export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void {
   db.transaction((tx) => {
     const before = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();

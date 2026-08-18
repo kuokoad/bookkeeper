@@ -4,13 +4,14 @@ import Link from 'next/link';
 import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
-import { getSettings, hasPostedTransactions } from '@/services/settings.service';
+import { getLogoSummary, getSettings, hasPostedTransactions } from '@/services/settings.service';
 import { formatBasisPoints } from '@/domain/rate';
 import { toQtyInputString, type Qty } from '@/domain/quantity';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, PageHeader } from '@/components/ui/page';
 import { SettingsForm, type SettingsFormValues } from './settings-form';
+import { LogoForm } from './logo-form';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,7 @@ export default async function SettingsPage() {
   const user = await requirePageAccess('settings', 'view');
   const settings = getSettings(db);
   const currencyLocked = hasPostedTransactions(db);
+  const logo = getLogoSummary(db);
 
   const values: SettingsFormValues = {
     businessName: settings.businessName,
@@ -60,7 +62,19 @@ export default async function SettingsPage() {
       />
 
       {can(user, 'settings', 'edit') ? (
-        <SettingsForm values={values} currencyLocked={currencyLocked} />
+        <div className="space-y-6">
+          <LogoForm
+            logo={{
+              hasLogo: logo.hasLogo,
+              width: logo.width,
+              height: logo.height,
+              bytes: logo.bytes,
+              // The upload time doubles as a cache key: a new logo is a new URL.
+              version: logo.updatedAt?.getTime() ?? 0,
+            }}
+          />
+          <SettingsForm values={values} currencyLocked={currencyLocked} />
+        </div>
       ) : (
         <Card>
           <p className="text-sm text-content-muted">

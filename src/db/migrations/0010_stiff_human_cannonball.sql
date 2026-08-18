@@ -1,0 +1,1 @@
+ALTER TABLE `business_settings` DROP COLUMN `logo_path`;

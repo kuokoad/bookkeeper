@@ -6,7 +6,7 @@ on the shop's own computer, with no internet required to record a sale.
 Currency defaults to **GHS** and is configurable. Mobile money is first-class, and
 no mobile network is hard-coded.
 
-> **Status: Stages 1–11 complete.**
+> **Status: Stages 1–14 complete.**
 > Foundation (database, double-entry ledger, auth, permissions, audit),
 > Products & Inventory (catalogue, stock ledger, weighted-average costing, stock
 > adjustments, low-stock alerts), Sales (POS, split payments, customer credit,
@@ -20,8 +20,9 @@ no mobile network is hard-coded.
 > Permissions (staff accounts, per-area rights, till PINs, insert-only audit
 > log) — with returns in both directions and void-with-reversal throughout —
 > hardening (error and empty states, verified backups, a production preflight,
-> and a measured performance pass), and Settings (shop details, currency, tax
-> and stock policy).
+> and a measured performance pass), Settings (shop details, currency, tax
+> and stock policy), the year-end pack for an accountant, year-end close, and
+> a shop logo on receipts.
 > Nothing in the menu is a placeholder — every item leads to a working screen.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, database schema and
@@ -159,6 +160,23 @@ recomputed, so the pack cannot disagree with the on-screen reports.
 The financial year is whatever you set under Settings; a year that has not
 finished yet is clearly marked provisional rather than presented as final
 accounts.
+
+## Your logo
+
+Under **Settings**, upload a PNG, JPEG or WebP up to 1 MB. It prints at the top
+of every receipt.
+
+The image is stored **inside the database**, not as a file on disk. That is
+deliberate: `npm run backup` copies the database and nothing else, so a logo
+sitting beside it would not be in your backups — a restore would bring back
+every sale and every balance and leave a broken image on each receipt. In the
+database it is backed up automatically and survives a reinstall.
+
+**SVG files are refused.** An SVG is not really an image but a document that can
+carry script, and one served from your own address would run in the browser of
+whoever opens a receipt. The format is checked from the file's own bytes, not
+from its name or what the browser claims, so renaming a file does not get past
+it.
 
 ## Settings
 
