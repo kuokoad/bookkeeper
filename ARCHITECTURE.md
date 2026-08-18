@@ -706,6 +706,42 @@ number rather than branded `Minor` — the only reporting function that did. The
 brand caught it at the call site, which is exactly its job; the fix went into
 the service, not a cast at the boundary.
 
+---
+
+## 19. The shell: dark chrome, search, notifications
+
+The sidebar is dark in **both** themes. It is chrome rather than content, and
+holding it constant gives the eye a fixed frame while the working area follows
+the shop's light or dark preference. Its colours are our own tokens
+(`--sidebar-*`), not the reference's.
+
+Two of the reference's chrome features turned out to be **real functionality we
+lacked**, not styling:
+
+**Search** applies permission *per record type, before querying*. Filtering
+results afterwards would still have run the query, and a count or a timing
+difference can disclose that records exist. A type the person cannot view is
+never queried at all. Wildcards in the term are escaped, so searching `%` means
+a literal percent rather than "every row in every table".
+
+The search page requires only a **session**, not a module. Guarding it on
+`reports` locked till staff out of a box sitting in their own top bar — caught
+by testing it as a staff member against the running server, not by reading it.
+
+**Notifications** are conditions that hold right now, each linking to the screen
+that clears it: books out of balance, stock out or low, customers overdue, a
+finished year not closed, no backup taken in a week. Nothing is a tip or a
+nudge — a bell that cries wolf is ignored on the one occasion it matters.
+Backups are read from the audit log, since nothing else records them.
+
+They are permission-filtered too. Owner housekeeping is invisible to till staff,
+who cannot act on it. The single exception is an unbalanced ledger, shown to
+everyone: if the books are broken, no screen can be trusted whatever the
+person's role.
+
+The notification panel is a `<details>` element — it opens and closes with **no
+JavaScript**, for the same reason the charts are server-rendered SVG.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.

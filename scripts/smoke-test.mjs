@@ -165,6 +165,36 @@ check(
 );
 
 
+const SHELL_HEADER = String.fromCharCode(10) + 'Shell, search and notifications:';
+
+console.log(SHELL_HEADER);
+check('the sidebar is dark chrome', authedHtml.includes('bg-sidebar'));
+check('a primary action is pinned in it', authedHtml.includes('New sale'));
+check('the top bar carries search', authedHtml.includes('action="/search"'));
+check('and a notifications panel', authedHtml.includes('Needs attention'));
+// The sidebar is desktop-only, so without this a phone user cannot sign out.
+check('sign-out is reachable on a phone', authedHtml.includes('Sign out'));
+
+const searchRes = await fetch(`${base}/search?q=milo`, { headers: { cookie }, redirect: 'manual' });
+const searchHtml = searchRes.status === 200 ? await searchRes.text() : '';
+check('GET /search', searchRes.status === 200, `status ${searchRes.status}`);
+check('finds a product', searchHtml.includes('Milo Tin 400g'));
+check('a one-letter search is refused', (await (await fetch(`${base}/search?q=a`, { headers: { cookie } })).text()).includes('at least two characters'));
+
+const staffSearchToken = mintSession('ama', 'demo-staff-2026');
+if (staffSearchToken) {
+  const staffCookie2 = `bk_session=${staffSearchToken}`;
+  // Staff may look up a product, so the box in their top bar must work.
+  const staffSearch = await fetch(`${base}/search?q=milo`, { headers: { cookie: staffCookie2 }, redirect: 'manual' });
+  check('staff CAN search', staffSearch.status === 200, `status ${staffSearch.status}`);
+
+  // ...but a supplier they may not see must not exist for them.
+  const staffBlocked = await fetch(`${base}/search?q=madina`, { headers: { cookie: staffCookie2 } });
+  const blockedHtml = await staffBlocked.text();
+  check('and never sees records outside their access', !blockedHtml.includes('Madina Market Wholesale'));
+}
+
+
 console.log('\nProducts & inventory:');
 const productsRes = await fetch(`${base}/products`, { headers: { cookie }, redirect: 'manual' });
 const productsHtml = productsRes.status === 200 ? await productsRes.text() : '';

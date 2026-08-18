@@ -8,6 +8,8 @@ import { getCurrentUser } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { NAV_SECTIONS } from '@/components/shared/navigation';
 import { MobileNav, Sidebar } from '@/components/shared/app-nav';
+import { TopBar } from '@/components/shared/top-bar';
+import { getNotices } from '@/services/notifications.service';
 import { PageTransition } from '@/components/shared/page-transition';
 import { logoutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
@@ -35,6 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (mustChange === true) redirect('/account/password?required=1');
 
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
+  const notices = getNotices(db, user);
 
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
@@ -45,24 +48,34 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
-      <aside className="hidden w-64 shrink-0 border-r border-line bg-surface-raised lg:flex lg:flex-col">
-        <div className="border-b border-line px-6 py-5">
-          <p className="truncate font-semibold text-content">
+      <aside className="hidden w-64 shrink-0 border-r border-sidebar-line bg-sidebar lg:flex lg:flex-col">
+        <div className="border-b border-sidebar-line px-4 py-4">
+          <p className="truncate px-2 font-semibold text-sidebar-text">
             {settings?.businessName ?? 'Shop Bookkeeper'}
           </p>
-          <p className="mt-0.5 text-xs text-content-subtle">Bookkeeping &amp; stock</p>
+          <p className="mt-0.5 px-2 text-xs text-sidebar-subtle">Bookkeeping &amp; stock</p>
+
+          {/* The thing done most times a day, always one tap away. */}
+          {can(user, 'sales', 'create') && (
+            <Link
+              href="/sales/new"
+              className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              New sale
+            </Link>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
           <Sidebar sections={sections} />
         </div>
 
-        <div className="border-t border-line px-4 py-4">
-          <p className="truncate text-sm font-medium text-content">{user.displayName}</p>
-          <p className="mb-2 text-xs capitalize text-content-subtle">{user.role.toLowerCase()}</p>
+        <div className="border-t border-sidebar-line px-4 py-4">
+          <p className="truncate text-sm font-medium text-sidebar-text">{user.displayName}</p>
+          <p className="mb-2 text-xs capitalize text-sidebar-subtle">{user.role.toLowerCase()}</p>
           <Link
             href="/account/password"
-            className="mb-3 block text-xs font-medium text-accent hover:underline"
+            className="mb-3 block text-xs font-medium text-sidebar-muted hover:text-sidebar-text hover:underline"
           >
             Change my password
           </Link>
@@ -75,16 +88,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-line bg-surface-raised px-4 py-3 lg:hidden">
-          <p className="truncate font-semibold text-content">
-            {settings?.businessName ?? 'Shop Bookkeeper'}
-          </p>
-          <form action={logoutAction}>
-            <Button type="submit" variant="ghost" size="sm">
-              Sign out
-            </Button>
-          </form>
-        </header>
+        <TopBar shopName={settings?.businessName ?? 'Shop Bookkeeper'} notices={notices} />
 
         <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">
           <PageTransition>{children}</PageTransition>

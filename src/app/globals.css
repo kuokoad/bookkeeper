@@ -40,6 +40,16 @@
   --accent-text: oklch(0.99 0 0);
   --accent-soft: oklch(0.95 0.03 165);
 
+  /* The sidebar is dark in BOTH themes, deliberately.
+     It is chrome, not content: keeping it constant gives the eye a fixed frame
+     while the working area follows the shop's light or dark preference. */
+  --sidebar: oklch(0.24 0.012 250);
+  --sidebar-raised: oklch(0.29 0.014 250);
+  --sidebar-border: oklch(0.35 0.014 250);
+  --sidebar-text: oklch(0.97 0.003 250);
+  --sidebar-muted: oklch(0.76 0.008 250);
+  --sidebar-subtle: oklch(0.62 0.01 250);
+
   --danger: oklch(0.55 0.19 25);
   --danger-soft: oklch(0.96 0.03 25);
   --warning: oklch(0.68 0.15 75);
@@ -76,6 +86,12 @@
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
   --color-surface-sunken: var(--surface-sunken);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-raised: var(--sidebar-raised);
+  --color-sidebar-line: var(--sidebar-border);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-subtle: var(--sidebar-subtle);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-content: var(--text);

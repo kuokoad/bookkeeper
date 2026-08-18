@@ -17,7 +17,7 @@ function ItemLabel({ item }: { item: NavItem }) {
       <Icon name={item.icon} className="h-5 w-5 shrink-0" />
       <span className="truncate">{item.label}</span>
       {item.comingSoon && (
-        <span className="ml-auto rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-subtle">
+        <span className="ml-auto rounded bg-sidebar-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-subtle">
           Soon
         </span>
       )}
@@ -39,7 +39,7 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
     <nav aria-label="Main" className="space-y-6 px-3 py-4">
       {sections.map((section) => (
         <div key={section.heading}>
-          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-content-subtle">
+          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-subtle">
             {section.heading}
           </p>
           <ul className="space-y-0.5">
@@ -51,7 +51,7 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
                     <span
                       aria-disabled="true"
                       title="Coming in a later stage"
-                      className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm text-content-subtle opacity-70"
+                      className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-subtle opacity-70"
                     >
                       <ItemLabel item={item} />
                     </span>
@@ -62,8 +62,8 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
                       className={cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
                         active
-                          ? 'bg-accent-soft font-medium text-content'
-                          : 'text-content-muted hover:bg-surface-sunken hover:text-content',
+                          ? 'bg-sidebar-raised font-medium text-sidebar-text'
+                          : 'text-sidebar-muted hover:bg-sidebar-raised hover:text-sidebar-text',
                       )}
                     >
                       <ItemLabel item={item} />
