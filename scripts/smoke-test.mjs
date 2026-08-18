@@ -791,6 +791,8 @@ const setRes = await fetch(`${base}/settings`, { headers: { cookie }, redirect: 
 const setHtml = setRes.status === 200 ? await setRes.text() : '';
 check('GET /settings', setRes.status === 200, `status ${setRes.status}`);
 check('shows the shop name', appearsIn(setHtml, shopName), `looking for "${shopName}"`);
+// The line under the shop name in the menu is a setting now, not a constant.
+check('offers the sidebar tagline', setHtml.includes('name="tagline"'));
 check('offers currency', setHtml.includes('Currency code'));
 check('offers tax', setHtml.includes('Charge tax on sales'));
 check('offers stock policy', setHtml.includes('Allow selling stock you do not have'));

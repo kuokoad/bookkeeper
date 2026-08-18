@@ -24,6 +24,7 @@ export default async function SettingsPage() {
 
   const values: SettingsFormValues = {
     businessName: settings.businessName,
+    tagline: settings.tagline ?? '',
     address: settings.address ?? '',
     phone: settings.phone ?? '',
     email: settings.email ?? '',

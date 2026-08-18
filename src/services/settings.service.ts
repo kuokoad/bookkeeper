@@ -50,6 +50,7 @@ export function hasPostedTransactions(db: Db | Tx): boolean {
 
 export interface SettingsInput {
   businessName: string;
+  tagline: string | null;
   address: string | null;
   phone: string | null;
   email: string | null;
@@ -205,6 +206,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
     tx.update(businessSettings)
       .set({
         businessName: input.businessName,
+        tagline: input.tagline,
         address: input.address,
         phone: input.phone,
         email: input.email,
@@ -230,6 +232,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
     // recorded, and an auditor should be able to see when that happened.
     const changes = [
       describeChange('Shop name', before.businessName, input.businessName),
+      describeChange('Tagline', before.tagline, input.tagline),
       describeChange('Address', before.address, input.address),
       describeChange('Phone', before.phone, input.phone),
       describeChange('Email', before.email, input.email),

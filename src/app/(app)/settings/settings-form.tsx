@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/page';
 
 export interface SettingsFormValues {
   businessName: string;
+  tagline: string;
   address: string;
   phone: string;
   email: string;
@@ -132,6 +133,23 @@ export function SettingsForm({
                 defaultValue={values.businessName}
                 required
                 invalid={Boolean(state.fieldErrors?.['businessName'])}
+              />
+            </Field>
+          </div>
+
+          <div className="sm:col-span-2">
+            <Field
+              label="Tagline"
+              htmlFor="tagline"
+              hint="The small line under your shop name in the menu. Leave it empty to show nothing."
+              error={state.fieldErrors?.['tagline']}
+            >
+              <TextInput
+                id="tagline"
+                name="tagline"
+                defaultValue={values.tagline}
+                maxLength={60}
+                placeholder="Bookkeeping & stock"
               />
             </Field>
           </div>

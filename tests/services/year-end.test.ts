@@ -64,6 +64,7 @@ function setStartMonth(month: number): void {
     context.db,
     {
       businessName: settings.businessName,
+    tagline: settings.tagline,
       address: settings.address,
       phone: settings.phone,
       email: settings.email,

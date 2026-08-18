@@ -78,6 +78,13 @@
       "when": 1787037803716,
       "tag": "0010_stiff_human_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787075694162,
+      "tag": "0011_small_star_brand",
+      "breakpoints": true
     }
   ]
 }

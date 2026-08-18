@@ -13,6 +13,15 @@ export const businessSettings = sqliteTable(
     id: integer('id').primaryKey(),
 
     businessName: text('business_name').notNull().default('My Shop'),
+
+    /**
+     * The line under the shop name in the menu.
+     *
+     * Defaulted to the wording it replaced, so an existing shop sees no change
+     * until it decides otherwise. Cleared to NULL, the line disappears
+     * altogether rather than falling back to something the owner deleted.
+     */
+    tagline: text('tagline').default('Bookkeeping & stock'),
     address: text('address'),
     phone: text('phone'),
     email: text('email'),

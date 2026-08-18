@@ -40,6 +40,7 @@ function currentAsInput(): SettingsInput {
   const settings = getSettings(context.db);
   return {
     businessName: settings.businessName,
+    tagline: settings.tagline,
     address: settings.address,
     phone: settings.phone,
     email: settings.email,
@@ -84,6 +85,23 @@ describe('the shop details', () => {
     const settings = getSettings(context.db);
     expect(settings.businessName).toBe('Adom Provisions');
     expect(settings.phone).toBe('024 000 0000');
+  });
+
+  it('updates the tagline shown under the shop name', () => {
+    updateSettings(context.db, { ...currentAsInput(), tagline: 'Provisions since 2016' }, ACTOR);
+    expect(getSettings(context.db).tagline).toBe('Provisions since 2016');
+  });
+
+  it('lets the tagline be removed entirely', () => {
+    // Cleared means gone, not reverted to the wording it shipped with.
+    updateSettings(context.db, { ...currentAsInput(), tagline: null }, ACTOR);
+    expect(getSettings(context.db).tagline).toBeNull();
+  });
+
+  it('records a tagline change in the audit log', () => {
+    updateSettings(context.db, { ...currentAsInput(), tagline: 'Provisions since 2016' }, ACTOR);
+    const summary = listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' })[0]?.summary ?? '';
+    expect(summary).toMatch(/Tagline: .* → Provisions since 2016/);
   });
 
   it('stores a cleared field as nothing, not as an empty string', () => {

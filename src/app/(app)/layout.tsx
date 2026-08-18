@@ -53,7 +53,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <p className="truncate px-2 font-semibold text-sidebar-text">
             {settings?.businessName ?? 'Shop Bookkeeper'}
           </p>
-          <p className="mt-0.5 px-2 text-xs text-sidebar-subtle">Bookkeeping &amp; stock</p>
+          {settings?.tagline && (
+            <p className="mt-0.5 px-2 text-xs text-sidebar-subtle">{settings.tagline}</p>
+          )}
 
         </div>
 

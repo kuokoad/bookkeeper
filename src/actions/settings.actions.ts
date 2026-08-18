@@ -31,6 +31,7 @@ const optionalText = (max: number) =>
 
 const settingsSchema = z.object({
   businessName: z.string().trim().min(2, 'Enter your shop name.').max(120),
+  tagline: optionalText(60),
   address: optionalText(240),
   phone: optionalText(40),
   email: z
@@ -117,6 +118,7 @@ export async function updateSettingsAction(
 
   const parsed = settingsSchema.safeParse({
     businessName: formData.get('businessName'),
+    tagline: formData.get('tagline'),
     address: formData.get('address'),
     phone: formData.get('phone'),
     email: formData.get('email'),
