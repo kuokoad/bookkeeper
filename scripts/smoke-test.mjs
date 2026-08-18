@@ -795,6 +795,38 @@ if (logoRes.status === 200) {
 }
 
 
+const MOTION_HEADER = String.fromCharCode(10) + 'Motion:';
+
+console.log(MOTION_HEADER);
+const cssHref = (authedHtml.match(/href="([^"]*\.css[^"]*)"/) ?? [])[1];
+check('a stylesheet is served', Boolean(cssHref), String(cssHref));
+if (cssHref) {
+  const cssRes = await fetch(new URL(cssHref, base));
+  const css = cssRes.status === 200 ? await cssRes.text() : '';
+  check('reduced motion is honoured', css.includes('prefers-reduced-motion'));
+  check('entrance animation ships', css.includes('motion-page'));
+  // A till has a queue behind it; motion must not be something to wait through.
+  // The compiler reorders the shorthand and may emit seconds, so read the
+  // duration wherever it lands and in whichever unit.
+  const durations = [];
+  for (const decl of css.matchAll(/animation:\s*([^;}]*)/g)) {
+    const found = (decl[1] ?? '').match(/(\d*\.?\d+)(ms|s)/);
+    if (found) durations.push(found[2] === 's' ? Number(found[1]) * 1000 : Number(found[1]));
+  }
+  const longest = Math.max(0, ...durations);
+  check('and stays under 200ms', durations.length > 0 && longest <= 200, `${longest}ms`);
+}
+check('the page content carries the entrance class', authedHtml.includes('motion-page'));
+
+if (someSaleId) {
+  const printable = await fetch(`${base}/sales/${someSaleId}/receipt`, { headers: { cookie } });
+  const printableHtml = printable.status === 200 ? await printable.text() : '';
+  // A receipt is printed. It must never come out of the printer mid-entrance.
+  check('receipt still renders', printable.status === 200, `status ${printable.status}`);
+  check('receipt is not wrapped in an entrance', !printableHtml.includes('class="motion-appear"'));
+}
+
+
 console.log('\nWhen things are missing or wrong:');
 const unknownPath = await fetch(`${base}/this-page-does-not-exist`, {
   headers: { cookie },

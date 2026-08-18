@@ -38,7 +38,10 @@ export function Button({
     <button
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-lg border font-medium',
-        'transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        // A press should feel like a press. Kept to 2% so it reads on a touchscreen
+        // without looking like the button is shrinking away from the finger.
+        'transition-[colors,transform] duration-120 active:scale-[0.98]',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
         VARIANTS[variant],
         SIZES[size],
         fullWidth && 'w-full',

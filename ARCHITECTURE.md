@@ -611,6 +611,36 @@ The dimension parsers for PNG, JPEG and WebP are hand-written and tested against
 real encoder output, because a parser tested only against bytes we wrote
 ourselves proves nothing about a file a shop owner uploads.
 
+---
+
+## 16. Motion
+
+Small on purpose. This is a till: someone is at a counter with a queue, and
+motion that delays a tap is worse than none. Everything is an **entrance** —
+nothing loops, nothing moves on a timer, 160ms for content and 120ms for
+feedback.
+
+**Nothing animates a figure.** A number sliding or fading into place reads as
+the value still being uncertain, which is the last impression a set of books
+should give. `tests/app/motion.test.ts` fails if any element carries both a
+motion class and `tabular`, the class that marks money and quantities.
+
+**Reduced motion means none, not less.** The pre-existing blanket rule shortened
+durations to 0.01ms, which still lets an element jump from its offset start
+position — movement, for someone who asked for stillness. The entrance classes
+are switched off outright instead.
+
+**Print renders the final state.** A receipt must never come out of the printer
+mid-entrance, so `@media print` forces `animation: none`, `opacity: 1` and no
+transform.
+
+`PageTransition` keys on the **pathname only**, never the full URL. Keying on
+the query string would remount on every filter change and paging click —
+resetting the till's cart the moment the address gained a query.
+
+React's `<ViewTransition>` was considered and not used: it is not exported by
+React 19.2.8, only by canary builds.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.

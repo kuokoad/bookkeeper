@@ -8,6 +8,7 @@ import { getCurrentUser } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { NAV_SECTIONS } from '@/components/shared/navigation';
 import { MobileNav, Sidebar } from '@/components/shared/app-nav';
+import { PageTransition } from '@/components/shared/page-transition';
 import { logoutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 
@@ -85,7 +86,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </form>
         </header>
 
-        <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">{children}</main>
+        <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">
+          <PageTransition>{children}</PageTransition>
+        </main>
       </div>
 
       <MobileNav items={primaryItems} />

@@ -26,7 +26,7 @@ export function Alert({ tone = 'info', title, children, className }: AlertProps)
   return (
     <div
       role={assertive ? 'alert' : 'status'}
-      className={cn('rounded-lg border px-4 py-3 text-sm', TONES[tone], className)}
+      className={cn('motion-appear rounded-lg border px-4 py-3 text-sm', TONES[tone], className)}
     >
       {title && <p className="mb-0.5 font-semibold">{title}</p>}
       <div className="text-content-muted">{children}</div>

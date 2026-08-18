@@ -124,6 +124,55 @@ body {
   border-radius: 0.25rem;
 }
 
+/* ---------------------------------------------------------------------------
+   Motion.
+   
+   Deliberately small. This is a till: someone is standing at a counter with a
+   queue, and motion that delays a tap is worse than no motion at all. Every
+   animation here is an ENTRANCE — nothing loops, nothing moves on a timer, and
+   nothing animates a figure changing. A number sliding into place reads as the
+   value still being uncertain, which is the last impression a set of books
+   should give.
+   
+   Durations are short enough to feel like the page settling rather than a
+   performance: 160ms for content, 120ms for feedback.
+   --------------------------------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The content area settling after a navigation. */
+.motion-page {
+  animation: rise 160ms ease-out both;
+}
+
+/* Something that has just appeared in response to an action, such as an alert
+   confirming a save or explaining a refusal. */
+.motion-appear {
+  animation: rise 160ms ease-out both;
+}
+
+.motion-fade {
+  animation: fade 120ms ease-out both;
+}
+
 /* Respect a user's reduced-motion preference; we use little motion anyway. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -133,9 +182,26 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  /* Duration alone still lets the element jump from its offset start. These
+     land the content where it belongs with no movement at all. */
+  .motion-page,
+  .motion-appear,
+  .motion-fade {
+    animation: none !important;
+  }
 }
 
 @media print {
+  /* A receipt must render in its final state, not mid-entrance. */
+  .motion-page,
+  .motion-appear,
+  .motion-fade {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
   .no-print {
     display: none !important;
   }

@@ -6,7 +6,7 @@ on the shop's own computer, with no internet required to record a sale.
 Currency defaults to **GHS** and is configurable. Mobile money is first-class, and
 no mobile network is hard-coded.
 
-> **Status: Stages 1–14 complete.**
+> **Status: Stages 1–15 complete.**
 > Foundation (database, double-entry ledger, auth, permissions, audit),
 > Products & Inventory (catalogue, stock ledger, weighted-average costing, stock
 > adjustments, low-stock alerts), Sales (POS, split payments, customer credit,
