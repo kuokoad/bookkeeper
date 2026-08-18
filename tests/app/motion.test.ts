@@ -81,3 +81,30 @@ describe('motion stays short', () => {
     for (const duration of durations) expect(duration).toBeLessThanOrEqual(200);
   });
 });
+
+describe('the clock', () => {
+  const CLOCK = readFileSync(
+    join(process.cwd(), 'src', 'components', 'shared', 'clock.tsx'),
+    'utf8',
+  );
+
+  it('is a client component', () => {
+    // Rendered on the server it would show the time the page was opened, for
+    // as long as the page stayed open.
+    expect(CLOCK.startsWith("'use client'")).toBe(true);
+  });
+
+  it('re-reads the time every second', () => {
+    // Thirty seconds was the original interval, and on a minute-resolution
+    // display that is indistinguishable from a clock that has stopped.
+    expect(CLOCK).toMatch(/setInterval\(tick, 1_000\)/);
+  });
+
+  it('shows seconds, so it is visibly alive', () => {
+    expect(CLOCK).toMatch(/second: '2-digit'/);
+  });
+
+  it('clears its timer when the page goes away', () => {
+    expect(CLOCK).toMatch(/clearInterval\(timer\)/);
+  });
+});

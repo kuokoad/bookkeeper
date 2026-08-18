@@ -12,8 +12,14 @@ import { useEffect, useState } from 'react';
  * it and be wrong — worse than showing nothing.
  *
  * So this is one of the few client components in the app, and it does the
- * smallest possible amount: re-reads the clock every thirty seconds. It shows
- * no money, so it breaks no rule about figures.
+ * smallest possible amount: re-reads the clock once a second. It shows no
+ * money, so it breaks no rule about figures.
+ *
+ * Seconds are displayed deliberately. A minute-resolution clock polled every
+ * thirty seconds is indistinguishable from a broken one — nothing changes for
+ * up to a minute, and the minute itself can flip half a minute late. A moving
+ * second hand is how a person can tell at a glance that the screen is live
+ * rather than a page left open since this morning.
  *
  * The server's rendering is passed in as `initial` so the space is filled on
  * first paint rather than jumping into place. `suppressHydrationWarning` is
@@ -31,6 +37,7 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
 const TIME_FORMAT = new Intl.DateTimeFormat('en-GB', {
   hour: '2-digit',
   minute: '2-digit',
+  second: '2-digit',
   hour12: true,
 });
 
@@ -46,8 +53,8 @@ export function Clock({ initialDate, initialTime }: { initialDate: string; initi
       setNow({ date: DATE_FORMAT.format(at), time: TIME_FORMAT.format(at) });
     };
 
-    tick(); // correct immediately, rather than up to thirty seconds late
-    const timer = setInterval(tick, 30_000);
+    tick(); // correct immediately, rather than a second late
+    const timer = setInterval(tick, 1_000);
     return () => clearInterval(timer);
   }, []);
 
