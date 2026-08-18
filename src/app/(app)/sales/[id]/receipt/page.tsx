@@ -71,6 +71,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           <h1 className="text-lg font-semibold text-content">
             {settings?.businessName ?? 'Shop Bookkeeper'}
           </h1>
+          {settings?.tagline && (
+            <p className="text-xs text-content-muted">{settings.tagline}</p>
+          )}
           {settings?.address && <p className="text-xs text-content-muted">{settings.address}</p>}
           {settings?.phone && <p className="text-xs text-content-muted">{settings.phone}</p>}
         </header>

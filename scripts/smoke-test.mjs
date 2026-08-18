@@ -295,6 +295,18 @@ if (someSaleId) {
   const receiptHtml = receipt.status === 200 ? await receipt.text() : '';
   check('GET /sales/[id]/receipt', receipt.status === 200, `status ${receipt.status}`);
   check('receipt shows the shop name', appearsIn(receiptHtml, shopName), `looking for "${shopName}"`);
+  // The tagline is a setting, so read the configured value rather than
+  // expecting fixed wording — the same reason the shop name is read, not typed.
+  const settingsForTagline = await fetch(`${base}/settings`, { headers: { cookie } });
+  const taglineMatch = (await settingsForTagline.text()).match(
+    /id="tagline"[^>]*value="([^"]*)"/,
+  );
+  const tagline = taglineMatch ? taglineMatch[1] : '';
+  check(
+    'receipt shows the tagline when one is set',
+    tagline === '' || appearsIn(receiptHtml, tagline),
+    `looking for "${tagline}"`,
+  );
   check('receipt has a print control', receiptHtml.includes('Print'));
 }
 
