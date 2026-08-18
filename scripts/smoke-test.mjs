@@ -169,7 +169,7 @@ const SHELL_HEADER = String.fromCharCode(10) + 'Shell, search and notifications:
 
 console.log(SHELL_HEADER);
 check('the sidebar is dark chrome', authedHtml.includes('bg-sidebar'));
-check('a primary action is pinned in it', authedHtml.includes('New sale'));
+check('no New sale button in the sidebar', !authedHtml.includes('New sale'));
 check('the top bar carries search', authedHtml.includes('action="/search"'));
 check('and a notifications panel', authedHtml.includes('Needs attention'));
 // The sidebar is desktop-only, so without this a phone user cannot sign out.
@@ -178,6 +178,11 @@ check('sign-out is reachable on a phone', authedHtml.includes('Sign out'));
 // The menu folds, and the section you are in is already open on arrival.
 check('menu sections fold', (authedHtml.match(/<details/g) ?? []).length >= 5);
 check('and the current one is open', authedHtml.includes('open=""'));
+// Daily and Stock stay open wherever you are; on the dashboard the current
+// section IS Daily, so two open sections is the floor, not three.
+check('the everyday sections stay open', (authedHtml.match(/open=""/g) ?? []).length >= 2);
+check('the sidebar sticks while content scrolls', authedHtml.includes('lg:sticky'));
+check('opening a section is animated', authedHtml.includes('motion-reveal'));
 
 // Three pages were taken out of the menu. Each MUST still be linked from the
 // screen it now belongs to, or it is orphaned — worse than a long menu.

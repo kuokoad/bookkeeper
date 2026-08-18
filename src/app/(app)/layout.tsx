@@ -48,22 +48,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
-      <aside className="hidden w-64 shrink-0 border-r border-sidebar-line bg-sidebar lg:flex lg:flex-col">
+      <aside className="hidden w-64 shrink-0 border-r border-sidebar-line bg-sidebar lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
         <div className="border-b border-sidebar-line px-4 py-4">
           <p className="truncate px-2 font-semibold text-sidebar-text">
             {settings?.businessName ?? 'Shop Bookkeeper'}
           </p>
           <p className="mt-0.5 px-2 text-xs text-sidebar-subtle">Bookkeeping &amp; stock</p>
 
-          {/* The thing done most times a day, always one tap away. */}
-          {can(user, 'sales', 'create') && (
-            <Link
-              href="/sales/new"
-              className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              New sale
-            </Link>
-          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">

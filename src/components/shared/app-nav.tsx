@@ -44,7 +44,7 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
         // nothing to flicker on load.
         <details
           key={section.heading}
-          open={section.items.some((item) => isActive(pathname, item.href))}
+          open={section.defaultOpen || section.items.some((item) => isActive(pathname, item.href))}
           className="group"
         >
           <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-subtle transition-colors hover:text-sidebar-muted">
@@ -56,7 +56,7 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
               ›
             </span>
           </summary>
-          <ul className="mt-0.5 space-y-0.5 pb-2">
+          <ul className="motion-reveal mt-0.5 space-y-0.5 pb-2">
             {section.items.map((item) => {
               const active = isActive(pathname, item.href);
               return (

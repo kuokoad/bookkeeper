@@ -37,6 +37,13 @@ export interface NavItem {
 export interface NavSection {
   heading: string;
   items: NavItem[];
+  /**
+   * Expanded on arrival regardless of which page you are on.
+   *
+   * The two sections used all day stay open so the till and the stock list are
+   * always one click away; the rest fold until needed.
+   */
+  defaultOpen?: boolean;
 }
 
 /**
@@ -51,6 +58,7 @@ export interface NavSection {
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
     heading: 'Daily',
+    defaultOpen: true,
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', module: 'reports', primary: true },
       { href: '/sales', label: 'Sales', icon: 'sales', module: 'sales', primary: true },
@@ -60,6 +68,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   },
   {
     heading: 'Stock',
+    defaultOpen: true,
     items: [
       { href: '/products', label: 'Products', icon: 'products', module: 'products', primary: true },
       { href: '/inventory', label: 'Inventory', icon: 'inventory', module: 'inventory' },

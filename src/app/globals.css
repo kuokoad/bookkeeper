@@ -185,6 +185,23 @@ body {
   animation: rise 160ms ease-out both;
 }
 
+/* A menu section opening. Slightly quicker than a page: the content is
+   already on screen conceptually, it is only being uncovered. */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.motion-reveal {
+  animation: reveal 140ms ease-out both;
+}
+
 .motion-fade {
   animation: fade 120ms ease-out both;
 }
@@ -203,7 +220,8 @@ body {
      land the content where it belongs with no movement at all. */
   .motion-page,
   .motion-appear,
-  .motion-fade {
+  .motion-fade,
+  .motion-reveal {
     animation: none !important;
   }
 }
@@ -212,7 +230,8 @@ body {
   /* A receipt must render in its final state, not mid-entrance. */
   .motion-page,
   .motion-appear,
-  .motion-fade {
+  .motion-fade,
+  .motion-reveal {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
