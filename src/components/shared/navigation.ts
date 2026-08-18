@@ -39,6 +39,15 @@ export interface NavSection {
   items: NavItem[];
 }
 
+/**
+ * The menu.
+ *
+ * Three pages that were here are deliberately not: Other Income sits beside
+ * Expenses, Reconciliation under Accounting, and the Audit log on the Users
+ * page. Each is opened occasionally rather than daily, and each is now one
+ * click from the screen it belongs to — a menu long enough to scroll is a menu
+ * nobody reads to the bottom of.
+ */
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
     heading: 'Daily',
@@ -47,7 +56,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       { href: '/sales', label: 'Sales', icon: 'sales', module: 'sales', primary: true },
       { href: '/purchases', label: 'Purchases', icon: 'purchases', module: 'purchases' },
       { href: '/expenses', label: 'Expenses', icon: 'expenses', module: 'expenses', primary: true },
-      { href: '/income', label: 'Other Income', icon: 'income', module: 'income' },
     ],
   },
   {
@@ -68,12 +76,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Money',
     items: [
       { href: '/accounts', label: 'Accounts', icon: 'accounts', module: 'accounts' },
-      {
-        href: '/reconciliation',
-        label: 'Reconciliation',
-        icon: 'accounts',
-        module: 'reconciliation',
-      },
       { href: '/accounting', label: 'Accounting', icon: 'reports', module: 'accounts' },
       { href: '/reports', label: 'Reports', icon: 'reports', module: 'reports' },
     ],
@@ -82,7 +84,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Admin',
     items: [
       { href: '/users', label: 'Users', icon: 'users', module: 'users' },
-      { href: '/users/audit', label: 'Audit log', icon: 'reports', module: 'users' },
       { href: '/settings', label: 'Settings', icon: 'settings', module: 'settings' },
     ],
   },

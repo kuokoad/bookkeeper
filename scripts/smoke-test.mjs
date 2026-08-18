@@ -175,6 +175,25 @@ check('and a notifications panel', authedHtml.includes('Needs attention'));
 // The sidebar is desktop-only, so without this a phone user cannot sign out.
 check('sign-out is reachable on a phone', authedHtml.includes('Sign out'));
 
+// The menu folds, and the section you are in is already open on arrival.
+check('menu sections fold', (authedHtml.match(/<details/g) ?? []).length >= 5);
+check('and the current one is open', authedHtml.includes('open=""'));
+
+// Three pages were taken out of the menu. Each MUST still be linked from the
+// screen it now belongs to, or it is orphaned — worse than a long menu.
+for (const [parent, child] of [
+  ['/expenses', '/income'],
+  ['/accounting', '/reconciliation'],
+  ['/users', '/users/audit'],
+]) {
+  const page = await fetch(`${base}${parent}`, { headers: { cookie }, redirect: 'manual' });
+  const html = page.status === 200 ? await page.text() : '';
+  check(`${parent} still links to ${child}`, html.includes(`"${child}"`), `status ${page.status}`);
+
+  const reachable = await fetch(`${base}${child}`, { headers: { cookie }, redirect: 'manual' });
+  check(`  and ${child} opens`, reachable.status === 200, `status ${reachable.status}`);
+}
+
 const searchRes = await fetch(`${base}/search?q=milo`, { headers: { cookie }, redirect: 'manual' });
 const searchHtml = searchRes.status === 200 ? await searchRes.text() : '';
 check('GET /search', searchRes.status === 200, `status ${searchRes.status}`);

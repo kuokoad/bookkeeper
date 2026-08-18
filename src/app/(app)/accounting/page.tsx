@@ -21,6 +21,11 @@ export const dynamic = 'force-dynamic';
 
 const SECTIONS = [
   {
+    href: '/reconciliation',
+    title: 'Reconciliation',
+    description: 'Count the cash, mobile money and bank against what the books say.',
+  },
+  {
     href: '/accounting/journal',
     title: 'Journal',
     description: 'Every accounting entry the shop has ever made, newest first.',

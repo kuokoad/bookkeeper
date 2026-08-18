@@ -28,11 +28,18 @@ export default async function UsersPage() {
         title="Users"
         description="Who can sign in, and what each person is allowed to do."
         actions={
-          can(actor, 'users', 'create') ? (
-            <Link href="/users/new">
-              <Button size="sm">Add a user</Button>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/users/audit">
+              <Button variant="secondary" size="sm">
+                Audit log
+              </Button>
             </Link>
-          ) : null
+            {can(actor, 'users', 'create') && (
+              <Link href="/users/new">
+                <Button size="sm">Add a user</Button>
+              </Link>
+            )}
+          </div>
         }
       />
 

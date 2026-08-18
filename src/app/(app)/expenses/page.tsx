@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
@@ -19,6 +20,7 @@ import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Card, EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
 import { AddCategoryForm, CashbookForm } from '@/components/shared/cashbook-form';
@@ -59,6 +61,13 @@ export default async function ExpensesPage({
       <PageHeader
         title="Expenses"
         description="Money spent running the shop — rent, power, transport, wages."
+        actions={
+          <Link href="/income">
+            <Button variant="secondary" size="sm">
+              Other income
+            </Button>
+          </Link>
+        }
       />
 
       {params.created === '1' && (

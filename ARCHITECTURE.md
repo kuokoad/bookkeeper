@@ -739,6 +739,19 @@ who cannot act on it. The single exception is an unbalanced ledger, shown to
 everyone: if the books are broken, no screen can be trusted whatever the
 person's role.
 
+**The menu was too long.** Sixteen links under five headings, plus the shop
+name, the action button and the user footer — enough to scroll on a laptop,
+which is a menu nobody reads to the bottom of. Two changes: sections now fold
+(`<details>` again, no JavaScript, with the section containing the current page
+already open on arrival), and three occasionally-used pages moved to the screen
+they belong to — Other Income beside Expenses, Reconciliation under Accounting,
+the Audit log on the Users page. Thirteen links remain.
+
+Demoting a page orphans it unless the parent links to it, and none of the three
+parents did. Those links were added first, and the smoke test now asserts each
+parent still links to its child and that the child still opens — so a page can
+never quietly become unreachable.
+
 The notification panel is a `<details>` element — it opens and closes with **no
 JavaScript**, for the same reason the charts are server-rendered SVG.
 

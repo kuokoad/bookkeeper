@@ -36,13 +36,27 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Main" className="space-y-6 px-3 py-4">
+    <nav aria-label="Main" className="space-y-1 px-3 py-4">
       {sections.map((section) => (
-        <div key={section.heading}>
-          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-subtle">
-            {section.heading}
-          </p>
-          <ul className="space-y-0.5">
+        // `<details>` opens and closes with no JavaScript. `open` is decided on
+        // the server from the current path, so the section you are in is
+        // already expanded when the page arrives — nothing to click first, and
+        // nothing to flicker on load.
+        <details
+          key={section.heading}
+          open={section.items.some((item) => isActive(pathname, item.href))}
+          className="group"
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-subtle transition-colors hover:text-sidebar-muted">
+            <span className="flex-1">{section.heading}</span>
+            <span
+              aria-hidden="true"
+              className="text-sidebar-subtle transition-transform group-open:rotate-90"
+            >
+              ›
+            </span>
+          </summary>
+          <ul className="mt-0.5 space-y-0.5 pb-2">
             {section.items.map((item) => {
               const active = isActive(pathname, item.href);
               return (
@@ -73,7 +87,7 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
               );
             })}
           </ul>
-        </div>
+        </details>
       ))}
     </nav>
   );
