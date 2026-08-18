@@ -79,6 +79,11 @@ export default async function CustomerDetailPage({
                 All customers
               </Button>
             </Link>
+            <Link href={`/customers/${customerId}/statement`}>
+              <Button variant="secondary" size="sm">
+                Statement
+              </Button>
+            </Link>
             {can(user, 'customers', 'edit') && (
               <Link href={`/customers/${customerId}/edit`}>
                 <Button variant="secondary" size="sm">

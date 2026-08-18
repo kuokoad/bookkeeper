@@ -14,6 +14,7 @@ import {
   sales,
 } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
+import { dueDateFor } from '@/domain/business-date';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
 import { calculateSale, calculateTender, exceedsCreditLimit } from '@/domain/sales/calculate';
 import { isZero, minor, subtract, sum, ZERO, type Minor } from '@/domain/money';
@@ -57,6 +58,8 @@ export interface TenderRequest {
 export interface CreateSaleInput {
   businessDate: string;
   customerId?: number | null;
+  /** Days to pay. Defaults to the shop setting. Only used for a credit sale. */
+  termsDays?: number;
   items: SaleLineRequest[];
   invoiceDiscount?: Minor;
   tenders: TenderRequest[];
@@ -153,10 +156,31 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
     // --- write the sale --------------------------------------------------
     const receiptNo = nextDocumentNumber(tx, DOC_TYPES.RECEIPT);
 
+    // A sale left unpaid becomes an invoice: something the customer takes away
+    // and pays against, so it needs its own number and a date it falls due.
+    // A sale settled at the counter gets neither — issuing invoice numbers for
+    // those would leave gaps in the sequence that read as missing documents.
+    const isCredit = !isZero(tender.outstanding) && customerId !== null;
+
+    const termsDays = isCredit
+      ? (input.termsDays ??
+        tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()
+          ?.defaultTermsDays ??
+        30)
+      : null;
+
+    // Snapshotted onto the sale, so changing the shop default later cannot move
+    // the due date of an invoice already in a customer's hands.
+    const dueDate = termsDays === null ? null : dueDateFor(input.businessDate, termsDays);
+    const invoiceNo = isCredit ? nextDocumentNumber(tx, DOC_TYPES.INVOICE) : null;
+
     const sale = tx
       .insert(sales)
       .values({
         receiptNo,
+        invoiceNo,
+        termsDays,
+        dueDate,
         businessDate: input.businessDate,
         occurredAt,
         customerId,

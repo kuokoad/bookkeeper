@@ -47,6 +47,18 @@ export const sales = sqliteTable(
     returnsSaleId: integer('returns_sale_id'),
 
     businessDate: businessDate('business_date').notNull(),
+
+    /**
+     * Invoice identity, for a credit sale that a customer takes away to pay
+     * against. Null on a sale paid in full at the counter — that gets a receipt
+     * and needs no invoice, and issuing numbers for both would leave gaps in
+     * the invoice sequence that look like missing documents.
+     */
+    invoiceNo: text('invoice_no'),
+    /** Days allowed to pay, snapshotted so a later change to the shop default
+     *  cannot silently move an invoice already issued. */
+    termsDays: integer('terms_days'),
+    dueDate: businessDate('due_date'),
     occurredAt: timestampMs('occurred_at').notNull(),
 
     /** NULL for a walk-in cash customer, which is most sales in a small shop. */
@@ -87,6 +99,9 @@ export const sales = sqliteTable(
   },
   (t) => [
     uniqueIndex('uq_sales_receipt_no').on(t.receiptNo),
+    // SQLite permits many NULLs in a unique index, so cash sales do not collide.
+    uniqueIndex('uq_sales_invoice_no').on(t.invoiceNo),
+    index('idx_sales_due_date').on(t.dueDate),
     index('idx_sales_date').on(t.businessDate),
     index('idx_sales_customer').on(t.customerId),
     index('idx_sales_status').on(t.status),

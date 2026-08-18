@@ -402,26 +402,44 @@ describe('ageing', () => {
     );
   }
 
-  it('places each debt in the right bucket by age', () => {
+  it('buckets each debt by how OVERDUE it is, not how old', () => {
     const customerId = createCustomer(context.db, { name: 'Ama', phone: '024' }, ACTOR);
 
-    creditSale('2026-08-17', 1_000, customerId); // today -> not due
-    creditSale('2026-08-01', 2_000, customerId); // 16 days
-    creditSale('2026-07-01', 3_000, customerId); // 47 days
-    creditSale('2026-06-01', 4_000, customerId); // 77 days
-    creditSale('2026-01-01', 5_000, customerId); // way over 90
+    // Every credit sale gets the shop's default 30-day terms, so the day it
+    // falls due is 30 days after the sale.
+    creditSale('2026-08-17', 1_000, customerId); // due 09-16 -> not due
+    creditSale('2026-08-01', 2_000, customerId); // due 08-31 -> not due
+    creditSale('2026-07-01', 3_000, customerId); // due 07-31 -> 17 days over
+    creditSale('2026-06-01', 4_000, customerId); // due 07-01 -> 47 days over
+    creditSale('2026-01-01', 5_000, customerId); // due 01-31 -> far over
 
     const ageing = getReceivablesAgeing(context.db, '2026-08-17');
     expect(ageing).toHaveLength(1);
 
     const row = ageing[0]!;
-    expect(row.current).toBe(1_000);
-    expect(row.days1to30).toBe(2_000);
-    expect(row.days31to60).toBe(3_000);
-    expect(row.days61to90).toBe(4_000);
+    // A sale from sixteen days ago is NOT overdue on 30-day terms, and chasing
+    // that customer would be chasing someone who has done nothing wrong.
+    expect(row.current).toBe(3_000);
+    expect(row.days1to30).toBe(3_000);
+    expect(row.days31to60).toBe(4_000);
+    expect(row.days61to90).toBe(0);
     expect(row.over90).toBe(5_000);
     expect(row.total).toBe(15_000);
-    expect(row.oldestDate).toBe('2026-01-01');
+    // The oldest thing owed is now the earliest DUE date.
+    expect(row.oldestDate).toBe('2026-01-31');
+  });
+
+  it('ages a sale with no due date from the sale date, as it always did', () => {
+    const customerId = createCustomer(context.db, { name: 'Kofi' }, ACTOR);
+    creditSale('2026-06-01', 4_000, customerId);
+
+    // Sales recorded before invoicing existed have no due date.
+    context.connection.prepare('UPDATE sales SET due_date = NULL, terms_days = NULL').run();
+
+    const row = getReceivablesAgeing(context.db, '2026-08-17')[0]!;
+    // 77 days after the sale, with nothing to age from but the sale itself.
+    expect(row.days61to90).toBe(4_000);
+    expect(row.oldestDate).toBe('2026-06-01');
   });
 
   it('adds up to the same total as the receivables control account', () => {

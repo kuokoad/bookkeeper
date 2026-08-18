@@ -133,6 +133,29 @@ back — no sale, no stock movement, no payment.
 
 ---
 
+## Invoices and statements
+
+A sale a customer does not pay for in full becomes an **invoice**: its own
+`INV-` number, payment terms, and a date it falls due. A sale settled at the
+counter gets a receipt and no invoice number — issuing them for cash sales would
+leave gaps in the invoice sequence that read as missing documents.
+
+Open a credit sale and press **Invoice**. It is framed as a request for payment
+rather than a thank-you: who owes, how much, by when, and what to quote when
+paying. Terms default to 30 days, set under Settings and overridable per sale.
+They are snapshotted onto the sale, so changing the shop default never moves the
+due date of an invoice already in a customer's hands.
+
+**Customer → Statement** lists everything one customer still owes as at today,
+with what is overdue and by how long. The total is the ledger's own figure for
+that customer, not a sum of the rows above it — if those two ever disagreed the
+statement says so rather than showing the friendlier number.
+
+**Ageing is now measured from the due date, not the sale date.** On 30-day terms
+a sale from twenty days ago is not overdue, and ageing it as though it were
+sends you chasing a customer who has done nothing wrong. Sales recorded before
+invoicing existed have no due date and age from the sale date exactly as before.
+
 ## The year-end pack
 
 **Reports → Year-end pack** produces the statements an accountant asks for, for

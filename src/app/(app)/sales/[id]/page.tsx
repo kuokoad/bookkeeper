@@ -93,6 +93,13 @@ export default async function SaleDetailPage({
                 All sales
               </Button>
             </Link>
+            {sale.invoiceNo && (
+              <Link href={`/sales/${saleId}/invoice`}>
+                <Button variant="secondary" size="sm">
+                  Invoice
+                </Button>
+              </Link>
+            )}
             <Link href={`/sales/${saleId}/receipt`}>
               <Button size="sm">View receipt</Button>
             </Link>

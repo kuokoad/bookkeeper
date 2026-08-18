@@ -62,6 +62,9 @@ export const businessSettings = sqliteTable(
     // Payment policy.
     allowOverpayment: boolean('allow_overpayment').notNull().default(false),
 
+    /** Days a credit customer is given to pay, unless overridden on the sale. */
+    defaultTermsDays: integer('default_terms_days').notNull().default(30),
+
     /** Month the financial year starts, 1-12. Ghana commonly uses January. */
     financialYearStartMonth: integer('financial_year_start_month').notNull().default(1),
 

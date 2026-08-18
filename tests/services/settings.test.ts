@@ -53,6 +53,7 @@ function currentAsInput(): SettingsInput {
     lowStockThresholdMilli: settings.lowStockThresholdMilli,
     allowNegativeStock: settings.allowNegativeStock,
     allowOverpayment: settings.allowOverpayment,
+    defaultTermsDays: settings.defaultTermsDays,
     financialYearStartMonth: settings.financialYearStartMonth,
   };
 }

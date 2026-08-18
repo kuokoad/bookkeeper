@@ -77,6 +77,7 @@ function setStartMonth(month: number): void {
       lowStockThresholdMilli: settings.lowStockThresholdMilli,
       allowNegativeStock: settings.allowNegativeStock,
     allowOverpayment: settings.allowOverpayment,
+    defaultTermsDays: settings.defaultTermsDays,
       financialYearStartMonth: month,
     },
     ACTOR,

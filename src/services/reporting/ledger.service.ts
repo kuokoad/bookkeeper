@@ -14,6 +14,7 @@ import type { AccountType } from '@/db/schema/accounting';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { signedBalance } from '@/domain/accounting/journal';
 import { minor, subtract, sum, type Minor } from '@/domain/money';
+import { daysBetween } from '@/domain/business-date';
 import { NotFoundError } from '@/domain/errors';
 import { getOutstandingBySale } from '../sale.service';
 import { getOutstandingByPurchase } from '../purchase.service';
@@ -458,20 +459,17 @@ function bucketFor(days: number): keyof Pick<
   return 'over90';
 }
 
-function daysBetween(from: string, to: string): number {
-  const [fy, fm, fd] = from.split('-').map(Number);
-  const [ty, tm, td] = to.split('-').map(Number);
-  const start = Date.UTC(fy ?? 1970, (fm ?? 1) - 1, fd ?? 1);
-  const end = Date.UTC(ty ?? 1970, (tm ?? 1) - 1, td ?? 1);
-  return Math.round((end - start) / 86_400_000);
-}
-
 /**
- * How long money has been owed.
+ * How long money has been OVERDUE.
  *
- * Ageing is measured from the date of the sale or purchase, so "over 90 days"
- * means what a shop owner means by it. Amounts come from the same
- * `getSaleOutstanding` / `getPurchaseOutstanding` used everywhere else, so the
+ * Measured from the date payment fell due, not the date of the sale. On 30-day
+ * terms a sale from twenty days ago is not overdue at all, and ageing it as
+ * though it were sends the owner chasing a customer who has done nothing wrong.
+ *
+ * Sales recorded before invoicing existed have no due date, so they fall back
+ * to the sale date and age exactly as they always did.
+ *
+ * Amounts come from the same `getSaleOutstanding` used everywhere else, so the
  * ageing report and the customer's profile always agree.
  */
 export function getReceivablesAgeing(db: Db, asAt: string): AgeingRow[] {
@@ -479,6 +477,7 @@ export function getReceivablesAgeing(db: Db, asAt: string): AgeingRow[] {
     .select({
       saleId: sales.id,
       businessDate: sales.businessDate,
+      dueDate: sales.dueDate,
       customerId: sales.customerId,
       customerName: customers.name,
       phone: customers.phone,
@@ -515,11 +514,15 @@ export function getReceivablesAgeing(db: Db, asAt: string): AgeingRow[] {
         oldestDate: null,
       } as AgeingRow);
 
-    const bucket = bucketFor(daysBetween(row.businessDate, asAt));
+    // Age from the day it fell due. Sales predating invoicing have no due date
+    // and fall back to the sale date, so they age exactly as they always did.
+    const agedFrom = row.dueDate ?? row.businessDate;
+
+    const bucket = bucketFor(daysBetween(agedFrom, asAt));
     existing[bucket] = minor((existing[bucket] as number) + outstanding);
     existing.total = minor((existing.total as number) + outstanding);
-    if (existing.oldestDate === null || row.businessDate < existing.oldestDate) {
-      existing.oldestDate = row.businessDate;
+    if (existing.oldestDate === null || agedFrom < existing.oldestDate) {
+      existing.oldestDate = agedFrom;
     }
 
     byParty.set(row.customerId, existing);

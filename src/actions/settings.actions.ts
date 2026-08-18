@@ -68,6 +68,11 @@ const settingsSchema = z.object({
     .max(1_000_000_000),
   allowNegativeStock: z.boolean(),
   allowOverpayment: z.boolean(),
+  defaultTermsDays: z
+    .number()
+    .int()
+    .min(0, 'Payment terms cannot be negative.')
+    .max(365, 'Payment terms longer than a year are not supported.'),
 
   financialYearStartMonth: z
     .number()
@@ -131,6 +136,7 @@ export async function updateSettingsAction(
     lowStockThresholdMilli,
     allowNegativeStock: checkbox(formData, 'allowNegativeStock'),
     allowOverpayment: checkbox(formData, 'allowOverpayment'),
+    defaultTermsDays: Number(formData.get('defaultTermsDays') ?? 30),
     financialYearStartMonth: Number(formData.get('financialYearStartMonth') ?? 1),
   });
 

@@ -39,6 +39,7 @@ export default async function SettingsPage() {
     lowStock: toQtyInputString(settings.lowStockThresholdMilli as Qty),
     allowNegativeStock: settings.allowNegativeStock,
     allowOverpayment: settings.allowOverpayment,
+    defaultTermsDays: settings.defaultTermsDays,
     financialYearStartMonth: settings.financialYearStartMonth,
   };
 

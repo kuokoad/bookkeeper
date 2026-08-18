@@ -27,6 +27,7 @@ export interface SettingsFormValues {
   lowStock: string;
   allowNegativeStock: boolean;
   allowOverpayment: boolean;
+  defaultTermsDays: number;
   financialYearStartMonth: number;
 }
 
@@ -342,6 +343,36 @@ export function SettingsForm({
             defaultChecked={values.allowNegativeStock}
           />
         </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-content">Credit and invoices</h2>
+        <p className="mb-4 text-sm text-content-muted">
+          When a customer takes goods without paying in full, the sale becomes an invoice with a
+          number and a date it falls due. This is how long they get to pay.
+        </p>
+
+        <Field
+          label="Payment terms"
+          htmlFor="defaultTermsDays"
+          hint="Days from the sale. Zero means due immediately."
+          required
+          error={state.fieldErrors?.['defaultTermsDays']}
+        >
+          <TextInput
+            id="defaultTermsDays"
+            name="defaultTermsDays"
+            inputMode="numeric"
+            defaultValue={String(values.defaultTermsDays)}
+            className="tabular max-w-32"
+            invalid={Boolean(state.fieldErrors?.['defaultTermsDays'])}
+          />
+        </Field>
+
+        <p className="mt-3 text-xs text-content-subtle">
+          Changing this affects invoices issued from now on. Ones already in a customer&apos;s hands
+          keep the terms they were issued with.
+        </p>
       </Card>
 
       <Card>

@@ -16,6 +16,7 @@ import { InvariantViolatedError } from '@/domain/errors';
 
 export const DOC_TYPES = {
   RECEIPT: 'RECEIPT',
+  INVOICE: 'INVOICE',
   SALE_RETURN: 'SALE_RETURN',
   PURCHASE: 'PURCHASE',
   PURCHASE_RETURN: 'PURCHASE_RETURN',
@@ -32,6 +33,7 @@ export type DocType = (typeof DOC_TYPES)[keyof typeof DOC_TYPES];
 
 export const DEFAULT_SEQUENCES: readonly { docType: DocType; prefix: string; padding: number }[] = [
   { docType: DOC_TYPES.RECEIPT, prefix: 'RCP-', padding: 5 },
+  { docType: DOC_TYPES.INVOICE, prefix: 'INV-', padding: 5 },
   { docType: DOC_TYPES.SALE_RETURN, prefix: 'SRT-', padding: 5 },
   { docType: DOC_TYPES.PURCHASE, prefix: 'PUR-', padding: 5 },
   { docType: DOC_TYPES.PURCHASE_RETURN, prefix: 'PRT-', padding: 5 },

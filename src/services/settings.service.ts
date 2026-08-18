@@ -66,6 +66,7 @@ export interface SettingsInput {
   lowStockThresholdMilli: number;
   allowNegativeStock: boolean;
   allowOverpayment: boolean;
+  defaultTermsDays: number;
 
   /** Month the financial year starts, 1-12. Decides the year-end pack period. */
   financialYearStartMonth: number;
@@ -221,6 +222,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         lowStockThresholdMilli: input.lowStockThresholdMilli,
         allowNegativeStock: input.allowNegativeStock,
         allowOverpayment: input.allowOverpayment,
+        defaultTermsDays: input.defaultTermsDays,
         financialYearStartMonth: input.financialYearStartMonth,
         updatedAt: now,
       })
@@ -252,6 +254,11 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         'Allow paying more than is owed',
         before.allowOverpayment,
         input.allowOverpayment,
+      ),
+      describeChange(
+        'Payment terms',
+        `${before.defaultTermsDays} days`,
+        `${input.defaultTermsDays} days`,
       ),
       describeChange(
         'Financial year starts',

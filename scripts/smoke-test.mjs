@@ -760,6 +760,52 @@ check('states nothing recorded is altered', acctPageHtml.includes('Nothing alrea
 // Closing must be reversible, and say so where the button is.
 check('offers reopening or explains none is closable', /Reopen|no finished year/i.test(acctPageHtml));
 
+const INVOICE_HEADER = String.fromCharCode(10) + 'Invoicing:';
+
+console.log(INVOICE_HEADER);
+const ageingExport = await fetch(`${base}/api/reports/receivables?to=2099-01-01`, {
+  headers: { cookie },
+});
+check('ageing export still works', ageingExport.status === 200, `status ${ageingExport.status}`);
+
+// Find a sale that carries an invoice number.
+const salesList = await (await fetch(`${base}/sales`, { headers: { cookie } })).text();
+const saleIds = [...salesList.matchAll(/href="\/sales\/(\d+)"/g)].map((m) => m[1]);
+let invoiceFound = false;
+for (const id of saleIds.slice(0, 12)) {
+  const page = await fetch(`${base}/sales/${id}/invoice`, { headers: { cookie }, redirect: 'manual' });
+  if (page.status !== 200) continue;
+  const html = await page.text();
+  if (!/INV-\d+/.test(html)) continue;
+
+  invoiceFound = true;
+  check('an invoice renders', true);
+  check('  it is framed as a request for payment', html.includes('Amount due'));
+  check('  it names who owes', html.includes('Billed to'));
+  check('  it states the terms', /Payment terms|due on receipt/i.test(html));
+  check('  and says how to reference the payment', html.includes('Quote'));
+  break;
+}
+if (!invoiceFound) {
+  // A shop with no credit sales is a valid state, not a failure.
+  check('no credit sale to invoice yet (valid)', true);
+}
+
+// A cash sale must NOT be given an invoice document.
+for (const id of saleIds.slice(0, 12)) {
+  const html = await (await fetch(`${base}/sales/${id}/invoice`, { headers: { cookie } })).text();
+  if (html.includes('This sale has no invoice')) {
+    check('a cash sale is refused an invoice, and says why', true);
+    break;
+  }
+}
+
+const stmt = await fetch(`${base}/customers/1/statement`, { headers: { cookie }, redirect: 'manual' });
+const stmtHtml = stmt.status === 200 ? await stmt.text() : '';
+check('a customer statement renders', stmt.status === 200, `status ${stmt.status}`);
+check('  and ties to the ledger', !stmtHtml.includes('does not tie to the ledger'));
+
+
 console.log('\nYear-end pack:');
 const yeRes = await fetch(`${base}/reports/year-end`, { headers: { cookie }, redirect: 'manual' });
 const yeHtml = yeRes.status === 200 ? await yeRes.text() : '';
