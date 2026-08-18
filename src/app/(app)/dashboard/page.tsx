@@ -21,6 +21,7 @@ import { money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
 import { Donut, PairedBars, SplitBar, TrendLine } from '@/components/ui/chart';
 import { Clock } from '@/components/shared/clock';
+import { formatClockDate, formatClockTime } from '@/lib/clock-format';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -125,21 +126,11 @@ export default async function DashboardPage({
   const user = await getCurrentUser();
 
   // The server's reading fills the space on first paint; the Clock then keeps
-  // itself honest. A time rendered once and left alone would be wrong within
-  // the minute.
+  // itself honest. Formatted through the SAME functions the Clock uses, so the
+  // two cannot drift apart and reflow the header on hydration.
   const renderedAt = new Date();
-  const renderedDate = new Intl.DateTimeFormat('en-GB', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(renderedAt);
-  const renderedTime = new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-  }).format(renderedAt);
+  const renderedDate = formatClockDate(renderedAt);
+  const renderedTime = formatClockTime(renderedAt);
   const today = toBusinessDate();
   const monthStart = `${today.slice(0, 7)}-01`;
 
