@@ -25,6 +25,7 @@ export interface SettingsFormValues {
   /** Whole units as typed, e.g. "5" or "2.5". */
   lowStock: string;
   allowNegativeStock: boolean;
+  allowOverpayment: boolean;
   financialYearStartMonth: number;
 }
 
@@ -308,6 +309,13 @@ export function SettingsForm({
               invalid={Boolean(state.fieldErrors?.['lowStock'])}
             />
           </Field>
+
+          <Toggle
+            name="allowOverpayment"
+            label="Allow paying more than is owed"
+            hint="Off is safer: at a counter an amount larger than the balance is usually a typo, and refusing it catches the mistake while the customer is still standing there. Switch it on to take deposits and advance payments — the extra stays on their account as a credit and comes off their next purchase."
+            defaultChecked={values.allowOverpayment}
+          />
 
           <Toggle
             name="allowNegativeStock"

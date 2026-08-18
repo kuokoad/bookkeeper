@@ -75,6 +75,7 @@ function setStartMonth(month: number): void {
       taxLabel: settings.taxLabel,
       lowStockThresholdMilli: settings.lowStockThresholdMilli,
       allowNegativeStock: settings.allowNegativeStock,
+    allowOverpayment: settings.allowOverpayment,
       financialYearStartMonth: month,
     },
     ACTOR,

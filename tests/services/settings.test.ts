@@ -51,6 +51,7 @@ function currentAsInput(): SettingsInput {
     taxLabel: settings.taxLabel,
     lowStockThresholdMilli: settings.lowStockThresholdMilli,
     allowNegativeStock: settings.allowNegativeStock,
+    allowOverpayment: settings.allowOverpayment,
     financialYearStartMonth: settings.financialYearStartMonth,
   };
 }

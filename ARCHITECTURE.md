@@ -641,6 +641,32 @@ resetting the till's cart the moment the address gained a query.
 React's `<ViewTransition>` was considered and not used: it is not exported by
 React 19.2.8, only by canary builds.
 
+---
+
+## 17. Overpayment
+
+The last column read by no code. Both payment services hard-refused an amount
+larger than the balance, with a comment saying deposits were not modelled — so
+the setting had a name and no behaviour.
+
+It now decides. Off by default, and the refusal names the setting instead of
+merely saying no: at a counter, an amount larger than the balance is usually a
+typo, and refusing it catches the mistake while the customer is still there.
+
+**Where the excess goes.** It stays on the party's own subledger balance, which
+turns negative — a customer in credit. Auto-allocation draws it down against
+their next purchase with no extra machinery, because allocation already works
+from the balance.
+
+**Why the balance sheet had to change.** A negative customer balance sits inside
+Accounts Receivable, and the control account nets it off. Left alone, the
+balance sheet would report less owed than customers actually owe AND omit money
+the shop is holding on their behalf — and it would still balance, which is
+exactly why nobody would notice. `subledger-split.ts` splits each control
+account by the sign of each party's own balance: debtors as an asset, credits as
+the liability they are. A test asserts the two still sum to the control account,
+so the split can never invent a figure.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.

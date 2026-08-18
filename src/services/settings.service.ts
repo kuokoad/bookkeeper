@@ -64,6 +64,7 @@ export interface SettingsInput {
 
   lowStockThresholdMilli: number;
   allowNegativeStock: boolean;
+  allowOverpayment: boolean;
 
   /** Month the financial year starts, 1-12. Decides the year-end pack period. */
   financialYearStartMonth: number;
@@ -217,6 +218,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         taxLabel: input.taxLabel,
         lowStockThresholdMilli: input.lowStockThresholdMilli,
         allowNegativeStock: input.allowNegativeStock,
+        allowOverpayment: input.allowOverpayment,
         financialYearStartMonth: input.financialYearStartMonth,
         updatedAt: now,
       })
@@ -243,6 +245,11 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         input.lowStockThresholdMilli / 1000,
       ),
       describeChange('Allow negative stock', before.allowNegativeStock, input.allowNegativeStock),
+      describeChange(
+        'Allow paying more than is owed',
+        before.allowOverpayment,
+        input.allowOverpayment,
+      ),
       describeChange(
         'Financial year starts',
         MONTH_NAMES[before.financialYearStartMonth - 1],

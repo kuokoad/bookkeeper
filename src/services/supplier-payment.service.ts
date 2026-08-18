@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import type { Db } from '@/db/types';
 import {
   accounts,
+  businessSettings,
   paymentAccounts,
   purchases,
   supplierPaymentAllocations,
@@ -71,12 +72,20 @@ export function recordSupplierPayment(
       throw new ValidationError(`Payment account "${account.name}" is not active.`);
     }
 
-    // Paying more than is owed would create a negative payable that nobody
-    // could explain, so it is refused rather than silently accepted.
+    // Whether the shop may pay a supplier more than it owes is policy, not this
+    // function's decision. Off by default: an amount larger than the balance is
+    // usually a typo, and money sent in error is harder to get back than a
+    // mistyped figure is to correct. Switched on, the excess stays on the
+    // supplier's account and settles against the next delivery.
     const currentBalance = getSupplierBalance(tx, input.supplierId);
-    if (input.amount > currentBalance) {
+    const allowOverpayment =
+      tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()
+        ?.allowOverpayment ?? false;
+
+    if (input.amount > currentBalance && !allowOverpayment) {
       throw new ValidationError(
-        `You owe ${supplier.name} ${formatForError(currentBalance)}. You cannot pay more than that.`,
+        `You owe ${supplier.name} ${formatForError(currentBalance)}. You cannot pay more than that. ` +
+          'To pay in advance, switch on "Allow paying more than is owed" in Settings.',
         { currentBalance, amount: input.amount },
       );
     }

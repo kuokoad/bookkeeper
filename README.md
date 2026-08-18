@@ -200,6 +200,16 @@ switching it back on does not silently resume at zero.
 **Allow selling stock you do not have** is off by default, which is safer: a sale
 that would take stock below zero is refused, catching mistakes at the till.
 
+**Allow paying more than is owed** is off by default too. At a counter an amount
+larger than the balance is usually a typo, and refusing it catches the mistake
+while the customer is still standing there. Switch it on to take deposits and
+advance payments: the extra stays on the account as a credit and comes off the
+next purchase.
+
+A customer in credit appears on the Balance Sheet as **Customer credit
+balances**, under what you owe — not netted off what customers owe you. That
+money is owed back, and netting it would understate both figures at once.
+
 Every change is written to the audit log with what it was before and after, so
 "when did we turn VAT on?" is answerable. Closing the books for a past period is
 under Accounting, beside the ledger it protects.

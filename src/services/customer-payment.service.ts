@@ -3,6 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Db } from '@/db/types';
 import {
   accounts,
+  businessSettings,
   customerPaymentAllocations,
   customerPayments,
   customers,
@@ -81,13 +82,20 @@ export function recordCustomerPayment(
       throw new ValidationError(`Payment account "${account.name}" is not active.`);
     }
 
-    // A customer cannot pay more than they owe — that would be a deposit, which
-    // this version does not model, and silently accepting it would produce a
-    // negative receivable that nobody could explain.
+    // Whether a customer may pay more than they owe is the shop's policy, not
+    // this function's. Off by default: at a counter, an amount larger than the
+    // balance is usually a typo, and refusing it catches the mistake while the
+    // customer is still standing there. Switched on, the excess stays on the
+    // account as a credit and settles against their next purchase.
     const currentBalance = getCustomerBalance(tx, input.customerId);
-    if (input.amount > currentBalance) {
+    const allowOverpayment =
+      tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()
+        ?.allowOverpayment ?? false;
+
+    if (input.amount > currentBalance && !allowOverpayment) {
       throw new ValidationError(
-        `${customer.name} owes ${formatForError(currentBalance)}. You cannot receive more than that.`,
+        `${customer.name} owes ${formatForError(currentBalance)}. You cannot receive more than that. ` +
+          'To accept advance payments, switch on "Allow paying more than is owed" in Settings.',
         { currentBalance, amount: input.amount },
       );
     }

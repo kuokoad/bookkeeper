@@ -107,6 +107,14 @@ export default async function BalanceSheetPage({
             </TD>
             <TD numeric>{money(sheet.receivables, { bare: true })}</TD>
           </TR>
+          {sheet.supplierAdvances !== 0 && (
+            <TR>
+              <TD>
+                <span className="pl-4">Paid to suppliers in advance</span>
+              </TD>
+              <TD numeric>{money(sheet.supplierAdvances, { bare: true })}</TD>
+            </TR>
+          )}
           <TR>
             <TD>
               <span className="pl-4">Stock on the shelf</span>
@@ -139,6 +147,17 @@ export default async function BalanceSheetPage({
             </TD>
             <TD numeric>{money(sheet.payables, { bare: true })}</TD>
           </TR>
+          {sheet.customerCredits !== 0 && (
+            <TR>
+              <TD>
+                {/* Money already taken from customers for goods not yet
+                    bought. It is owed back, so it belongs here and not
+                    netted off what customers owe. */}
+                <span className="pl-4">Customer credit balances</span>
+              </TD>
+              <TD numeric>{money(sheet.customerCredits, { bare: true })}</TD>
+            </TR>
+          )}
           {sheet.taxPayable !== 0 && (
             <TR>
               <TD>

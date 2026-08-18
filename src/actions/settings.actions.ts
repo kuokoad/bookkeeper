@@ -66,6 +66,7 @@ const settingsSchema = z.object({
     .min(0, 'A low stock level cannot be negative.')
     .max(1_000_000_000),
   allowNegativeStock: z.boolean(),
+  allowOverpayment: z.boolean(),
 
   financialYearStartMonth: z
     .number()
@@ -127,6 +128,7 @@ export async function updateSettingsAction(
     taxLabel: formData.get('taxLabel'),
     lowStockThresholdMilli,
     allowNegativeStock: checkbox(formData, 'allowNegativeStock'),
+    allowOverpayment: checkbox(formData, 'allowOverpayment'),
     financialYearStartMonth: Number(formData.get('financialYearStartMonth') ?? 1),
   });
 

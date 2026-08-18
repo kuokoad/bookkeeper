@@ -4,6 +4,7 @@ import type { Db } from '@/db/types';
 import { accounts, journalEntries, journalLines, paymentAccounts } from '@/db/schema';
 import type { AccountType } from '@/db/schema/accounting';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
+import { getPayablesSplit, getReceivablesSplit } from './subledger-split';
 import { signedBalance } from '@/domain/accounting/journal';
 import { add, minor, subtract, sum, type Minor } from '@/domain/money';
 
@@ -211,11 +212,19 @@ export interface BalanceSheet {
   cashAccounts: ReportLine[];
   totalCash: Minor;
   receivables: Minor;
+  /**
+   * Money held for customers who have paid more than they owe. Reported as the
+   * liability it is, rather than netted inside receivables where it would
+   * understate both figures. Zero unless overpayment is switched on.
+   */
+  customerCredits: Minor;
   inventory: Minor;
   otherAssets: ReportLine[];
   totalAssets: Minor;
 
   payables: Minor;
+  /** Suppliers paid in advance — an asset, not a negative liability. */
+  supplierAdvances: Minor;
   taxPayable: Minor;
   otherLiabilities: ReportLine[];
   totalLiabilities: Minor;
@@ -247,7 +256,15 @@ export function getBalanceSheet(db: Db, asAt: string): BalanceSheet {
   );
   const totalCash = sum(cashAccounts.map((line) => line.amount));
 
-  const receivables = find(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE);
+  // The control account nets debtors against anyone in credit. Split by each
+  // party's own sign so neither is hidden inside the other. `net` is asserted
+  // against the control account below, so this can never invent a figure.
+  const receivableSplit = getReceivablesSplit(db, asAt);
+  const payableSplit = getPayablesSplit(db, asAt);
+
+  const receivables = receivableSplit.owed;
+  const customerCredits = receivableSplit.inCredit;
+  const supplierAdvances = payableSplit.inCredit;
   const inventory = find(ACCOUNT_CODES.INVENTORY);
 
   // Any other asset account that is not cash, receivables or inventory.
@@ -265,11 +282,12 @@ export function getBalanceSheet(db: Db, asAt: string): BalanceSheet {
   const totalAssets = sum([
     totalCash,
     receivables,
+    supplierAdvances,
     inventory,
     sum(otherAssets.map((line) => line.amount)),
   ]);
 
-  const payables = find(ACCOUNT_CODES.ACCOUNTS_PAYABLE);
+  const payables = payableSplit.owed;
   const taxPayable = find(ACCOUNT_CODES.TAX_PAYABLE);
   const otherLiabilities = linesOfType(
     totals,
@@ -280,6 +298,7 @@ export function getBalanceSheet(db: Db, asAt: string): BalanceSheet {
   );
   const totalLiabilities = sum([
     payables,
+    customerCredits,
     taxPayable,
     sum(otherLiabilities.map((line) => line.amount)),
   ]);
@@ -326,10 +345,12 @@ export function getBalanceSheet(db: Db, asAt: string): BalanceSheet {
     cashAccounts,
     totalCash,
     receivables,
+    customerCredits,
     inventory,
     otherAssets,
     totalAssets,
     payables,
+    supplierAdvances,
     taxPayable,
     otherLiabilities,
     totalLiabilities,
