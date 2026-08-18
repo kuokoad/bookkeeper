@@ -20,6 +20,7 @@ import { add, subtract, sum, type Minor } from '@/domain/money';
 import { money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
 import { Donut, PairedBars, SplitBar, TrendLine } from '@/components/ui/chart';
+import { Clock } from '@/components/shared/clock';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -122,6 +123,22 @@ export default async function DashboardPage({
   const spendRange: RangeKey = params.spend === 'week' || params.spend === 'quarter' ? params.spend : 'month';
 
   const user = await getCurrentUser();
+
+  // The server's reading fills the space on first paint; the Clock then keeps
+  // itself honest. A time rendered once and left alone would be wrong within
+  // the minute.
+  const renderedAt = new Date();
+  const renderedDate = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(renderedAt);
+  const renderedTime = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(renderedAt);
   const today = toBusinessDate();
   const monthStart = `${today.slice(0, 7)}-01`;
 
@@ -162,13 +179,16 @@ export default async function DashboardPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-content">
-          Good day{user ? `, ${user.displayName.split(' ')[0]}` : ''}
-        </h1>
-        <p className="mt-1 text-sm text-content-muted">
-          Here is where your money stands right now.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-content">
+            Good day{user ? `, ${user.displayName.split(' ')[0]}` : ''}
+          </h1>
+          <p className="mt-1 text-sm text-content-muted">
+            Here is where your money stands right now.
+          </p>
+        </div>
+        <Clock initialDate={renderedDate} initialTime={renderedTime} />
       </header>
 
       {!trialBalance.balanced && (

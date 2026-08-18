@@ -184,6 +184,20 @@ The financial year is whatever you set under Settings; a year that has not
 finished yet is clearly marked provisional rather than presented as final
 accounts.
 
+## Light and dark
+
+The app follows whatever your device is set to. A switch in the top bar
+overrides that for this browser — useful when the shop is bright at midday and
+the same screen is glaring at closing time.
+
+The preference is a cookie rather than an account setting, because it belongs to
+the screen rather than to the person: the counter PC and the owner's phone want
+different answers, and the same person uses both. It is read on the server and
+applied before the page is sent, so there is no flash of the wrong colours.
+
+The sidebar stays dark in both. It is chrome rather than content, and holding it
+constant gives the eye a fixed frame while the working area follows your choice.
+
 ## Your logo
 
 Under **Settings**, upload a PNG, JPEG or WebP up to 1 MB. It prints at the top

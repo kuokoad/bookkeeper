@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { themeAttribute } from '@/lib/theme';
+import { getTheme } from '@/lib/theme.server';
 
 export const metadata: Metadata = {
   title: {
@@ -17,9 +19,13 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Read on the server and written onto <html> before the page is sent, so the
+  // right palette is there from the first paint rather than swapped in after.
+  const theme = await getTheme();
+
   return (
-    <html lang="en">
+    <html lang="en" {...themeAttribute(theme)}>
       <body className="min-h-dvh bg-surface text-content antialiased">{children}</body>
     </html>
   );

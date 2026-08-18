@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Notice } from '@/services/notifications.service';
 import { logoutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
+import { ThemeSwitch } from './theme-switch';
 import { Icon } from './icon';
 
 /**
@@ -62,6 +63,8 @@ export function TopBar({
         >
           <Icon name="reports" className="h-5 w-5" />
         </Link>
+
+        <ThemeSwitch />
 
         {/* The sidebar carries sign-out on desktop, and it is hidden on a
             phone — so without this, a phone user could not sign out at all. */}

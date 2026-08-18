@@ -58,8 +58,24 @@
   --success-soft: oklch(0.95 0.04 150);
 }
 
+/* ---------------------------------------------------------------------------
+   Dark colours, written once and applied from two places.
+
+   Three states, which is one more than people expect:
+
+     - no `data-theme`  -> follow the device (the default)
+     - data-theme="light" -> light, even on a device set to dark
+     - data-theme="dark"  -> dark, even on a device set to light
+
+   The media query is guarded with `:not([data-theme="light"])`, or a person who
+   explicitly chose light would still be handed the dark palette by their phone.
+   `color-scheme` is set alongside so scrollbars, form controls and the browser's
+   own chrome follow too — without it, a dark page keeps white scrollbars.
+   --------------------------------------------------------------------------- */
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
     --surface: oklch(0.19 0.008 250);
     --surface-raised: oklch(0.23 0.009 250);
     --surface-sunken: oklch(0.15 0.008 250);
@@ -79,7 +95,66 @@
     --warning-soft: oklch(0.3 0.06 75);
     --success: oklch(0.7 0.13 150);
     --success-soft: oklch(0.27 0.05 150);
+  
   }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+    --surface: oklch(0.19 0.008 250);
+    --surface-raised: oklch(0.23 0.009 250);
+    --surface-sunken: oklch(0.15 0.008 250);
+    --border: oklch(0.32 0.01 250);
+    --border-strong: oklch(0.42 0.012 250);
+    --text: oklch(0.95 0.004 250);
+    --text-muted: oklch(0.72 0.008 250);
+    --text-subtle: oklch(0.6 0.01 250);
+
+    --accent: oklch(0.72 0.13 165);
+    --accent-text: oklch(0.16 0.01 165);
+    --accent-soft: oklch(0.28 0.05 165);
+
+    --danger: oklch(0.68 0.17 25);
+    --danger-soft: oklch(0.28 0.06 25);
+    --warning: oklch(0.78 0.13 75);
+    --warning-soft: oklch(0.3 0.06 75);
+    --success: oklch(0.7 0.13 150);
+    --success-soft: oklch(0.27 0.05 150);
+  
+}
+
+/* ---------------------------------------------------------------------------
+   Showing the right half of the theme switch.
+
+   The switch has two buttons — "go dark" and "go light" — and CSS decides which
+   is visible. That is what lets a real toggle work while "match my device"
+   exists: under that setting the server cannot know which scheme the device is
+   actually showing, but the browser can, so the choice is made in the one place
+   that has the answer.
+   --------------------------------------------------------------------------- */
+
+.theme-when-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .theme-when-light {
+    display: none;
+  }
+  :root:not([data-theme='light']) .theme-when-dark {
+    display: inline-flex;
+  }
+}
+
+:root[data-theme='dark'] .theme-when-light {
+  display: none;
+}
+:root[data-theme='dark'] .theme-when-dark {
+  display: inline-flex;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 @theme inline {

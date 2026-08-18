@@ -169,6 +169,31 @@ const SHELL_HEADER = String.fromCharCode(10) + 'Shell, search and notifications:
 
 console.log(SHELL_HEADER);
 check('the sidebar is dark chrome', authedHtml.includes('bg-sidebar'));
+
+// A switch, not a dropdown: both halves ship, CSS shows one.
+check('a theme switch is offered', authedHtml.includes('theme-when-light'));
+check('  with the other half ready', authedHtml.includes('theme-when-dark'));
+// With no preference stored, nothing may be forced onto <html>, or the device
+// setting would be overridden by the app's own default.
+check('  and no scheme is forced by default', !authedHtml.includes('data-theme='));
+
+const darkView = await fetch(`${base}/dashboard`, {
+  headers: { cookie: `${cookie}; bk_theme=dark` },
+});
+const darkHtml = await darkView.text();
+check('choosing dark is applied server-side', darkHtml.includes('data-theme="dark"'));
+check('  and no reset link is offered', !darkHtml.includes('Match device'));
+
+const lightHtml = await (
+  await fetch(`${base}/dashboard`, { headers: { cookie: `${cookie}; bk_theme=light` } })
+).text();
+check('choosing light is applied server-side', lightHtml.includes('data-theme="light"'));
+
+const junkHtml = await (
+  await fetch(`${base}/dashboard`, { headers: { cookie: `${cookie}; bk_theme=purple` } })
+).text();
+// A cookie is user-editable; junk must fall back rather than reach the markup.
+check('a junk theme cookie is ignored', !junkHtml.includes('data-theme='));
 check('no New sale button in the sidebar', !authedHtml.includes('New sale'));
 check('the top bar carries search', authedHtml.includes('action="/search"'));
 check('and a notifications panel', authedHtml.includes('Needs attention'));
