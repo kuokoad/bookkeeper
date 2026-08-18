@@ -144,6 +144,27 @@ check(
   (loginAuthed.headers.get('location') ?? '').includes('/dashboard'),
 );
 
+const DASH_HEADER = String.fromCharCode(10) + 'Dashboard:';
+
+console.log(DASH_HEADER);
+check('dashboard draws charts', (authedHtml.match(/<svg/g) ?? []).length >= 3);
+// A shape tells a screen reader nothing, and cannot be read over the phone.
+const labelled = (authedHtml.match(/role="img"/g) ?? []).length;
+check('every chart has a written summary', labelled >= 3, `${labelled} labelled`);
+check('and the figures are still text', authedHtml.includes('Money accounts'));
+check('cards cover the money questions', ['Cash flow', 'Spending', 'Money owed to you', 'Books check'].every((title) => authedHtml.includes(title)));
+// This claimed stages 1 and 2 were complete, long after stage 15.
+check('the stale build-progress panel is gone', !authedHtml.includes('Build progress'));
+
+const weekView = await fetch(`${base}/dashboard?sales=week`, { headers: { cookie }, redirect: 'manual' });
+const weekHtml = weekView.status === 200 ? await weekView.text() : '';
+check('the period selector works', weekView.status === 200, `status ${weekView.status}`);
+check(
+  'and marks the chosen period',
+  /7 days/i.test(weekHtml) && weekHtml.includes('sales=week'),
+);
+
+
 console.log('\nProducts & inventory:');
 const productsRes = await fetch(`${base}/products`, { headers: { cookie }, redirect: 'manual' });
 const productsHtml = productsRes.status === 200 ? await productsRes.text() : '';

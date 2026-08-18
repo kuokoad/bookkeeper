@@ -555,8 +555,22 @@ export function getIncomesTotal(db: Db, from: string, to: string): Minor {
   return minor(row?.total ?? 0);
 }
 
-/** Spending grouped by category for the period — what the expense report shows. */
-export function getExpensesByCategory(db: Db, from: string, to: string) {
+export interface ExpenseCategoryTotal {
+  categoryAccountId: number;
+  categoryName: string;
+  total: Minor;
+  count: number;
+}
+
+/**
+ * Spending grouped by category for the period — what the expense report shows.
+ *
+ * The total is wrapped as `Minor` rather than handed back as the raw number the
+ * driver returns. Every other reporting function returns branded money, and an
+ * unbranded number is exactly what the brand exists to catch before it reaches
+ * a formatter or an arithmetic operation.
+ */
+export function getExpensesByCategory(db: Db, from: string, to: string): ExpenseCategoryTotal[] {
   return db
     .select({
       categoryAccountId: expenses.categoryAccountId,
@@ -575,5 +589,6 @@ export function getExpensesByCategory(db: Db, from: string, to: string) {
     )
     .groupBy(expenses.categoryAccountId)
     .orderBy(sql`SUM(${expenses.amountMinor}) DESC`)
-    .all();
+    .all()
+    .map((row) => ({ ...row, total: minor(row.total) }));
 }

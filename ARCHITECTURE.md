@@ -667,6 +667,45 @@ account by the sign of each party's own balance: debtors as an asset, credits as
 the liability they are. A test asserts the two still sum to the control account,
 so the split can never invent a figure.
 
+---
+
+## 18. The dashboard
+
+Rebuilt as a card grid after a QuickBooks dashboard was offered as a reference.
+The **patterns** were taken — a card per question, a headline figure, a small
+picture beneath it, a period selector where one helps — and none of the
+branding, palette or chrome.
+
+**Charts are hand-written SVG, rendered on the server.** No charting library:
+that would have been the largest thing in the bundle, and these arrive as markup
+with **zero client JavaScript**, which is what a counter PC and a phone over
+shop WiFi deserve. It also keeps the runtime at eight dependencies.
+
+Rules the charts keep:
+
+- **A component never computes money.** Charts receive values already totalled
+  by a service, plus the label already formatted. The arithmetic in
+  `components/ui/chart.tsx` produces pixel positions and nothing else.
+- **A figure is never only a shape.** Every chart is `role="img"` with a written
+  summary, and the card states the same numbers as text — a chart cannot be read
+  aloud, quoted over the phone, or checked against a receipt.
+- **Paired bars share one scale.** Two series on separate scales is how a chart
+  misleads without stating anything false.
+- **An empty period says so**, rather than drawing a flat line at zero, which
+  would read as a real measurement.
+
+`getMoneyByMonth` was added so the cash-flow chart costs **one** grouped query
+rather than one aggregate per month. The dashboard is the most-opened screen;
+six whole-ledger aggregates on it would be the slowest thing in the app within a
+year of trading.
+
+Two defects were found while doing this. A "Build progress" panel still claimed
+stages 1 and 2 were complete, and pointed at menu items marked "Soon" that no
+longer exist. And `getExpensesByCategory` returned its total as a raw driver
+number rather than branded `Minor` — the only reporting function that did. The
+brand caught it at the call site, which is exactly its job; the fix went into
+the service, not a cast at the boundary.
+
 ### Known trade-offs, stated openly
 - **Local-first means one machine holds the data.** Automated local backups are in
   Stage 10; off-site backup is the owner's responsibility until sync is added.
