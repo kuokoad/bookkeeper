@@ -370,7 +370,7 @@ export function listCustomerPayments(db: Db, customerId?: number, limit = 100) {
  * the sale detail page disagreeing.
  */
 export function getOpenSales(db: Db, customerId: number) {
-  const outstanding = getOutstandingBySale(db, customerId);
+  const outstanding = getOutstandingBySale(db, { customerId });
 
   return db
     .select({

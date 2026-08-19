@@ -111,3 +111,49 @@ describe('PIN handling', () => {
     expect(() => assertPinAcceptable('905172')).not.toThrow();
   });
 });
+
+describe('a stored hash that is not a real hash', () => {
+  /**
+   * The derivation used to take its key length FROM the stored hash. A record
+   * whose hash portion decoded to nothing therefore derived nothing, compared
+   * nothing against nothing, and returned true — so that account accepted ANY
+   * password, silently, with a correct-looking record in the database.
+   *
+   * A blank or truncated hash can arrive from a half-finished restore, an
+   * interrupted write, or someone editing the file. Whatever the cause, the
+   * answer is no.
+   */
+  const SALT = Buffer.from('0123456789abcdef').toString('base64url');
+
+  it('refuses an EMPTY hash portion rather than accepting anything', async () => {
+    await expect(verifyPassword('anything at all', `scrypt$32768$8$1$${SALT}$`)).resolves.toBe(
+      false,
+    );
+    await expect(verifyPassword('', `scrypt$32768$8$1$${SALT}$`)).resolves.toBe(false);
+  });
+
+  it('refuses a hash portion that is not valid base64url', async () => {
+    // Decodes to an empty buffer rather than throwing, which is how this got in.
+    await expect(verifyPassword('anything at all', `scrypt$32768$8$1$${SALT}$***`)).resolves.toBe(
+      false,
+    );
+  });
+
+  it('refuses a hash too short to be one', async () => {
+    const stub = Buffer.from('short').toString('base64url');
+    await expect(verifyPassword('anything at all', `scrypt$32768$8$1$${SALT}$${stub}`)).resolves.toBe(
+      false,
+    );
+  });
+
+  it('refuses a missing salt', async () => {
+    const hash = Buffer.alloc(64, 7).toString('base64url');
+    await expect(verifyPassword('anything at all', `scrypt$32768$8$1$$${hash}`)).resolves.toBe(false);
+  });
+
+  it('still accepts a genuine password', async () => {
+    const encoded = await hashPassword('a-real-password-2026');
+    await expect(verifyPassword('a-real-password-2026', encoded)).resolves.toBe(true);
+    await expect(verifyPassword('not-the-password', encoded)).resolves.toBe(false);
+  });
+});

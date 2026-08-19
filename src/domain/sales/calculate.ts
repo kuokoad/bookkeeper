@@ -63,6 +63,28 @@ export interface SaleTotals {
   tax: Minor;
   /** What the customer must pay. */
   total: Minor;
+
+  /**
+   * The same three figures with any embedded tax taken out.
+   *
+   * When prices exclude tax these are identical to `subtotal`,
+   * `invoiceDiscount` and `totalDiscount` — the tax was never in them. When
+   * prices include tax they are smaller, because part of every quoted price is
+   * money being held for the tax authority rather than money the shop earned.
+   *
+   * The ledger and the sale record use these, so that one identity holds no
+   * matter which way the shop prices its shelves:
+   *
+   *   subtotalExTax − invoiceDiscountExTax + tax = total
+   *
+   * They are derived by subtraction rather than computed independently, so the
+   * identity is exact rather than nearly true: rounding each piece separately
+   * would leave the odd pesewa unaccounted for, and a pesewa that belongs to
+   * nobody is how a set of books stops balancing.
+   */
+  subtotalExTax: Minor;
+  invoiceDiscountExTax: Minor;
+  totalDiscountExTax: Minor;
 }
 
 /**
@@ -138,30 +160,63 @@ export function calculateSale(input: SaleTotalsInput): SaleTotals {
     throw new ValidationError('A tax rate cannot be negative.');
   }
 
+  const lineDiscounts = sum(lines.map((line) => line.discount));
+  const totalDiscount = add(lineDiscounts, invoiceDiscount);
+
   let tax: Minor;
   let total: Minor;
+  let subtotalExTax: Minor;
+  let invoiceDiscountExTax: Minor;
+  let totalDiscountExTax: Minor;
 
   if (taxRateBp === 0) {
     tax = ZERO;
     total = netBeforeTax;
+    subtotalExTax = subtotal;
+    invoiceDiscountExTax = invoiceDiscount;
+    totalDiscountExTax = totalDiscount;
   } else if (input.taxInclusive) {
     // Prices already include tax: extract the tax portion out of the total.
     // tax = net x rate / (10000 + rate)
     tax = percentOfInclusive(netBeforeTax, taxRateBp);
     total = netBeforeTax;
+
+    // A discount given on a tax-inclusive price reduces the tax as well as the
+    // takings, in the same proportion — hand back GHS 22.50 of a 12.5% price
+    // and GHS 2.50 of that was tax you no longer owe. So each discount has its
+    // own embedded tax stripped out before it reaches the ledger.
+    const taxInInvoiceDiscount = percentOfInclusive(invoiceDiscount, taxRateBp);
+    const taxInLineDiscounts = percentOfInclusive(lineDiscounts, taxRateBp);
+
+    invoiceDiscountExTax = subtract(invoiceDiscount, taxInInvoiceDiscount);
+    totalDiscountExTax = subtract(
+      totalDiscount,
+      add(taxInInvoiceDiscount, taxInLineDiscounts),
+    );
+
+    // Defined so that subtotalExTax - invoiceDiscountExTax + tax == total,
+    // exactly. Computing tax on the subtotal separately would round twice and
+    // could miss by a pesewa.
+    subtotalExTax = subtract(subtotal, add(tax, taxInInvoiceDiscount));
   } else {
     tax = percentOf(netBeforeTax, taxRateBp);
     total = add(netBeforeTax, tax);
+    subtotalExTax = subtotal;
+    invoiceDiscountExTax = invoiceDiscount;
+    totalDiscountExTax = totalDiscount;
   }
 
   return {
     lines,
     subtotal,
     invoiceDiscount,
-    totalDiscount: add(sum(lines.map((line) => line.discount)), invoiceDiscount),
+    totalDiscount,
     netBeforeTax,
     tax,
     total,
+    subtotalExTax,
+    invoiceDiscountExTax,
+    totalDiscountExTax,
   };
 }
 

@@ -83,6 +83,11 @@ describe('protecting the shop from locking itself out', () => {
   });
 
   it('refuses to demote the only owner', () => {
+    // Two rules stand between the shop and having nobody in charge, and the
+    // sole owner meets the stricter one first: you do not change your own role,
+    // because that is the shape self-promotion takes. Demoting the last owner
+    // is refused underneath it. Handing over means promoting a successor and
+    // letting them demote you.
     expect(() =>
       updateUser(
         context.db,
@@ -90,9 +95,23 @@ describe('protecting the shop from locking itself out', () => {
         { displayName: 'Kwame Owusu', role: 'STAFF' },
         OWNER_ACTOR,
       ),
-    ).toThrow(/only owner/i);
+    ).toThrow(/your own role/i);
 
     expect(getUser(context.db, OWNER_ACTOR.id).role).toBe('OWNER');
+  });
+
+  it('lets an owner hand over, leaving the shop with an owner throughout', async () => {
+    const second = await makeOwner();
+
+    updateUser(
+      context.db,
+      OWNER_ACTOR.id,
+      { displayName: 'Kwame Owusu', role: 'STAFF' },
+      { id: second, username: 'abena' },
+    );
+
+    expect(getUser(context.db, OWNER_ACTOR.id).role).toBe('STAFF');
+    expect(getUser(context.db, second).role).toBe('OWNER');
   });
 
   it('allows it once a SECOND owner exists', async () => {

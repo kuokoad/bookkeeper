@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -9,13 +9,24 @@ import {
   purchaseItems,
   purchasePayments,
   purchases,
+  stockLedger,
   supplierPaymentAllocations,
   supplierPayments,
   suppliers,
 } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
-import { allocate, isZero, minor, percentOf, subtract, sum, ZERO, type Minor } from '@/domain/money';
+import {
+  add,
+  allocate,
+  isZero,
+  minor,
+  percentOf,
+  subtract,
+  sum,
+  ZERO,
+  type Minor,
+} from '@/domain/money';
 import { extendPrice, qty as makeQty, type Qty } from '@/domain/quantity';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
@@ -394,6 +405,9 @@ export function voidPurchase(
     const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
     const allowNegative = settings?.allowNegativeStock ?? false;
 
+    /** Value the shelf could not keep. Posted below if it is not zero. */
+    let costingResidual: Minor = ZERO;
+
     const reversal = tx
       .insert(purchases)
       .values({
@@ -420,14 +434,47 @@ export function voidPurchase(
 
     if (!reversal) throw new ConflictError('Could not create the reversing purchase.');
 
+    /**
+     * The goods leave at the cost they arrived at, not at today's average.
+     *
+     * The general ledger side of this void is an exact reversal of the original
+     * entry, so it credits Inventory with what the delivery cost. Taking the
+     * stock out at the running average instead — which is what happens when no
+     * cost is supplied — removes a different number, and the two counts of
+     * inventory stop agreeing: buy ten at GHS 10 and ten at GHS 20, void the
+     * first, and the shelf says GHS 150 while the accounts say GHS 200.
+     *
+     * The original movements are read back rather than recomputed, because the
+     * value that went in had an invoice-level discount spread across it and the
+     * ledger row is the record of what that came to.
+     */
+    const originalCosts = new Map<number, Minor[]>();
+    for (const row of tx
+      .select({ productId: stockLedger.productId, totalCost: stockLedger.totalCostMinor })
+      .from(stockLedger)
+      .where(
+        and(eq(stockLedger.sourceType, 'PURCHASE'), eq(stockLedger.sourceId, purchaseId)),
+      )
+      .orderBy(asc(stockLedger.id))
+      .all()) {
+      const queue = originalCosts.get(row.productId) ?? [];
+      queue.push(minor(row.totalCost));
+      originalCosts.set(row.productId, queue);
+    }
+
     items.forEach((item, index) => {
       const product = tx.select().from(products).where(eq(products.id, item.productId)).get();
 
       if (product?.trackInventory) {
-        recordStockMovement(tx, {
+        // Same product can appear on more than one line, so costs are consumed
+        // in the order they were recorded.
+        const wentInAt = originalCosts.get(item.productId)?.shift();
+
+        const movement = recordStockMovement(tx, {
           productId: item.productId,
           direction: 'OUT',
           qty: makeQty(item.qtyMilli),
+          ...(wentInAt === undefined ? {} : { totalCost: wentInAt }),
           movementType: 'PURCHASE_RETURN',
           sourceType: 'PURCHASE_VOID',
           sourceId: reversal.id,
@@ -439,6 +486,8 @@ export function voidPurchase(
           note: `Void of ${original.purchaseNo}`,
           isDemo: original.isDemo,
         });
+
+        costingResidual = add(costingResidual, movement.residual);
       }
 
       tx.insert(purchaseItems)
@@ -493,6 +542,54 @@ export function voidPurchase(
         .set({ journalEntryId: reversalEntryId, updatedAt: now })
         .where(eq(purchases.id, reversal.id))
         .run();
+    }
+
+    /**
+     * Value the shelf could not keep, posted as its own entry.
+     *
+     * Taking the last of a product back out at what it cost can leave the
+     * running value short of, or over, zero — the average moved on while other
+     * stock arrived and sold. Zero quantity has to mean zero value, so that
+     * difference leaves inventory, and it has to leave the general ledger too
+     * or the two counts of inventory part company.
+     *
+     * Recorded separately from the reversal rather than folded into it: the
+     * reversal says exactly what the original said, backwards, and this says
+     * what the averaging cost the shop. Merging them would hide a real figure
+     * inside a mechanical one.
+     */
+    if (!isZero(costingResidual)) {
+      postJournalEntry(
+        tx,
+        {
+          entryDate: businessDate,
+          sourceType: 'PURCHASE_RETURN',
+          sourceId: reversal.id,
+          memo: `Stock costing difference on voiding ${original.purchaseNo}`,
+          occurredAt: now,
+          lines:
+            costingResidual > 0
+              ? [
+                  debit(accountIdByCode(tx, ACCOUNT_CODES.COST_OF_GOODS_SOLD), costingResidual, {
+                    description: `${purchaseNo} costing difference`,
+                  }),
+                  credit(accountIdByCode(tx, ACCOUNT_CODES.INVENTORY), costingResidual, {
+                    description: `${purchaseNo} stock value released`,
+                  }),
+                ]
+              : [
+                  debit(accountIdByCode(tx, ACCOUNT_CODES.INVENTORY), minor(-costingResidual), {
+                    description: `${purchaseNo} stock value restored`,
+                  }),
+                  credit(
+                    accountIdByCode(tx, ACCOUNT_CODES.COST_OF_GOODS_SOLD),
+                    minor(-costingResidual),
+                    { description: `${purchaseNo} costing difference` },
+                  ),
+                ],
+        },
+        actor,
+      );
     }
 
     tx.update(purchases)
@@ -560,9 +657,15 @@ export function getPurchaseOutstanding(db: Db, purchaseId: number): Minor {
  * Outstanding amount for EVERY posted purchase, in one pass.
  * Mirror of `getOutstandingBySale` — see the note there.
  */
-export function getOutstandingByPurchase(db: Db, supplierId?: number): Map<number, Minor> {
+export function getOutstandingByPurchase(
+  db: Db,
+  options: { supplierId?: number; asAt?: string } = {},
+): Map<number, Minor> {
+  const { supplierId, asAt } = options;
+
   const conditions: SQL[] = [eq(purchases.status, 'POSTED')];
   if (supplierId !== undefined) conditions.push(eq(purchases.supplierId, supplierId));
+  if (asAt !== undefined) conditions.push(lte(purchases.businessDate, asAt));
 
   const paid = db
     .select({
@@ -574,6 +677,9 @@ export function getOutstandingByPurchase(db: Db, supplierId?: number): Map<numbe
     .all();
   const paidByPurchase = new Map(paid.map((row) => [row.purchaseId, row.total]));
 
+  const settledConditions: SQL[] = [eq(supplierPayments.status, 'POSTED')];
+  if (asAt !== undefined) settledConditions.push(lte(supplierPayments.businessDate, asAt));
+
   const settled = db
     .select({
       purchaseId: supplierPaymentAllocations.purchaseId,
@@ -581,7 +687,7 @@ export function getOutstandingByPurchase(db: Db, supplierId?: number): Map<numbe
     })
     .from(supplierPaymentAllocations)
     .innerJoin(supplierPayments, eq(supplierPayments.id, supplierPaymentAllocations.paymentId))
-    .where(eq(supplierPayments.status, 'POSTED'))
+    .where(and(...settledConditions))
     .groupBy(supplierPaymentAllocations.purchaseId)
     .all();
   const settledByPurchase = new Map(settled.map((row) => [row.purchaseId, row.total]));
@@ -706,7 +812,7 @@ export function getPurchasesSummary(db: Db, from: string, to: string) {
 
 /** Unpaid purchases for a supplier, oldest first. */
 export function getOpenPurchases(db: Db, supplierId: number) {
-  const outstanding = getOutstandingByPurchase(db, supplierId);
+  const outstanding = getOutstandingByPurchase(db, { supplierId });
 
   return db
     .select({

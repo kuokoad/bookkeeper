@@ -11,7 +11,7 @@ import {
 import type { AdjustmentDirection, AdjustmentReason } from '@/db/schema/inventory';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
-import { isZero, minor, sum, ZERO, type Minor } from '@/domain/money';
+import { add, isZero, minor, sum, ZERO, type Minor } from '@/domain/money';
 import type { Qty } from '@/domain/quantity';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
@@ -345,6 +345,9 @@ export function voidStockAdjustment(
     const reversalNo = nextDocumentNumber(tx, DOC_TYPES.ADJUSTMENT);
     const allowNegative = allowNegativeStock(tx);
 
+    /** Value the shelf could not keep. Posted below if it is not zero. */
+    let costingResidual: Minor = ZERO;
+
     const reversal = tx
       .insert(stockAdjustments)
       .values({
@@ -366,15 +369,24 @@ export function voidStockAdjustment(
     if (!reversal) throw new ConflictError('Could not create the reversing adjustment.');
 
     for (const item of items) {
-      // Opposite direction. When putting stock back we restore exactly the
-      // value that originally left, so the void is value-neutral.
+      /**
+       * Opposite direction, at the ORIGINAL value in both directions.
+       *
+       * Putting stock back restores what left. Taking stock back out has to
+       * remove what went in — and that half used to be left to the running
+       * average, which by then may have moved on. The general ledger side is an
+       * exact reversal of the original entry either way, so an average-costed
+       * removal made the two counts of inventory disagree: opening stock of ten
+       * bags at GHS 10, a delivery of ten at GHS 20, then void the opening
+       * stock, and the shelf said GHS 150 while the accounts said GHS 200.
+       */
       const opposite: AdjustmentDirection = item.direction === 'IN' ? 'OUT' : 'IN';
 
       const movement = recordStockMovement(tx, {
         productId: item.productId,
         direction: opposite,
         qty: item.qtyMilli as Qty,
-        ...(opposite === 'IN' ? { totalCost: minor(item.totalCostMinor) } : {}),
+        totalCost: minor(item.totalCostMinor),
         movementType: opposite === 'IN' ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT',
         sourceType: 'STOCK_ADJUSTMENT_VOID',
         sourceId: reversal.id,
@@ -399,6 +411,8 @@ export function voidStockAdjustment(
           createdAt: now,
         })
         .run();
+
+      costingResidual = add(costingResidual, movement.residual);
     }
 
     let reversalEntryId = 0;
@@ -421,6 +435,49 @@ export function voidStockAdjustment(
         .set({ journalEntryId: reversed.entryId, updatedAt: now })
         .where(eq(stockAdjustments.id, reversal.id))
         .run();
+    }
+
+    /**
+     * Value the shelf could not keep, posted as its own entry.
+     *
+     * Emptying a product at the value that originally went in can leave the
+     * running value short of, or over, zero, because the average moved on in
+     * between. Zero quantity must mean zero value, so the difference leaves
+     * inventory — and it has to leave the general ledger with it, or the stock
+     * ledger and the accounts stop agreeing.
+     */
+    if (!isZero(costingResidual)) {
+      postJournalEntry(
+        tx,
+        {
+          entryDate: businessDate,
+          sourceType: 'STOCK_ADJUSTMENT',
+          sourceId: reversal.id,
+          memo: `Stock costing difference on voiding ${original.adjustmentNo}`,
+          occurredAt: now,
+          lines:
+            costingResidual > 0
+              ? [
+                  debit(accountIdByCode(tx, ACCOUNT_CODES.COST_OF_GOODS_SOLD), costingResidual, {
+                    description: `${reversalNo} costing difference`,
+                  }),
+                  credit(accountIdByCode(tx, ACCOUNT_CODES.INVENTORY), costingResidual, {
+                    description: `${reversalNo} stock value released`,
+                  }),
+                ]
+              : [
+                  debit(accountIdByCode(tx, ACCOUNT_CODES.INVENTORY), minor(-costingResidual), {
+                    description: `${reversalNo} stock value restored`,
+                  }),
+                  credit(
+                    accountIdByCode(tx, ACCOUNT_CODES.COST_OF_GOODS_SOLD),
+                    minor(-costingResidual),
+                    { description: `${reversalNo} costing difference` },
+                  ),
+                ],
+        },
+        actor,
+      );
     }
 
     tx.update(stockAdjustments)

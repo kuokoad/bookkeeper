@@ -102,3 +102,51 @@ describe('pages that read the database render fresh', () => {
     expect(stale.map(name)).toEqual([]);
   });
 });
+
+describe('the dashboard shows only what the person may see', () => {
+  /**
+   * The dashboard is not one module, so it cannot be gated by a single
+   * `requirePageAccess` call — it is a wall of cards, each answering a question
+   * from a different part of the books.
+   *
+   * It used to ask nobody's permission at all: a till assistant given `sales`
+   * alone opened it and was shown the shop's cash position, its debts, its
+   * margins and its ledger totals. Hiding cards in the markup would not have
+   * been enough, because the figures would still have been queried and sent to
+   * the browser, so the READS are gated too.
+   */
+  const source = readFileSync(
+    join(process.cwd(), 'src', 'app', '(app)', 'dashboard', 'page.tsx'),
+    'utf8',
+  );
+
+  it('decides what to show from the signed-in user', () => {
+    expect(source).toContain("can(user, 'accounts', 'view')");
+    expect(source).toContain("can(user, 'sales', 'view')");
+    expect(source).toContain("can(user, 'expenses', 'view')");
+    expect(source).toContain("can(user, 'customers', 'view')");
+    expect(source).toContain("can(user, 'inventory', 'view')");
+  });
+
+  it('sends nobody to a dashboard without a session', () => {
+    expect(source).toContain("redirect('/login')");
+  });
+
+  it('does not query figures it is not going to show', () => {
+    // Each of these reads money the person may not be entitled to see, so each
+    // must sit behind its gate rather than run unconditionally.
+    for (const call of [
+      'getPaymentAccountBalances(db)',
+      'getTrialBalance(db)',
+      'getTotalReceivables(db)',
+      'getTotalPayables(db)',
+    ]) {
+      const index = source.indexOf(call);
+      expect(index, `${call} is not in the page`).toBeGreaterThan(-1);
+
+      // The assignment must be conditional: `shows.x ? call : …`.
+      const line = source.slice(source.lastIndexOf('\n', index) + 1, index);
+      expect(line, `${call} runs unconditionally`).toMatch(/shows\.\w+\s*\?/);
+    }
+  });
+});

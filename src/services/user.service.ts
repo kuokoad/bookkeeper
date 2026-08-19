@@ -9,6 +9,7 @@ import { invalidateAllUserSessions } from '@/lib/auth/session';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import type { Actor } from './journal.service';
+import { assertActorIsOwner, assertPermissionsGrantable } from './role-guard';
 
 /**
  * Managing people.
@@ -133,6 +134,21 @@ export function updateUser(db: Db, id: number, input: UpdateUserInput, actor: Ac
     const existing = tx.select().from(users).where(eq(users.id, id)).get();
     if (!existing) throw new NotFoundError('User', id);
 
+    if (existing.role !== input.role) {
+      // Changing what somebody may do is an owner's decision, not a chore that
+      // comes with the `users` permission. See role-guard.ts.
+      assertActorIsOwner(tx, actor, 'change a person’s role');
+
+      // Even an owner does not do this to themselves. Self-promotion is the
+      // hole this guard exists to close, and an owner stepping down should be
+      // stepped down by another owner so the change has a second pair of eyes.
+      if (id === actor.id) {
+        throw new ConflictError(
+          'You cannot change your own role. Another owner has to do that for you.',
+        );
+      }
+    }
+
     // Demoting the last owner would leave nobody able to manage the shop.
     if (existing.role === 'OWNER' && input.role !== 'OWNER' && activeOwnerCount(tx, id) === 0) {
       throw new ConflictError(
@@ -223,6 +239,18 @@ export function setUserPermissions(
   actor: Actor,
 ): void {
   db.transaction((tx) => {
+    // Rewriting your own row is the shortest route to more rights, and there is
+    // no legitimate reason to do it: nobody needs to grant themselves what they
+    // already have.
+    if (id === actor.id) {
+      throw new ConflictError(
+        'You cannot change your own permissions. Another owner has to do that for you.',
+      );
+    }
+    // Ticking boxes for a colleague and then signing in as them is the same
+    // escalation with one extra step, so only rights you hold can be passed on.
+    assertPermissionsGrantable(tx, actor, permissions);
+
     const existing = tx.select().from(users).where(eq(users.id, id)).get();
     if (!existing) throw new NotFoundError('User', id);
     if (existing.role === 'OWNER') {

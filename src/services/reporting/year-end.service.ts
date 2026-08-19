@@ -2,7 +2,8 @@ import { and, gte, lte, sql } from 'drizzle-orm';
 
 import { businessSettings, journalEntries } from '@/db/schema';
 import type { Db } from '@/db/types';
-import { minor, subtract, type Minor } from '@/domain/money';
+import { minor, subtract, ZERO, type Minor } from '@/domain/money';
+import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import {
   financialYear,
   financialYearsBetween,
@@ -19,7 +20,7 @@ import {
   type CashFlow,
   type ProfitAndLoss,
 } from './financial.service';
-import { getTrialBalance, type TrialBalance } from './balances.service';
+import { getAccountBalances, getTrialBalance, type TrialBalance } from './balances.service';
 import {
   checkBooksIntegrity,
   getPayablesAgeing,
@@ -127,21 +128,43 @@ function countEntriesIn(db: Db, year: FinancialYear): number {
 }
 
 /**
+ * What the owner took out of the shop during the year.
+ *
+ * Read from the movement on the drawings account within the year, NOT from the
+ * difference between two balance-sheet snapshots. Closing a year sweeps
+ * drawings into retained earnings, so the account finishes the year at zero:
+ * a snapshot comparison reports that nothing was taken out the moment the year
+ * is closed — and the year-end pack is precisely the document an owner opens
+ * after closing.
+ *
+ * The closing entry itself is excluded for the same reason. Counting it would
+ * cancel out the very movements being measured.
+ */
+function drawingsDuringYear(db: Db, year: FinancialYear): Minor {
+  const row = getAccountBalances(db, {
+    from: year.start,
+    to: year.end,
+    excludeClosing: true,
+  }).find((account) => account.code === ACCOUNT_CODES.OWNERS_DRAWINGS);
+
+  return row?.balance ?? ZERO;
+}
+
+/**
  * How the owner's stake moved over the year.
  *
- * There is no year-end closing entry in this application — revenue and expense
- * accounts accumulate and the balance sheet folds all-time profit into equity.
- * That keeps assets = liabilities + equity true on any date without a ritual to
- * remember, but it means the balance sheet alone does not show what *this year*
- * did to the owner's stake. This does, and it is checked to tie back exactly.
+ * The balance sheet shows where equity stands on a date; it does not show what
+ * *this year* did to it. This does, and it is checked to tie back exactly — a
+ * pack that does not reconcile says so on its face rather than presenting tidy
+ * figures that do not add up.
  */
 function equityMovement(
   opening: BalanceSheet,
   closing: BalanceSheet,
   profitForYear: Minor,
+  drawings: Minor,
 ): EquityMovement {
   const capitalIntroduced = subtract(closing.ownersCapital, opening.ownersCapital);
-  const drawings = subtract(closing.drawings, opening.drawings);
   const openingBalancesRecognised = subtract(
     closing.openingBalanceEquity,
     opening.openingBalanceEquity,
@@ -210,7 +233,12 @@ export function getYearEndPack(db: Db, startYear: number): YearEndPack {
     trialBalance: getTrialBalance(db, { to: year.end }),
     receivables: getReceivablesAgeing(db, year.end),
     payables: getPayablesAgeing(db, year.end),
-    equity: equityMovement(previousBalanceSheet, balanceSheet, profitAndLoss.netProfit),
+    equity: equityMovement(
+      previousBalanceSheet,
+      balanceSheet,
+      profitAndLoss.netProfit,
+      drawingsDuringYear(db, year),
+    ),
     integrity: checkBooksIntegrity(db),
     entryCount: countEntriesIn(db, year),
     isLocked: lockedBefore !== null && lockedBefore >= year.end,

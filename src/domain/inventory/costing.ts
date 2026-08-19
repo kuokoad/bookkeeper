@@ -47,6 +47,24 @@ export interface MovementResult {
   totalCost: Minor;
   /** Rounded per-unit figure, for DISPLAY only. Never use it to recompute cost. */
   unitCost: Minor;
+  /**
+   * Value the shelf could not keep, over and above `totalCost`.
+   *
+   * Zero quantity has to mean zero value — inventory cannot be worth something
+   * with nothing on it. When a movement empties the shelf at a KNOWN cost that
+   * does not happen to equal the value sitting there, the difference has to go
+   * somewhere: it is reported here rather than quietly dropped.
+   *
+   * Positive means inventory gave up more than `totalCost` accounts for;
+   * negative means it kept less. Either way the caller must post it, because a
+   * pesewa that leaves the stock ledger without leaving the general ledger is
+   * precisely how the two counts of inventory start disagreeing.
+   *
+   * `applyStockOut` never reports one: it costs at the running average, so it
+   * folds any rounding remainder into `totalCost` where it belongs as cost of
+   * goods sold.
+   */
+  residual: Minor;
 }
 
 /** Invariant: zero quantity must mean zero value. */
@@ -83,10 +101,13 @@ export function applyStockIn(
 
   const nextQty = addQty(current.qty, qty);
   let nextValue = add(current.value, totalCost);
+  let residual = ZERO;
 
   // Receiving stock can bring a negative position back to exactly zero. If it
-  // does, any residual value must go with it rather than being stranded.
+  // does, any value left over must go with it rather than being stranded — and
+  // must be REPORTED, so the general ledger can be told the same thing.
   if (nextQty === 0 && !isZero(nextValue)) {
+    residual = nextValue;
     nextValue = ZERO;
   }
 
@@ -97,6 +118,7 @@ export function applyStockIn(
     state,
     totalCost,
     unitCost: qty === 0 ? ZERO : mulDiv(totalCost, QTY_SCALE, qty),
+    residual,
   };
 }
 
@@ -162,6 +184,9 @@ export function applyStockOut(
       state,
       totalCost: cogs,
       unitCost: mulDiv(cogs, QTY_SCALE, qty),
+      // Costing at the running average, any remainder is cost of goods sold and
+      // has already been folded into `cogs` above. Nothing is left over.
+      residual: ZERO,
     };
   }
 
@@ -176,23 +201,29 @@ export function applyStockOut(
 
   const coveredCost = current.qty > 0 ? current.value : ZERO;
   const excessCost = extendPrice(fallbackUnitCost, excess);
-  const cogs = add(coveredCost, excessCost);
+  let cogs = add(coveredCost, excessCost);
 
   const nextQty = subtractQty(current.qty, qty);
   // current.value is fully released for the covered part; the excess drives the
   // balance negative by exactly what it was costed at.
-  const nextValue = subtract(current.qty > 0 ? ZERO : current.value, excessCost);
+  let nextValue = subtract(current.qty > 0 ? ZERO : current.value, excessCost);
 
-  const state: StockState = {
-    qty: nextQty,
-    value: nextQty === 0 ? ZERO : nextValue,
-  };
+  // Landing exactly on zero must empty the value too, and — as in the ordinary
+  // branch above — whatever is left goes out as cost of goods sold rather than
+  // being dropped on the floor.
+  if (nextQty === 0 && !isZero(nextValue)) {
+    cogs = add(cogs, nextValue);
+    nextValue = ZERO;
+  }
+
+  const state: StockState = { qty: nextQty, value: nextValue };
   assertCoherent(state);
 
   return {
     state,
     totalCost: cogs,
     unitCost: mulDiv(cogs, QTY_SCALE, qty),
+    residual: ZERO,
   };
 }
 
@@ -243,12 +274,20 @@ export function applyStockOutAtCost(
   }
 
   const nextQty = subtractQty(current.qty, qty);
-  const nextValue = nextQty === 0 ? ZERO : subtract(current.value, totalCost);
+  const remaining = subtract(current.value, totalCost);
+
+  // Emptying the shelf must empty its value. Removing goods at what a supplier
+  // charged rarely leaves exactly nothing behind — the average moved on when
+  // other stock arrived or sold — and that difference used to be discarded
+  // here, silently, so the stock ledger dropped to zero while the Inventory
+  // account carried on holding money for goods that were gone.
+  const residual = nextQty === 0 ? remaining : ZERO;
+  const nextValue = nextQty === 0 ? ZERO : remaining;
 
   const state: StockState = { qty: nextQty, value: nextValue };
   assertCoherent(state);
 
-  return { state, totalCost, unitCost: mulDiv(totalCost, QTY_SCALE, qty) };
+  return { state, totalCost, unitCost: mulDiv(totalCost, QTY_SCALE, qty), residual };
 }
 
 /**

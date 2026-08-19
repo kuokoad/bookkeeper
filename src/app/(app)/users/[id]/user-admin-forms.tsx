@@ -38,6 +38,8 @@ export function UserAdminForms({
   hasPin,
   isSelf,
   permissions,
+  actorIsOwner,
+  grantable,
 }: {
   userId: number;
   username: string;
@@ -48,7 +50,17 @@ export function UserAdminForms({
   hasPin: boolean;
   isSelf: boolean;
   permissions: Partial<Record<PermissionModule, ModulePermission>>;
+  actorIsOwner: boolean;
+  grantable: Partial<Record<PermissionModule, ModulePermission>> | null;
 }) {
+  /**
+   * Changing a role is an owner's decision, and not even an owner does it to
+   * themselves — self-promotion is the hole that rule exists to close, and an
+   * owner stepping down should be stepped down by another owner.
+   */
+  const mayChangeRole = actorIsOwner && !isSelf;
+  /** Nobody rewrites their own rights; that is the same hole, one step over. */
+  const mayChangePermissions = !isSelf;
   const [detailsState, detailsAction] = useActionState<FormState, FormData>(
     updateUserAction.bind(null, userId),
     {},
@@ -89,17 +101,43 @@ export function UserAdminForms({
             <TextInput id="displayName" name="displayName" defaultValue={displayName} required />
           </Field>
 
-          <Field label="Role" htmlFor="role" required>
-            <select
-              id="role"
-              name="role"
-              value={selectedRole}
-              onChange={(event) => setSelectedRole(event.target.value as UserRole)}
-              className="h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
-            >
-              <option value="STAFF">Staff</option>
-              <option value="OWNER">Owner</option>
-            </select>
+          <Field
+            label="Role"
+            htmlFor="role"
+            required
+            {...(mayChangeRole
+              ? {}
+              : {
+                  hint: isSelf
+                    ? 'You cannot change your own role. Another owner has to do that for you.'
+                    : 'Only an owner can change someone’s role.',
+                })}
+          >
+            {mayChangeRole ? (
+              <select
+                id="role"
+                name="role"
+                value={selectedRole}
+                onChange={(event) => setSelectedRole(event.target.value as UserRole)}
+                className="h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
+              >
+                <option value="STAFF">Staff</option>
+                <option value="OWNER">Owner</option>
+              </select>
+            ) : (
+              // Posted unchanged so "Save details" still saves the name. The
+              // server compares it to what is stored and only asks who you are
+              // if it actually differs.
+              <>
+                <input type="hidden" name="role" value={role} />
+                <p
+                  id="role"
+                  className="flex h-11 items-center rounded-lg border border-line bg-surface px-3 text-content-muted"
+                >
+                  {role === 'OWNER' ? 'Owner' : 'Staff'}
+                </p>
+              </>
+            )}
           </Field>
         </div>
 
@@ -130,17 +168,25 @@ export function UserAdminForms({
         >
           <h2 className="mb-1 text-sm font-semibold text-content">What they can do</h2>
           <p className="mb-4 text-sm text-content-muted">
-            Saving this signs them out, so the change takes effect immediately.
+            {mayChangePermissions
+              ? 'Saving this signs them out, so the change takes effect immediately.'
+              : 'These are your own permissions. Another owner has to change them for you.'}
           </p>
           {permissionState.error && (
             <Alert tone="danger" className="mb-3">
               {permissionState.error}
             </Alert>
           )}
-          <PermissionMatrix initial={permissions} />
-          <div className="mt-4">
-            <Submit label="Save permissions" />
-          </div>
+          <PermissionMatrix
+            initial={permissions}
+            disabled={!mayChangePermissions}
+            grantable={grantable}
+          />
+          {mayChangePermissions && (
+            <div className="mt-4">
+              <Submit label="Save permissions" />
+            </div>
+          )}
         </form>
       )}
 

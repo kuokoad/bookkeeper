@@ -491,13 +491,16 @@ export function getReceivablesAgeing(db: Db, asAt: string): AgeingRow[] {
   // One grouped query for every sale's outstanding amount, rather than three
   // queries per sale. At a few hundred credit sales the difference is the
   // report loading instantly versus visibly hanging.
-  const outstandingBySale = getOutstandingBySale(db);
+  const outstandingBySale = getOutstandingBySale(db, { asAt });
   const byParty = new Map<number, AgeingRow>();
 
   for (const row of rows) {
     if (row.customerId === null) continue;
     const outstanding = outstandingBySale.get(row.saleId) ?? minor(0);
-    if (outstanding <= 0) continue;
+    // Settled sales are skipped, but credit notes are NOT: a return that was
+    // put against the customer's account carries a negative outstanding, and
+    // dropping it leaves the shop chasing money it has already given back.
+    if (outstanding === 0) continue;
 
     const existing =
       byParty.get(row.customerId) ??
@@ -528,7 +531,13 @@ export function getReceivablesAgeing(db: Db, asAt: string): AgeingRow[] {
     byParty.set(row.customerId, existing);
   }
 
-  return [...byParty.values()].sort((a, b) => b.total - a.total);
+  return (
+    [...byParty.values()]
+      // A customer whose credit notes exactly cancel their invoices owes
+      // nothing and does not belong on a list of people to chase.
+      .filter((party) => party.total !== 0)
+      .sort((a, b) => b.total - a.total)
+  );
 }
 
 export function getPayablesAgeing(db: Db, asAt: string): AgeingRow[] {
@@ -546,13 +555,15 @@ export function getPayablesAgeing(db: Db, asAt: string): AgeingRow[] {
     .orderBy(asc(purchases.businessDate))
     .all();
 
-  const outstandingByPurchase = getOutstandingByPurchase(db);
+  const outstandingByPurchase = getOutstandingByPurchase(db, { asAt });
   const byParty = new Map<number, AgeingRow>();
 
   for (const row of rows) {
     if (row.supplierId === null) continue;
     const outstanding = outstandingByPurchase.get(row.purchaseId) ?? minor(0);
-    if (outstanding <= 0) continue;
+    // Debit notes count, for the same reason credit notes do on the customer
+    // side: goods sent back reduce what the shop owes.
+    if (outstanding === 0) continue;
 
     const existing =
       byParty.get(row.supplierId) ??
@@ -579,7 +590,12 @@ export function getPayablesAgeing(db: Db, asAt: string): AgeingRow[] {
     byParty.set(row.supplierId, existing);
   }
 
-  return [...byParty.values()].sort((a, b) => b.total - a.total);
+  return (
+    [...byParty.values()]
+      // A supplier whose debit notes cancel their invoices is owed nothing.
+      .filter((party) => party.total !== 0)
+      .sort((a, b) => b.total - a.total)
+  );
 }
 
 // --- integrity ------------------------------------------------------------
@@ -668,11 +684,22 @@ export function checkBooksIntegrity(db: Db): BooksIntegrity {
     return creditNormal ? (row?.credit ?? 0) - (row?.debit ?? 0) : (row?.debit ?? 0) - (row?.credit ?? 0);
   };
 
+  /**
+   * Entries with no source document behind them.
+   *
+   * Two kinds legitimately have none. An opening balance is where the books
+   * started, and a year-end close is the books tidying themselves — neither is
+   * a sale or a payment, so neither has a document to point at. Counting those
+   * would put a permanent red mark on every shop that has ever closed a year,
+   * and this screen only works if a number appearing on it means something is
+   * genuinely wrong.
+   */
   const untraced = db
     .select({ count: sql<number>`COUNT(*)` })
     .from(journalEntries)
     .where(
-      sql`${journalEntries.sourceId} IS NULL AND ${journalEntries.sourceType} <> 'OPENING_BALANCE'`,
+      sql`${journalEntries.sourceId} IS NULL
+          AND ${journalEntries.sourceType} NOT IN ('OPENING_BALANCE', 'YEAR_END_CLOSE')`,
     )
     .get();
 

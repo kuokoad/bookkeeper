@@ -8,11 +8,15 @@ import { db } from '@/db/client';
 import { login, loginWithPin, createUser, needsInitialSetup } from '@/services/auth.service';
 import { writeAudit } from '@/services/audit.service';
 import {
+  SESSION_ABSOLUTE_MAX_MS,
   SESSION_COOKIE_NAME,
-  SESSION_TTL_MS,
   invalidateSessionToken,
 } from '@/lib/auth/session';
-import { getRequestMetadata, getSessionContext } from '@/lib/auth/current-user';
+import {
+  clientThrottleKey,
+  getRequestMetadata,
+  getSessionContext,
+} from '@/lib/auth/current-user';
 import { rateLimit, resetRateLimit } from '@/lib/rate-limit';
 import { isDomainError } from '@/domain/errors';
 import { env, isProduction } from '@/lib/env';
@@ -43,7 +47,23 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Enter your password.').max(200),
 });
 
-function sessionCookieOptions(expiresAt: Date) {
+/**
+ * The cookie carries the token; the database decides whether it is still good.
+ *
+ * It is deliberately given the session's ABSOLUTE ceiling rather than its
+ * current expiry. The server slides that expiry forward while somebody keeps
+ * working, and a cookie stamped with the original deadline would be discarded
+ * by the browser on that date regardless — the server would have kept the
+ * session alive and the browser would have thrown its half away, signing the
+ * person out mid-week for no visible reason. Cookies cannot be re-issued during
+ * an ordinary page render in the App Router, so the fix is to stop the cookie
+ * from being the thing that expires.
+ *
+ * Nothing is lost by the longer cookie: an expired or revoked session is
+ * refused by `validateSessionToken` on the strength of the database row, and a
+ * cookie whose row has gone is simply an unrecognised string.
+ */
+function sessionCookieOptions() {
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
@@ -53,8 +73,7 @@ function sessionCookieOptions(expiresAt: Date) {
     // Read through the validated environment, so `1` and `true` both work and a
     // misspelling is not silently treated as "off".
     secure: env.COOKIE_SECURE,
-    expires: expiresAt,
-    maxAge: Math.floor(SESSION_TTL_MS / 1000),
+    maxAge: Math.floor(SESSION_ABSOLUTE_MAX_MS / 1000),
   };
 }
 
@@ -74,7 +93,7 @@ export async function loginAction(_previous: FormState, formData: FormData): Pro
   }
 
   const metadata = await getRequestMetadata();
-  const throttleKey = `login:${metadata.ipAddress ?? 'local'}`;
+  const throttleKey = await clientThrottleKey('login');
   const throttle = rateLimit(throttleKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
 
   if (!throttle.allowed) {
@@ -102,7 +121,7 @@ export async function loginAction(_previous: FormState, formData: FormData): Pro
   resetRateLimit(throttleKey);
 
   const store = await cookies();
-  store.set(SESSION_COOKIE_NAME, result.token, sessionCookieOptions(result.expiresAt));
+  store.set(SESSION_COOKIE_NAME, result.token, sessionCookieOptions());
 
   redirect('/dashboard');
 }
@@ -145,7 +164,7 @@ export async function pinLoginAction(
   const metadata = await getRequestMetadata();
   // The SAME throttle key as password sign-in, deliberately: two doors into one
   // account must not mean twice the attempts.
-  const throttleKey = `login:${metadata.ipAddress ?? 'local'}`;
+  const throttleKey = await clientThrottleKey('login');
   const throttle = rateLimit(throttleKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
 
   if (!throttle.allowed) {
@@ -173,7 +192,7 @@ export async function pinLoginAction(
   resetRateLimit(throttleKey);
 
   const store = await cookies();
-  store.set(SESSION_COOKIE_NAME, result.token, sessionCookieOptions(result.expiresAt));
+  store.set(SESSION_COOKIE_NAME, result.token, sessionCookieOptions());
 
   redirect('/dashboard');
 }

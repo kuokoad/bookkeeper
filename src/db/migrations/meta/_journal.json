@@ -92,6 +92,20 @@
       "when": 1787083090086,
       "tag": "0012_goofy_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1787098194032,
+      "tag": "0013_complex_carmella_unuscione",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1787098364157,
+      "tag": "0014_elite_havok",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { Field, TextInput } from '@/components/ui/field';
 import { PermissionMatrix } from '@/components/shared/permission-matrix';
+import type { PermissionMap } from '@/lib/auth/permissions';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -20,7 +21,13 @@ function SubmitButton() {
   );
 }
 
-export function NewUserForm() {
+export function NewUserForm({
+  isOwner,
+  grantable,
+}: {
+  isOwner: boolean;
+  grantable: PermissionMap | null;
+}) {
   const [state, formAction] = useActionState<FormState, FormData>(createUserAction, {});
   const [role, setRole] = useState<'OWNER' | 'STAFF'>('STAFF');
 
@@ -98,6 +105,14 @@ export function NewUserForm() {
         </div>
       </div>
 
+      {/*
+        Only an owner can make another owner, so for everyone else there is no
+        choice to present. The role still posts, as a fixed value the server
+        checks like any other.
+      */}
+      {!isOwner && <input type="hidden" name="role" value="STAFF" />}
+
+      {isOwner && (
       <div className="rounded-xl border border-line bg-surface-raised p-4">
         <h2 className="mb-3 text-sm font-semibold text-content">What kind of account?</h2>
 
@@ -145,6 +160,7 @@ export function NewUserForm() {
           </Alert>
         )}
       </div>
+      )}
 
       {role === 'STAFF' && (
         <div className="rounded-xl border border-line bg-surface-raised p-4">
@@ -152,7 +168,7 @@ export function NewUserForm() {
           <p className="mb-4 text-sm text-content-muted">
             Start from a preset and adjust. You can change this at any time.
           </p>
-          <PermissionMatrix initial={{}} />
+          <PermissionMatrix initial={{}} grantable={grantable} />
         </div>
       )}
 

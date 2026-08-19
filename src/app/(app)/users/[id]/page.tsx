@@ -137,6 +137,11 @@ export default async function UserDetailPage({
           hasPin={user.hasPin}
           isSelf={user.id === actor.id}
           permissions={permissions}
+          // Roles and rights are an owner's call, and rights can only be passed
+          // downwards. The server refuses either way; this stops the page
+          // offering controls that would only come back as a refusal.
+          actorIsOwner={actor.role === 'OWNER'}
+          grantable={actor.role === 'OWNER' ? null : actor.permissions}
         />
       ) : (
         <Card>

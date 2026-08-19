@@ -73,6 +73,14 @@ export function runPreflight(databasePath: string = env.DATABASE_PATH): Check[] 
       : 'COOKIE_SECURE=false. Correct for plain HTTP on the shop\'s own network; set it to true if you put the app behind HTTPS.',
   );
 
+  add(
+    'Forwarded headers are not blindly trusted',
+    env.TRUST_PROXY_HEADERS ? 'warn' : 'pass',
+    env.TRUST_PROXY_HEADERS
+      ? 'TRUST_PROXY_HEADERS=true. Only correct if a reverse proxy in front of this app OVERWRITES X-Forwarded-For. If callers can set it themselves, the sign-in rate limit can be sidestepped.'
+      : 'TRUST_PROXY_HEADERS=false — sign-in attempts are counted against one shared bucket rather than a header the caller controls.',
+  );
+
   // --- the database itself -------------------------------------------------
 
   const file = resolve(process.cwd(), databasePath);

@@ -28,8 +28,17 @@ export interface ClosableAccount {
 }
 
 export interface ClosingInput {
-  /** Revenue, other income, and the contra accounts (discounts, returns). */
+  /** Revenue and other income. Credit-normal. */
   revenue: ClosableAccount[];
+  /**
+   * Discounts given and goods returned. Kept apart from `revenue` because they
+   * are DEBIT-normal: giving GHS 100 away shows as a positive 100 here, and a
+   * positive figure in with the revenue would be added to the year's takings
+   * instead of taken off. Lumped in, a shop would be told that discounting made
+   * it money, and the closing entry would debit the account a second time
+   * rather than clear it.
+   */
+  contraRevenue: ClosableAccount[];
   /** Cost of goods sold and every expense. */
   expenses: ClosableAccount[];
   /** Owner's drawings for the year, if they are being closed too. */
@@ -42,7 +51,11 @@ export interface ClosingEntry {
   lines: DraftLine[];
   /** Revenue less expenses. Negative for a loss. */
   profit: Minor;
+  /** Net: sold, less discounts given and goods returned. */
   totalRevenue: Minor;
+  /** Sold before anything was given back. */
+  grossRevenue: Minor;
+  totalContraRevenue: Minor;
   totalExpenses: Minor;
   totalDrawings: Minor;
   /** What Retained Earnings moves by: profit less drawings. */
@@ -78,6 +91,11 @@ export function buildClosingEntry(input: ClosingInput): ClosingEntry {
     const line = closeOut(account, 'credit');
     if (line) lines.push(line);
   }
+  // Debit-normal, so closing it means crediting it back to zero.
+  for (const account of input.contraRevenue) {
+    const line = closeOut(account, 'debit');
+    if (line) lines.push(line);
+  }
   for (const account of input.expenses) {
     const line = closeOut(account, 'debit');
     if (line) lines.push(line);
@@ -87,7 +105,10 @@ export function buildClosingEntry(input: ClosingInput): ClosingEntry {
     if (line) lines.push(line);
   }
 
-  const totalRevenue = sum(input.revenue.map((account) => account.balance));
+  const grossRevenue = sum(input.revenue.map((account) => account.balance));
+  const totalContraRevenue = sum(input.contraRevenue.map((account) => account.balance));
+  // What the shop actually earned: sold, less given away and brought back.
+  const totalRevenue = minor(grossRevenue - totalContraRevenue);
   const totalExpenses = sum(input.expenses.map((account) => account.balance));
   const totalDrawings = sum(input.drawings.map((account) => account.balance));
 
@@ -119,6 +140,8 @@ export function buildClosingEntry(input: ClosingInput): ClosingEntry {
     lines,
     profit,
     totalRevenue,
+    grossRevenue,
+    totalContraRevenue,
     totalExpenses,
     totalDrawings,
     netToRetainedEarnings,

@@ -46,6 +46,7 @@ export interface ClosingRecord {
 /** Accounts to be swept, with their balance for the year. */
 interface ClosableSets {
   revenue: ClosableAccount[];
+  contraRevenue: ClosableAccount[];
   expenses: ClosableAccount[];
   drawings: ClosableAccount[];
 }
@@ -67,10 +68,12 @@ function collectClosable(db: Db | Tx, year: FinancialYear, includeDrawings: bool
   });
 
   return {
-    // Contra-revenue — discounts given and goods returned — belongs with
-    // revenue. Its balance is negative, and `closeOut` handles the side.
-    revenue: balances
-      .filter((account) => account.type === 'REVENUE' || account.type === 'CONTRA_REVENUE')
+    revenue: balances.filter((account) => account.type === 'REVENUE').map(asClosable),
+    // Discounts given and goods returned. Debit-normal, so their balances are
+    // POSITIVE and have to be taken off the year's takings rather than added
+    // to them — see the note on `ClosingInput.contraRevenue`.
+    contraRevenue: balances
+      .filter((account) => account.type === 'CONTRA_REVENUE')
       .map(asClosable),
     expenses: balances
       .filter((account) => account.type === 'EXPENSE' || account.type === 'COGS')

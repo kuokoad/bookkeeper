@@ -22,6 +22,7 @@ const expectBalanced = (lines: ReturnType<typeof buildClosingEntry>['lines']) =>
 describe('a profitable year', () => {
   const result = buildClosingEntry({
     revenue: [account(4000, 'Sales', 100_000)],
+    contraRevenue: [],
     expenses: [account(5000, 'Cost of goods sold', 60_000), account(6010, 'Rent', 10_000)],
     drawings: [],
     retainedEarningsAccountId: RETAINED,
@@ -54,6 +55,7 @@ describe('a profitable year', () => {
 describe('a loss-making year', () => {
   const result = buildClosingEntry({
     revenue: [account(4000, 'Sales', 40_000)],
+    contraRevenue: [],
     expenses: [account(6010, 'Rent', 55_000)],
     drawings: [],
     retainedEarningsAccountId: RETAINED,
@@ -73,6 +75,7 @@ describe('drawings', () => {
   it('are closed alongside profit, and pull retained earnings down', () => {
     const result = buildClosingEntry({
       revenue: [account(4000, 'Sales', 100_000)],
+      contraRevenue: [],
       expenses: [account(6010, 'Rent', 40_000)],
       drawings: [account(3100, "Owner's Drawings", 25_000)],
       retainedEarningsAccountId: RETAINED,
@@ -92,6 +95,7 @@ describe('drawings', () => {
     // The owner took out more than the shop earned — real, and it must balance.
     const result = buildClosingEntry({
       revenue: [account(4000, 'Sales', 50_000)],
+      contraRevenue: [],
       expenses: [account(6010, 'Rent', 20_000)],
       drawings: [account(3100, "Owner's Drawings", 45_000)],
       retainedEarningsAccountId: RETAINED,
@@ -108,6 +112,7 @@ describe('awkward but real shapes', () => {
   it('skips accounts that are already at zero', () => {
     const result = buildClosingEntry({
       revenue: [account(4000, 'Sales', 50_000), account(4200, 'Other income', 0)],
+      contraRevenue: [],
       expenses: [account(6010, 'Rent', 20_000), account(6020, 'Electricity', 0)],
       drawings: [],
       retainedEarningsAccountId: RETAINED,
@@ -124,6 +129,7 @@ describe('awkward but real shapes', () => {
     // debit balance. It still has to be zeroed, from the other direction.
     const result = buildClosingEntry({
       revenue: [account(4000, 'Sales', 80_000), account(4150, 'Sales returns', -5_000)],
+      contraRevenue: [],
       expenses: [account(6010, 'Rent', 20_000)],
       drawings: [],
       retainedEarningsAccountId: RETAINED,
@@ -138,6 +144,7 @@ describe('awkward but real shapes', () => {
   it('balances a year that broke exactly even', () => {
     const result = buildClosingEntry({
       revenue: [account(4000, 'Sales', 50_000)],
+      contraRevenue: [],
       expenses: [account(6010, 'Rent', 50_000)],
       drawings: [],
       retainedEarningsAccountId: RETAINED,
@@ -155,10 +162,63 @@ describe('awkward but real shapes', () => {
     expect(() =>
       buildClosingEntry({
         revenue: [account(4000, 'Sales', 0)],
+        contraRevenue: [],
         expenses: [],
         drawings: [],
         retainedEarningsAccountId: RETAINED,
       }),
     ).toThrow(ValidationError);
+  });
+});
+
+describe('discounts and returns', () => {
+  /**
+   * Contra-revenue is DEBIT-normal, so a discount given shows as a POSITIVE
+   * balance. Everything about closing it runs the opposite way to revenue: it
+   * is credited to zero, and it comes OFF the year's takings.
+   */
+  it('takes contra-revenue off the takings rather than adding it on', () => {
+    const result = buildClosingEntry({
+      revenue: [account(4000, 'Sales', 100_000)],
+      contraRevenue: [account(4100, 'Sales discounts', 10_000)],
+      expenses: [account(6010, 'Rent', 40_000)],
+      drawings: [],
+      retainedEarningsAccountId: RETAINED,
+    });
+
+    expect(result.grossRevenue).toBe(100_000);
+    expect(result.totalContraRevenue).toBe(10_000);
+    expect(result.totalRevenue).toBe(90_000);
+    expect(result.profit).toBe(50_000);
+    expectBalanced(result.lines);
+  });
+
+  it('closes it with a CREDIT, which is the direction that clears it', () => {
+    const result = buildClosingEntry({
+      revenue: [account(4000, 'Sales', 100_000)],
+      contraRevenue: [account(4100, 'Sales discounts', 10_000)],
+      expenses: [],
+      drawings: [],
+      retainedEarningsAccountId: RETAINED,
+    });
+
+    const line = result.lines.find((entry) => entry.accountId === 4100);
+    expect(line?.credit).toBe(10_000);
+    expect(line?.debit).toBe(0);
+  });
+
+  it('handles the odd case of a contra account on its own wrong side', () => {
+    // More discount reversed than given — unusual, but it still has to zero.
+    const result = buildClosingEntry({
+      revenue: [account(4000, 'Sales', 100_000)],
+      contraRevenue: [account(4100, 'Sales discounts', -2_000)],
+      expenses: [],
+      drawings: [],
+      retainedEarningsAccountId: RETAINED,
+    });
+
+    expect(result.lines.find((entry) => entry.accountId === 4100)?.debit).toBe(2_000);
+    expect(result.totalRevenue).toBe(102_000);
+    expectBalanced(result.lines);
   });
 });

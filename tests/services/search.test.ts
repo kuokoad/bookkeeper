@@ -161,3 +161,59 @@ describe('permission', () => {
     expect(search(context.db, 'ma', nobody).total).toBe(0);
   });
 });
+
+describe('searching for something containing a wildcard character', () => {
+  /**
+   * `%` and `_` mean "anything" to SQLite's LIKE, so a shop searching for a
+   * product literally called "50% cotton" would otherwise match everything
+   * containing "50". They are escaped — but escaping only works if the query
+   * says so with an ESCAPE clause. Without one, SQLite reads the backslash as
+   * an ordinary character to be matched, so the escaping turned a search that
+   * found too much into one that found nothing at all.
+   */
+  beforeEach(() => {
+    createProduct(
+      context.db,
+      { name: 'Cloth 50% cotton', costPrice: m(1_000), sellingPrice: m(1_500), unit: 'm' },
+      ACTOR,
+    );
+    createProduct(
+      context.db,
+      { name: 'Cloth 5000 thread', costPrice: m(1_000), sellingPrice: m(1_500), unit: 'm' },
+      ACTOR,
+    );
+    createProduct(
+      context.db,
+      { name: 'Tape A_B joiner', costPrice: m(500), sellingPrice: m(800), unit: 'pcs' },
+      ACTOR,
+    );
+    createProduct(
+      context.db,
+      { name: 'Tape AXB joiner', costPrice: m(500), sellingPrice: m(800), unit: 'pcs' },
+      ACTOR,
+    );
+  });
+
+  const names = (query: string): string[] =>
+    search(context.db, query, OWNER)
+      .groups.flatMap((group) => group.hits)
+      .map((hit) => hit.title);
+
+  it('finds the one with a literal percent sign', () => {
+    const found = names('50%');
+    expect(found).toContain('Cloth 50% cotton');
+    expect(found).not.toContain('Cloth 5000 thread');
+  });
+
+  it('treats an underscore as a character, not as "any character"', () => {
+    const found = names('A_B');
+    expect(found).toContain('Tape A_B joiner');
+    expect(found).not.toContain('Tape AXB joiner');
+  });
+
+  it('still finds ordinary things', () => {
+    expect(names('Cloth')).toEqual(
+      expect.arrayContaining(['Cloth 50% cotton', 'Cloth 5000 thread']),
+    );
+  });
+});

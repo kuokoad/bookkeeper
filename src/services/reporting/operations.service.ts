@@ -33,8 +33,29 @@ export interface Period {
   to: string;
 }
 
-/** Only real trading counts — voided documents and reversals are excluded. */
-const postedSales = () => and(eq(sales.status, 'POSTED'), eq(sales.kind, 'SALE'));
+/**
+ * Every sale document dated in the period, whatever became of it.
+ *
+ * Corrections and returns carry negative figures, so including them is what
+ * makes the totals net out; and a sale that was later voided still stands in
+ * the period it happened in, because voiding writes a mirror document on the
+ * day of the correction rather than reaching back into a finished day.
+ *
+ * An earlier version excluded both the voided original AND the mirror. That
+ * removed the sale from the day it was made and the refund from the day it was
+ * refunded, so each day's takings disagreed with the Profit & Loss by the whole
+ * sale — while a range spanning both days still looked right, because the two
+ * errors cancelled. The docblock above promises these figures tie back to the
+ * accounts; this is what keeps that promise true.
+ */
+const salesDatedIn = (period: Period) =>
+  and(gte(sales.businessDate, period.from), lte(sales.businessDate, period.to));
+
+/**
+ * How many sales were rung up — corrections and returns are not sales made.
+ * Counted separately from the money for that reason.
+ */
+const saleCount = sql<number>`COALESCE(SUM(CASE WHEN ${sales.kind} = 'SALE' THEN 1 ELSE 0 END), 0)`;
 
 // --- sales ----------------------------------------------------------------
 
@@ -50,12 +71,12 @@ export function getSalesByDay(db: Db, period: Period): SalesByDay[] {
   return db
     .select({
       businessDate: sales.businessDate,
-      saleCount: sql<number>`COUNT(*)`,
+      saleCount,
       total: sql<number>`COALESCE(SUM(${sales.totalMinor}), 0)`,
       cogs: sql<number>`COALESCE(SUM(${sales.cogsMinor}), 0)`,
     })
     .from(sales)
-    .where(and(postedSales(), gte(sales.businessDate, period.from), lte(sales.businessDate, period.to)))
+    .where(salesDatedIn(period))
     .groupBy(sales.businessDate)
     .orderBy(asc(sales.businessDate))
     .all()
@@ -95,7 +116,7 @@ export function getSalesByProduct(db: Db, period: Period): SalesByProduct[] {
     .innerJoin(sales, eq(sales.id, saleItems.saleId))
     .leftJoin(products, eq(products.id, saleItems.productId))
     .leftJoin(categories, eq(categories.id, products.categoryId))
-    .where(and(postedSales(), gte(sales.businessDate, period.from), lte(sales.businessDate, period.to)))
+    .where(salesDatedIn(period))
     .groupBy(saleItems.productId)
     .orderBy(desc(sql`SUM(${saleItems.lineTotalMinor})`))
     .all()
@@ -137,7 +158,7 @@ export function getSalesByCategory(db: Db, period: Period): SalesByCategory[] {
     .innerJoin(sales, eq(sales.id, saleItems.saleId))
     .leftJoin(products, eq(products.id, saleItems.productId))
     .leftJoin(categories, eq(categories.id, products.categoryId))
-    .where(and(postedSales(), gte(sales.businessDate, period.from), lte(sales.businessDate, period.to)))
+    .where(salesDatedIn(period))
     .groupBy(products.categoryId)
     .orderBy(desc(sql`SUM(${saleItems.lineTotalMinor})`))
     .all()
@@ -163,13 +184,13 @@ export function getSalesByCustomer(db: Db, period: Period): SalesByCustomer[] {
     .select({
       customerId: sales.customerId,
       customerName: customers.name,
-      saleCount: sql<number>`COUNT(*)`,
+      saleCount,
       total: sql<number>`COALESCE(SUM(${sales.totalMinor}), 0)`,
       cogs: sql<number>`COALESCE(SUM(${sales.cogsMinor}), 0)`,
     })
     .from(sales)
     .leftJoin(customers, eq(customers.id, sales.customerId))
-    .where(and(postedSales(), gte(sales.businessDate, period.from), lte(sales.businessDate, period.to)))
+    .where(salesDatedIn(period))
     .groupBy(sales.customerId)
     .orderBy(desc(sql`SUM(${sales.totalMinor})`))
     .all()
@@ -207,13 +228,10 @@ export function getSalesByPaymentMethod(db: Db, period: Period): SalesByPaymentM
     .from(salePayments)
     .innerJoin(sales, eq(sales.id, salePayments.saleId))
     .innerJoin(paymentAccounts, eq(paymentAccounts.id, salePayments.paymentAccountId))
-    .where(
-      and(
-        eq(sales.status, 'POSTED'),
-        gte(sales.businessDate, period.from),
-        lte(sales.businessDate, period.to),
-      ),
-    )
+    // Voiding mirrors the tender as a negative, putting the money back into the
+    // account it came from. Excluding the voided original while keeping that
+    // mirror showed a till that had paid out money it never took in.
+    .where(salesDatedIn(period))
     .groupBy(salePayments.paymentAccountId)
     .orderBy(desc(sql`SUM(${salePayments.amountMinor})`))
     .all()

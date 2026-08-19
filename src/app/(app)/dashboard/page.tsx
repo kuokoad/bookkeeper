@@ -15,7 +15,10 @@ import { getReceivablesAgeing } from '@/services/reporting/ledger.service';
 import { getTotalReceivables } from '@/services/customer.service';
 import { getTotalPayables } from '@/services/supplier.service';
 import { getExpensesByCategory, getExpensesTotal, getIncomesTotal } from '@/services/cashbook.service';
+import { redirect } from 'next/navigation';
+
 import { getCurrentUser } from '@/lib/auth/current-user';
+import { can } from '@/lib/auth/permissions';
 import { add, subtract, sum, type Minor } from '@/domain/money';
 import { money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
@@ -124,6 +127,26 @@ export default async function DashboardPage({
   const spendRange: RangeKey = params.spend === 'week' || params.spend === 'quarter' ? params.spend : 'month';
 
   const user = await getCurrentUser();
+  if (!user) redirect('/login');
+
+  /**
+   * Each card is shown only to somebody allowed to see what is in it.
+   *
+   * The dashboard was the one screen that asked nobody's permission: a till
+   * assistant given `sales` alone opened it and was shown the shop's cash
+   * position, its debts, its margins and its ledger totals. Hiding a card in
+   * the markup would not be enough either — the figures would still have been
+   * queried and sent to the browser — so the reads themselves are gated, and a
+   * card the person may not see is never computed at all.
+   */
+  const shows = {
+    money: can(user, 'accounts', 'view'),
+    sales: can(user, 'sales', 'view'),
+    spending: can(user, 'expenses', 'view'),
+    profit: can(user, 'reports', 'view'),
+    owed: can(user, 'customers', 'view'),
+    stock: can(user, 'inventory', 'view'),
+  };
 
   // The server's reading fills the space on first paint; the Clock then keeps
   // itself honest. Formatted through the SAME functions the Clock uses, so the
@@ -134,34 +157,38 @@ export default async function DashboardPage({
   const today = toBusinessDate();
   const monthStart = `${today.slice(0, 7)}-01`;
 
-  const paymentAccounts = getPaymentAccountBalances(db);
-  const trialBalance = getTrialBalance(db);
-  const entryCount = countJournalEntries(db);
-  const stock = getStockSummary(db);
-  const lowStockItems = listProducts(db, { lowStockOnly: true });
+  const paymentAccounts = shows.money ? getPaymentAccountBalances(db) : [];
+  const trialBalance = shows.money ? getTrialBalance(db) : null;
+  const entryCount = shows.money ? countJournalEntries(db) : 0;
+  const stock = shows.stock ? getStockSummary(db) : null;
+  const lowStockItems = shows.stock ? listProducts(db, { lowStockOnly: true }) : [];
 
   const salesFrom = daysBefore(today, RANGES[salesRange].days);
   const spendFrom = daysBefore(today, RANGES[spendRange].days);
 
-  const todaySales = getSalesSummary(db, today, today);
-  const rangeSales = getSalesSummary(db, salesFrom, today);
-  const salesByDay = getSalesByDay(db, { from: salesFrom, to: today });
+  const todaySales = shows.sales ? getSalesSummary(db, today, today) : null;
+  const rangeSales = shows.sales ? getSalesSummary(db, salesFrom, today) : null;
+  const salesByDay = shows.sales ? getSalesByDay(db, { from: salesFrom, to: today }) : [];
 
-  const moneyMonths = getMoneyByMonth(db, today, 6);
+  const moneyMonths = shows.money ? getMoneyByMonth(db, today, 6) : [];
   const cashHeld = sum(paymentAccounts.map((account) => account.balance));
 
-  const spend = getExpensesTotal(db, spendFrom, today);
-  const spendByCategory = getExpensesByCategory(db, spendFrom, today);
-  const monthOtherIncome = getIncomesTotal(db, monthStart, today);
-  const monthExpenses = getExpensesTotal(db, monthStart, today);
-  const monthSales = getSalesSummary(db, monthStart, today);
-  const monthNet = subtract(add(monthSales.grossProfit, monthOtherIncome), monthExpenses);
+  const spend = shows.spending ? getExpensesTotal(db, spendFrom, today) : null;
+  const spendByCategory = shows.spending ? getExpensesByCategory(db, spendFrom, today) : [];
 
-  const receivables = getTotalReceivables(db);
-  const payables = getTotalPayables(db);
-  const ageing = getReceivablesAgeing(db, today);
+  const monthSales = shows.profit ? getSalesSummary(db, monthStart, today) : null;
+  const monthExpenses = shows.profit ? getExpensesTotal(db, monthStart, today) : null;
+  const monthOtherIncome = shows.profit ? getIncomesTotal(db, monthStart, today) : null;
+  const monthNet =
+    monthSales === null || monthExpenses === null || monthOtherIncome === null
+      ? null
+      : subtract(add(monthSales.grossProfit, monthOtherIncome), monthExpenses);
+
+  const receivables = shows.owed ? getTotalReceivables(db) : null;
+  const payables = shows.owed ? getTotalPayables(db) : null;
+  const ageing = shows.owed ? getReceivablesAgeing(db, today) : [];
   const overdue = sum(ageing.map((row) => add(add(row.days31to60, row.days61to90), row.over90)));
-  const notYetDue = subtract(receivables, overdue);
+  const notYetDue = receivables === null ? null : subtract(receivables, overdue);
 
   const topCategories = spendByCategory.slice(0, 4).map((row) => ({
     label: row.categoryName,
@@ -169,21 +196,33 @@ export default async function DashboardPage({
     display: money(row.total, { bare: true }),
   }));
 
+  const nothingToShow = !Object.values(shows).some(Boolean);
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-content">
-            Good day{user ? `, ${user.displayName.split(' ')[0]}` : ''}
+            Good day, {user.displayName.split(' ')[0]}
           </h1>
           <p className="mt-1 text-sm text-content-muted">
-            Here is where your money stands right now.
+            {nothingToShow
+              ? 'Use the menu to get to your work.'
+              : 'Here is where your money stands right now.'}
           </p>
         </div>
         <Clock initialDate={renderedDate} initialTime={renderedTime} />
       </header>
 
-      {!trialBalance.balanced && (
+      {nothingToShow && (
+        <Alert tone="info" title="Nothing to summarise here">
+          This screen shows money, sales and stock figures, and your account is not set up to see
+          any of them. That is not a fault — everything you can do is in the menu. Ask the owner if
+          you think you should see more.
+        </Alert>
+      )}
+
+      {trialBalance !== null && !trialBalance.balanced && (
         <Alert tone="danger" title="The books do not balance">
           Total debits ({money(trialBalance.totalDebit)}) do not equal total credits (
           {money(trialBalance.totalCredit)}). Difference: {money(trialBalance.difference)}. This
@@ -192,6 +231,7 @@ export default async function DashboardPage({
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
+        {shows.money && (
         <Card title="Cash flow">
           <Headline value={money(cashHeld)} note="Held across all your accounts" />
           <PairedBars
@@ -203,7 +243,9 @@ export default async function DashboardPage({
             summary={`Money in and out for the last ${moneyMonths.length} months.`}
           />
         </Card>
+        )}
 
+        {shows.sales && rangeSales !== null && todaySales !== null && (
         <Card title="Sales" control={<RangePicker param="sales" current={salesRange} />}>
           <Headline
             value={money(rangeSales.total)}
@@ -217,7 +259,9 @@ export default async function DashboardPage({
             Today: <span className="tabular font-medium text-content">{money(todaySales.total)}</span>
           </p>
         </Card>
+        )}
 
+        {shows.spending && spend !== null && (
         <Card title="Spending" control={<RangePicker param="spend" current={spendRange} />}>
           <Headline value={money(spend)} note={RANGES[spendRange].label} />
           {topCategories.length > 0 ? (
@@ -229,7 +273,12 @@ export default async function DashboardPage({
             <p className="text-sm text-content-muted">Nothing spent in this period.</p>
           )}
         </Card>
+        )}
 
+        {shows.profit &&
+          monthNet !== null &&
+          monthSales !== null &&
+          monthExpenses !== null && (
         <Card title="Profit this month">
           <Headline
             value={money(monthNet)}
@@ -254,7 +303,9 @@ export default async function DashboardPage({
             </div>
           </dl>
         </Card>
+        )}
 
+        {shows.owed && receivables !== null && notYetDue !== null && (
         <Card title="Money owed to you">
           <Headline value={money(receivables)} note="Across all customers" />
           {receivables > 0 ? (
@@ -288,7 +339,7 @@ export default async function DashboardPage({
           ) : (
             <p className="text-sm text-content-muted">Nobody owes you anything.</p>
           )}
-          {payables > 0 && (
+          {payables !== null && payables > 0 && (
             <p className="mt-3 border-t border-line pt-3 text-sm text-content-muted">
               You owe suppliers{' '}
               <Link href="/suppliers" className="tabular font-medium text-warning hover:underline">
@@ -297,7 +348,9 @@ export default async function DashboardPage({
             </p>
           )}
         </Card>
+        )}
 
+        {shows.money && (
         <Card title="Money accounts">
           <ul className="space-y-2.5">
             {paymentAccounts.map((account) => (
@@ -316,9 +369,11 @@ export default async function DashboardPage({
             ))}
           </ul>
         </Card>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
+        {shows.stock && stock !== null && (
         <Card title="Stock">
           <Headline value={money(stock.totalStockValue)} note="At weighted average cost" />
           <dl className="grid grid-cols-3 gap-2 text-sm">
@@ -361,7 +416,9 @@ export default async function DashboardPage({
             </p>
           )}
         </Card>
+        )}
 
+        {shows.money && trialBalance !== null && (
         <div className="lg:col-span-2">
           <Card title="Books check">
             <dl className="grid gap-4 sm:grid-cols-3">
@@ -395,6 +452,7 @@ export default async function DashboardPage({
             </p>
           </Card>
         </div>
+        )}
       </div>
     </div>
   );

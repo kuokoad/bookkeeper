@@ -13,6 +13,7 @@ import {
 import {
   invalidateSessionToken,
   purgeStaleSessions,
+  SESSION_ABSOLUTE_MAX_DAYS,
   validateSessionToken,
 } from '@/lib/auth/session';
 import { can, defaultStaffPermissions, visibleModules } from '@/lib/auth/permissions';
@@ -353,5 +354,137 @@ describe('permissions', () => {
     expect(can(staff, 'expenses', 'create')).toBe(false);
     expect(can(staff, 'expenses', 'edit')).toBe(false);
     expect(can(staff, 'expenses', 'void')).toBe(false);
+  });
+});
+
+describe('after a lockout has been served', () => {
+  /**
+   * Serving the lockout has to actually give the attempts back.
+   *
+   * The counter was only cleared by signing in SUCCESSFULLY. Once an account
+   * had tripped the limit, the count stayed at the limit for ever — so the next
+   * wrong password, however long afterwards, immediately crossed it again and
+   * locked the account for another full window. Someone who mistyped their
+   * password five times one morning was reduced to one attempt every fifteen
+   * minutes, permanently, and nothing on the screen explained why.
+   */
+  beforeEach(async () => {
+    await createUser(context.db, OWNER);
+  });
+
+  const afterLockout = () => new Date(Date.now() + 16 * 60 * 1000);
+
+  async function tripTheLock(): Promise<void> {
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) {
+      await login(context.db, { username: OWNER.username, password: 'wrong' });
+    }
+  }
+
+  it('gives back a full set of attempts, not one', async () => {
+    await tripTheLock();
+
+    const at = afterLockout();
+    // One more slip should NOT re-lock the account.
+    await login(context.db, { username: OWNER.username, password: 'wrong-again' }, {}, at);
+
+    const user = context.db.select().from(users).where(eq(users.username, OWNER.username)).get();
+    expect(user?.failedLoginCount).toBe(1);
+    expect(user?.lockedUntil).toBeNull();
+  });
+
+  it('still lets the right password through after a slip', async () => {
+    await tripTheLock();
+
+    const at = afterLockout();
+    await login(context.db, { username: OWNER.username, password: 'wrong-again' }, {}, at);
+
+    const result = await login(
+      context.db,
+      { username: OWNER.username, password: OWNER.password },
+      {},
+      at,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('still locks again after another full run of failures', async () => {
+    await tripTheLock();
+
+    const at = afterLockout();
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) {
+      await login(context.db, { username: OWNER.username, password: 'wrong' }, {}, at);
+    }
+
+    const result = await login(
+      context.db,
+      { username: OWNER.username, password: OWNER.password },
+      {},
+      at,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('ACCOUNT_LOCKED');
+  });
+});
+
+describe('how long a session lives', () => {
+  /**
+   * The session slides forward while somebody keeps working, so a busy day does
+   * not end with an unexplained sign-out. Two things follow.
+   *
+   * The browser cookie has to outlive the sliding, or the slide achieves
+   * nothing: the server kept the session alive and the browser threw its half
+   * away on the original deadline. The cookie is only the carrier — the
+   * database decides whether a session is still good.
+   *
+   * And sliding cannot go on for ever. A session that renews itself every time
+   * it is used never expires at all, which is not a session, it is a permanent
+   * key. There is an absolute ceiling from the moment of sign-in.
+   */
+  beforeEach(async () => {
+    await createUser(context.db, OWNER);
+  });
+
+  async function signIn(): Promise<string> {
+    const result = await login(context.db, {
+      username: OWNER.username,
+      password: OWNER.password,
+    });
+    if (!result.ok) throw new Error('expected the sign-in to succeed');
+    return result.token;
+  }
+
+  it('keeps sliding while the person keeps working', async () => {
+    const token = await signIn();
+
+    // Six days later, still working: the session must carry on.
+    const day6 = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+    expect(validateSessionToken(context.db, token, day6)).not.toBeNull();
+
+    // And the slide must have pushed the deadline past the original week.
+    const day9 = new Date(Date.now() + 9 * 24 * 60 * 60 * 1000);
+    expect(validateSessionToken(context.db, token, day9)).not.toBeNull();
+  });
+
+  it('expires when the person stops working', async () => {
+    const token = await signIn();
+
+    const day8 = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
+    expect(validateSessionToken(context.db, token, day8)).toBeNull();
+  });
+
+  it('stops sliding at the absolute ceiling, however busy the shop is', async () => {
+    const token = await signIn();
+
+    // Opened every single day, the way a till is.
+    for (let day = 1; day < SESSION_ABSOLUTE_MAX_DAYS; day++) {
+      const at = new Date(Date.now() + day * 24 * 60 * 60 * 1000);
+      expect(validateSessionToken(context.db, token, at), `day ${day}`).not.toBeNull();
+    }
+
+    const pastTheCeiling = new Date(
+      Date.now() + (SESSION_ABSOLUTE_MAX_DAYS + 1) * 24 * 60 * 60 * 1000,
+    );
+    expect(validateSessionToken(context.db, token, pastTheCeiling)).toBeNull();
   });
 });

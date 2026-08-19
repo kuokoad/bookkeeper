@@ -1,0 +1,1 @@
+ALTER TABLE `sales` ADD `tax_inclusive` integer DEFAULT false NOT NULL;

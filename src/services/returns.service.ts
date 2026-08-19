@@ -15,7 +15,7 @@ import {
 } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
-import { allocate, isZero, minor, mulDiv, subtract, sum, ZERO, type Minor } from '@/domain/money';
+import { add, allocate, isZero, minor, mulDiv, subtract, sum, ZERO, type Minor } from '@/domain/money';
 import { qty as makeQty, QTY_SCALE, type Qty } from '@/domain/quantity';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
@@ -157,6 +157,37 @@ export function createCustomerReturn(
       throw new ValidationError('This return has no value to record.');
     }
 
+    /**
+     * The tax goes back with the goods.
+     *
+     * A shop collects tax on the authority's behalf. When the goods come back
+     * the sale did not happen, so neither did the tax on it: the shop stops
+     * owing it, and a credit customer stops being charged it. Left unreversed
+     * — which it was — a fully returned sale left the shop with a liability to
+     * the taxman for a sale it never made, and the customer still owing the tax
+     * on goods sitting back on the shelf.
+     *
+     * Taken from the tax the ORIGINAL sale actually charged, apportioned by how
+     * much of it is coming back. Re-applying today's rate would be wrong twice:
+     * the rate may have changed since, and the sale may have been priced the
+     * other way round.
+     */
+    const saleNetRevenue = sum([...netByItemId.values()]);
+    const taxShare =
+      isZero(minor(original.taxMinor)) || saleNetRevenue === 0
+        ? ZERO
+        : mulDiv(minor(original.taxMinor), totalRevenue, saleNetRevenue);
+
+    /**
+     * Where prices INCLUDED tax, `totalRevenue` already contains it, so the tax
+     * is split back out of that figure rather than added to it. Where prices
+     * excluded it, the tax sat on top and comes off on top.
+     */
+    const returnedValue = original.taxInclusive ? totalRevenue : add(totalRevenue, taxShare);
+    const revenueReversed = original.taxInclusive
+      ? subtract(totalRevenue, taxShare)
+      : totalRevenue;
+
     // --- the return document ---------------------------------------------
     const returnSale = tx
       .insert(sales)
@@ -167,10 +198,13 @@ export function createCustomerReturn(
         customerId: original.customerId,
         businessDate: input.businessDate,
         occurredAt,
-        subtotalMinor: -totalRevenue,
+        // Mirror figures, net of tax like every other sale document, so
+        // subtotal - discount + tax = total holds here too.
+        subtotalMinor: -revenueReversed,
         discountMinor: 0,
-        taxMinor: 0,
-        totalMinor: -totalRevenue,
+        taxMinor: -taxShare,
+        totalMinor: -returnedValue,
+        taxInclusive: original.taxInclusive,
         cogsMinor: -totalCost,
         status: 'POSTED',
         note: input.reason ?? `Return against ${original.receiptNo}`,
@@ -240,15 +274,17 @@ export function createCustomerReturn(
     // either than the return is worth.
     const refunds = input.refunds ?? [];
     const refundTotal = sum(refunds.map((refund) => refund.amount));
-    if (refundTotal > totalRevenue) {
+    // Measured against what the customer actually paid, tax included — that is
+    // what they are owed back.
+    if (refundTotal > returnedValue) {
       throw new ValidationError('You cannot refund more than the value of the goods returned.', {
-        totalRevenue,
+        returnedValue,
         refundTotal,
       });
     }
 
     const outstandingOnOriginal = getSaleOutstanding(tx as unknown as Db, originalSaleId);
-    const creditApplied = subtract(totalRevenue, refundTotal);
+    const creditApplied = subtract(returnedValue, refundTotal);
 
     if (creditApplied > outstandingOnOriginal && original.customerId === null) {
       throw new ValidationError(
@@ -259,12 +295,23 @@ export function createCustomerReturn(
 
     const lines: DraftLine[] = [];
 
-    // Revenue comes back out through the contra account.
-    lines.push(
-      debit(accountIdByCode(tx, ACCOUNT_CODES.SALES_RETURNS), totalRevenue, {
-        description: `${receiptNo} goods returned`,
-      }),
-    );
+    // Revenue comes back out through the contra account, net of tax.
+    if (!isZero(revenueReversed)) {
+      lines.push(
+        debit(accountIdByCode(tx, ACCOUNT_CODES.SALES_RETURNS), revenueReversed, {
+          description: `${receiptNo} goods returned`,
+        }),
+      );
+    }
+
+    // The shop stops owing tax it collected on a sale that did not stand.
+    if (!isZero(taxShare)) {
+      lines.push(
+        debit(accountIdByCode(tx, ACCOUNT_CODES.TAX_PAYABLE), taxShare, {
+          description: `${receiptNo} tax on goods returned`,
+        }),
+      );
+    }
 
     for (const refund of refunds) {
       if (refund.amount <= 0) continue;
@@ -428,6 +475,27 @@ export function createSupplierReturn(
       throw new ValidationError('This return has no value to record.');
     }
 
+    /**
+     * The tax reclaim goes back with the goods.
+     *
+     * Tax paid to a supplier is reclaimable, so it was debited to the tax
+     * account when the delivery arrived. Send the goods back and there is
+     * nothing to reclaim — left behind, it overstates what the tax authority
+     * owes the shop, on an invoice the shop did not keep. The mirror of the
+     * customer side, and it was missing for the same reason.
+     *
+     * Apportioned from the tax the original purchase ACTUALLY carried, on the
+     * same basis the line costs were prorated from.
+     */
+    const purchaseNet = subtract(minor(original.subtotalMinor), minor(original.discountMinor));
+    const taxShare =
+      isZero(minor(original.taxMinor)) || purchaseNet === 0
+        ? ZERO
+        : mulDiv(minor(original.taxMinor), totalCost, purchaseNet);
+
+    /** What the supplier owes back: the goods and the tax charged on them. */
+    const returnedValue = add(totalCost, taxShare);
+
     const returnPurchase = tx
       .insert(purchases)
       .values({
@@ -440,8 +508,8 @@ export function createSupplierReturn(
         invoiceNo: original.invoiceNo,
         subtotalMinor: -totalCost,
         discountMinor: 0,
-        taxMinor: 0,
-        totalMinor: -totalCost,
+        taxMinor: -taxShare,
+        totalMinor: -returnedValue,
         status: 'POSTED',
         note: input.reason ?? `Return against ${original.purchaseNo}`,
         createdBy: actor.id,
@@ -504,16 +572,26 @@ export function createSupplierReturn(
 
     const refunds = input.refunds ?? [];
     const refundTotal = sum(refunds.map((refund) => refund.amount));
-    if (refundTotal > totalCost) {
+    // Against what the supplier actually charged, tax included.
+    if (refundTotal > returnedValue) {
       throw new ValidationError('The refund cannot be more than the value returned.');
     }
-    const creditApplied = subtract(totalCost, refundTotal);
+    const creditApplied = subtract(returnedValue, refundTotal);
 
     const lines: DraftLine[] = [
       credit(accountIdByCode(tx, ACCOUNT_CODES.INVENTORY), totalCost, {
         description: `${purchaseNo} stock returned to supplier`,
       }),
     ];
+
+    // Nothing left to reclaim on goods that went back.
+    if (!isZero(taxShare)) {
+      lines.push(
+        credit(accountIdByCode(tx, ACCOUNT_CODES.TAX_PAYABLE), taxShare, {
+          description: `${purchaseNo} tax on goods returned`,
+        }),
+      );
+    }
 
     for (const refund of refunds) {
       if (refund.amount <= 0) continue;

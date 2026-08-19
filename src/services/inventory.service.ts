@@ -63,6 +63,12 @@ export interface StockMovementResult {
   totalCost: Minor;
   unitCost: Minor;
   state: StockState;
+  /**
+   * Value forced out of inventory ON TOP of `totalCost` to keep an empty shelf
+   * worth nothing. Almost always zero. When it is not, the caller MUST post it
+   * to the ledger — see `MovementResult.residual`.
+   */
+  residual: Minor;
 }
 
 export function getStockState(tx: Tx, productId: number): StockState {
@@ -166,6 +172,7 @@ export function recordStockMovement(tx: Tx, input: StockMovementInput): StockMov
     totalCost: movement.totalCost,
     unitCost: movement.unitCost,
     state: movement.state,
+    residual: movement.residual,
   };
 }
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, like, or } from 'drizzle-orm';
+import { and, desc, eq, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 
 import {
   customers,
@@ -47,8 +47,28 @@ const PER_GROUP = 8;
 
 /** SQLite LIKE is case-insensitive for ASCII by default. */
 function pattern(query: string): string {
-  // Escape the wildcards so a search for "50%" means what it says.
-  return `%${query.replace(/[%_]/g, (char) => `\\${char}`)}%`;
+  // Escape the wildcards so a search for "50%" means what it says. The
+  // backslash is only an escape because `matches` below says ESCAPE '\' — see
+  // the note there.
+  return `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+}
+
+/**
+ * `column LIKE pattern ESCAPE '\'`.
+ *
+ * SQLite has NO default escape character. Without the clause the backslashes
+ * `pattern` inserts are matched literally, so a search for "50%" looked for the
+ * four characters `50\%` and found nothing — the escaping meant to stop the
+ * wildcard matching everything instead stopped it matching anything.
+ *
+ * Written as raw SQL because drizzle's `like()` helper has nowhere to put the
+ * clause. The pattern is still a bound parameter, not interpolated text.
+ */
+function matches(column: AnyColumn, term: string): SQL {
+  // `\\` in this template literal emits ONE backslash into the SQL. Written as
+  // `'\'` it would emit `'''`, and SQLite rejects that as not a single
+  // character — which is how the missing clause was noticed at all.
+  return sql`${column} LIKE ${term} ESCAPE '\\'`;
 }
 
 export function search(db: Db, rawQuery: string, user: Principal): SearchResults {
@@ -73,7 +93,7 @@ export function search(db: Db, rawQuery: string, user: Principal): SearchResults
       db
         .select({ id: products.id, name: products.name, sku: products.sku, unit: products.unit })
         .from(products)
-        .where(or(like(products.name, term), like(products.sku, term)))
+        .where(or(matches(products.name, term), matches(products.sku, term)))
         .limit(PER_GROUP + 1)
         .all()
         .map((row) => ({
@@ -92,7 +112,7 @@ export function search(db: Db, rawQuery: string, user: Principal): SearchResults
       db
         .select({ id: customers.id, name: customers.name, phone: customers.phone })
         .from(customers)
-        .where(or(like(customers.name, term), like(customers.phone, term)))
+        .where(or(matches(customers.name, term), matches(customers.phone, term)))
         .limit(PER_GROUP + 1)
         .all()
         .map((row) => ({
@@ -111,7 +131,7 @@ export function search(db: Db, rawQuery: string, user: Principal): SearchResults
       db
         .select({ id: suppliers.id, name: suppliers.name, phone: suppliers.phone })
         .from(suppliers)
-        .where(or(like(suppliers.name, term), like(suppliers.phone, term)))
+        .where(or(matches(suppliers.name, term), matches(suppliers.phone, term)))
         .limit(PER_GROUP + 1)
         .all()
         .map((row) => ({
@@ -137,7 +157,7 @@ export function search(db: Db, rawQuery: string, user: Principal): SearchResults
         })
         .from(sales)
         .leftJoin(customers, eq(customers.id, sales.customerId))
-        .where(or(like(sales.receiptNo, term), like(customers.name, term), like(sales.note, term)))
+        .where(or(matches(sales.receiptNo, term), matches(customers.name, term), matches(sales.note, term)))
         .orderBy(desc(sales.businessDate))
         .limit(PER_GROUP + 1)
         .all()
@@ -167,9 +187,9 @@ export function search(db: Db, rawQuery: string, user: Principal): SearchResults
         .leftJoin(suppliers, eq(suppliers.id, purchases.supplierId))
         .where(
           or(
-            like(purchases.purchaseNo, term),
-            like(purchases.invoiceNo, term),
-            like(suppliers.name, term),
+            matches(purchases.purchaseNo, term),
+            matches(purchases.invoiceNo, term),
+            matches(suppliers.name, term),
           ),
         )
         .orderBy(desc(purchases.businessDate))
@@ -198,7 +218,7 @@ export function search(db: Db, rawQuery: string, user: Principal): SearchResults
           memo: journalEntries.memo,
         })
         .from(journalEntries)
-        .where(and(or(like(journalEntries.entryNo, term), like(journalEntries.memo, term))))
+        .where(and(or(matches(journalEntries.entryNo, term), matches(journalEntries.memo, term))))
         .orderBy(desc(journalEntries.entryDate))
         .limit(PER_GROUP + 1)
         .all()

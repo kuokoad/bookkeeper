@@ -9,6 +9,7 @@ import { requirePageAccess } from '@/lib/auth/current-user';
 import { getSale } from '@/services/sale.service';
 import { formatDateTime, money, quantity } from '@/lib/format';
 import { minor } from '@/domain/money';
+import { saleDocumentTotals } from '@/domain/sales/present';
 import { qty as makeQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,12 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const currency = settings?.currencyCode ?? 'GHS';
   const tendered = sale.tenders.reduce((total, tender) => total + tender.amountMinor, 0);
   const change = Math.max(0, tendered - sale.totalMinor);
+  // Presented as the sale was transacted: the ledger stores every sale net of
+  // tax, which would otherwise print a subtotal contradicting the lines above.
+  const totals = saleDocumentTotals(
+    sale,
+    sale.items.map((item) => item.lineTotalMinor),
+  );
 
   return (
     <div className="mx-auto max-w-md">
@@ -140,31 +147,38 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           <div className="flex justify-between">
             <dt className="text-content-muted">Subtotal</dt>
             <dd className="tabular text-content">
-              {money(minor(sale.subtotalMinor), { bare: true })}
+              {money(totals.subtotal, { bare: true })}
             </dd>
           </div>
-          {sale.discountMinor > 0 && (
+          {totals.discount > 0 && (
             <div className="flex justify-between">
               <dt className="text-content-muted">Discount</dt>
               <dd className="tabular text-content">
-                −{money(minor(sale.discountMinor), { bare: true })}
+                −{money(totals.discount, { bare: true })}
               </dd>
             </div>
           )}
-          {sale.taxMinor > 0 && (
+          {/* Added on top only when the shelf prices excluded it. */}
+          {totals.tax > 0 && !totals.taxWithinTotal && (
             <div className="flex justify-between">
               <dt className="text-content-muted">{settings?.taxLabel ?? 'Tax'}</dt>
-              <dd className="tabular text-content">
-                {money(minor(sale.taxMinor), { bare: true })}
-              </dd>
+              <dd className="tabular text-content">{money(totals.tax, { bare: true })}</dd>
             </div>
           )}
           <div className="flex justify-between border-t border-line pt-1 text-base font-semibold">
             <dt className="text-content">Total</dt>
             <dd className="tabular text-content">
-              {money(minor(sale.totalMinor), { currencyCode: currency })}
+              {money(totals.total, { currencyCode: currency })}
             </dd>
           </div>
+          {totals.tax > 0 && totals.taxWithinTotal && (
+            <div className="flex justify-between text-xs">
+              <dt className="text-content-muted">
+                includes {settings?.taxLabel ?? 'Tax'}
+              </dt>
+              <dd className="tabular text-content-muted">{money(totals.tax, { bare: true })}</dd>
+            </div>
+          )}
         </dl>
 
         <dl className="mt-3 space-y-1 border-t border-dashed border-line pt-2 text-xs">

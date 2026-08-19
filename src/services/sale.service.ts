@@ -184,10 +184,16 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
         businessDate: input.businessDate,
         occurredAt,
         customerId,
-        subtotalMinor: totals.subtotal,
-        discountMinor: totals.invoiceDiscount,
+        // Stored net of tax, whichever way the shop prices its shelves, so that
+        // `subtotal - discount + tax = total` always holds. Under inclusive
+        // pricing the line items above still carry the prices the customer saw.
+        subtotalMinor: totals.subtotalExTax,
+        discountMinor: totals.invoiceDiscountExTax,
         taxMinor: totals.tax,
         totalMinor: totals.total,
+        // Snapshotted so a receipt reprinted after the shop changes its pricing
+        // setting still describes the sale that actually happened.
+        taxInclusive: settings.taxInclusive,
         cogsMinor: 0,
         status: 'POSTED',
         note: input.note ?? null,
@@ -322,15 +328,20 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
     }
 
     // Discounts are shown as contra-revenue, so gross sales stay visible.
-    if (!isZero(totals.totalDiscount)) {
+    // Net of tax: a discount on a tax-inclusive price gives back some tax too,
+    // and that part was never the shop's revenue to give away.
+    if (!isZero(totals.totalDiscountExTax)) {
       lines.push(
-        debit(accountIdByCode(tx, ACCOUNT_CODES.SALES_DISCOUNTS), totals.totalDiscount, {
+        debit(accountIdByCode(tx, ACCOUNT_CODES.SALES_DISCOUNTS), totals.totalDiscountExTax, {
           description: `${receiptNo} discount`,
         }),
       );
     }
 
-    const grossRevenue = sum([totals.netBeforeTax, totals.totalDiscount]);
+    // What the shop earned, before discounts and excluding tax. Under exclusive
+    // pricing `total - tax` is the net; under inclusive pricing it is the same
+    // subtraction, because the tax was inside the total all along.
+    const grossRevenue = sum([subtract(totals.total, totals.tax), totals.totalDiscountExTax]);
     lines.push(
       credit(accountIdByCode(tx, ACCOUNT_CODES.SALES_REVENUE), grossRevenue, {
         description: `${receiptNo} sale`,
@@ -462,6 +473,9 @@ export function voidSale(
       .insert(sales)
       .values({
         receiptNo,
+        // A correction, not a customer bringing goods back and not a sale.
+        // Reports separate the three, and cannot if this is left to default.
+        kind: 'VOID',
         businessDate,
         occurredAt: now,
         customerId: original.customerId,
@@ -471,6 +485,9 @@ export function voidSale(
         taxMinor: -original.taxMinor,
         totalMinor: -original.totalMinor,
         cogsMinor: -original.cogsMinor,
+        // Whichever way the original was priced, so the mirror describes the
+        // same document rather than today's setting.
+        taxInclusive: original.taxInclusive,
         status: 'POSTED',
         voidsSaleId: saleId,
         note: `Void of ${original.receiptNo}: ${reason.trim()}`,
@@ -629,10 +646,31 @@ export function getSaleOutstanding(db: Db, saleId: number): Minor {
  * open-invoice lists use this instead; the definition of "outstanding" is
  * identical, so the two can never disagree.
  */
-export function getOutstandingBySale(db: Db, customerId?: number): Map<number, Minor> {
+export function getOutstandingBySale(
+  db: Db,
+  options: {
+    customerId?: number;
+    /**
+     * Answer as at this business date rather than as at today.
+     *
+     * Sales after it are left out, and so are payments after it. Both halves
+     * matter: keeping the old sales but counting every payment ever made
+     * reports a debt as settled months before the money arrived, which makes a
+     * historical ageing report disagree with the receivables balance on the
+     * very date it claims to describe.
+     */
+    asAt?: string;
+  } = {},
+): Map<number, Minor> {
+  const { customerId, asAt } = options;
+
   const conditions: SQL[] = [eq(sales.status, 'POSTED')];
   if (customerId !== undefined) conditions.push(eq(sales.customerId, customerId));
+  if (asAt !== undefined) conditions.push(lte(sales.businessDate, asAt));
 
+  // Tender is handed over with the sale itself, so it is dated by the sale and
+  // needs no separate cut-off: a sale inside the window brought its tender with
+  // it, and one outside is excluded whole.
   const tendered = db
     .select({
       saleId: salePayments.saleId,
@@ -643,6 +681,9 @@ export function getOutstandingBySale(db: Db, customerId?: number): Map<number, M
     .all();
   const tenderedBySale = new Map(tendered.map((row) => [row.saleId, row.total]));
 
+  const settledConditions: SQL[] = [eq(customerPayments.status, 'POSTED')];
+  if (asAt !== undefined) settledConditions.push(lte(customerPayments.businessDate, asAt));
+
   const settled = db
     .select({
       saleId: customerPaymentAllocations.saleId,
@@ -650,7 +691,7 @@ export function getOutstandingBySale(db: Db, customerId?: number): Map<number, M
     })
     .from(customerPaymentAllocations)
     .innerJoin(customerPayments, eq(customerPayments.id, customerPaymentAllocations.paymentId))
-    .where(eq(customerPayments.status, 'POSTED'))
+    .where(and(...settledConditions))
     .groupBy(customerPaymentAllocations.saleId)
     .all();
   const settledBySale = new Map(settled.map((row) => [row.saleId, row.total]));
@@ -765,22 +806,30 @@ export function getSale(db: Db, saleId: number) {
   };
 }
 
-/** Totals for a period, used by the dashboard and the sales report. */
+/**
+ * Totals for a period, used by the dashboard and the sales report.
+ *
+ * The money figures cover EVERY sale document dated in the period, including
+ * ones since voided, because that is what the ledger says happened. Voiding
+ * writes a mirror document dated on the day of the correction rather than
+ * reaching back into a finished day — so the takings for the original day stand
+ * and the money comes back out on the day it was actually handed back. Dropping
+ * the voided original would leave this report disagreeing with the Profit &
+ * Loss by the whole sale, in both periods, and a sales figure that contradicts
+ * the accounts is worse than no sales figure at all.
+ *
+ * `count` is narrower on purpose: it answers "how many sales were rung up",
+ * so a correction is not counted as another customer served.
+ */
 export function getSalesSummary(db: Db, from: string, to: string) {
   const row = db
     .select({
-      count: sql<number>`COUNT(*)`,
+      count: sql<number>`COALESCE(SUM(CASE WHEN ${sales.kind} = 'SALE' THEN 1 ELSE 0 END), 0)`,
       total: sql<number>`COALESCE(SUM(${sales.totalMinor}), 0)`,
       cogs: sql<number>`COALESCE(SUM(${sales.cogsMinor}), 0)`,
     })
     .from(sales)
-    .where(
-      and(
-        gte(sales.businessDate, from),
-        lte(sales.businessDate, to),
-        eq(sales.status, 'POSTED'),
-      ),
-    )
+    .where(and(gte(sales.businessDate, from), lte(sales.businessDate, to)))
     .get();
 
   const total = minor(row?.total ?? 0);

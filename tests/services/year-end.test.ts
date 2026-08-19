@@ -237,3 +237,47 @@ describe('what the pack asserts about itself', () => {
     expect(pack.shop.currencyCode).toBe('GHS');
   });
 });
+
+describe('the year-end pack after the year has been closed', () => {
+  /**
+   * Closing a year sweeps drawings into retained earnings, so the drawings
+   * account ends the year at zero. Reading "what the owner took out this year"
+   * as the difference between two balance-sheet snapshots therefore reports
+   * nothing the moment the year is closed — and the year-end pack is exactly
+   * the document an owner opens AFTER closing.
+   *
+   * The figure has to come from what moved during the year, not from where the
+   * account finished.
+   */
+  it('still shows what the owner took out', async () => {
+    const { closeFinancialYear } = await import('@/services/year-end-close.service');
+
+    capital('2025-01-02', 200_000);
+    sale('2025-03-01', 100_000);
+    expense('2025-04-01', 40_000);
+    drawing('2025-08-01', 25_000);
+
+    const before = getYearEndPack(context.db, 2025).equity;
+    expect(before.drawings).toBe(25_000);
+
+    closeFinancialYear(context.db, 2025, ACTOR);
+
+    const after = getYearEndPack(context.db, 2025).equity;
+    expect(after.drawings).toBe(25_000);
+  });
+
+  it('still reconciles', async () => {
+    const { closeFinancialYear } = await import('@/services/year-end-close.service');
+
+    capital('2025-01-02', 200_000);
+    sale('2025-03-01', 100_000);
+    expense('2025-04-01', 40_000);
+    drawing('2025-08-01', 25_000);
+
+    closeFinancialYear(context.db, 2025, ACTOR);
+
+    const pack = getYearEndPack(context.db, 2025);
+    expect(pack.equity.reconciles).toBe(true);
+    expect(pack.equity.difference).toBe(0);
+  });
+});

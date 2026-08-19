@@ -46,6 +46,20 @@ const schema = z.object({
    * sign in. Turn it on the moment the app is put behind HTTPS.
    */
   COOKIE_SECURE: booleanish,
+
+  /**
+   * Whether `X-Forwarded-For` / `X-Real-IP` can be believed.
+   *
+   * Off by default, because the shop runs the app directly and anyone can put
+   * whatever they like in those headers. Believed blindly, they defeat the
+   * sign-in rate limit entirely: a different forged value on each request looks
+   * like a different visitor each time, so the counter never reaches its limit.
+   *
+   * Turn it on ONLY when a reverse proxy in front of the app overwrites the
+   * header — and note that a proxy which appends rather than overwrites still
+   * leaves the left-most value under the caller's control.
+   */
+  TRUST_PROXY_HEADERS: booleanish,
 });
 
 export type Env = z.infer<typeof schema>;
@@ -62,6 +76,7 @@ function load(): Env {
       process.env['SESSION_SECRET'] ?? (isTest ? 'test-only-secret-'.padEnd(48, 'x') : undefined),
     SEED_DEMO_DATA: process.env['SEED_DEMO_DATA'],
     COOKIE_SECURE: process.env['COOKIE_SECURE'],
+    TRUST_PROXY_HEADERS: process.env['TRUST_PROXY_HEADERS'],
   });
 
   if (!parsed.success) {

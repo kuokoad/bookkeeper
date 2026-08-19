@@ -18,7 +18,6 @@ import {
 } from '@/services/user.service';
 import { PERMISSION_MODULES, USER_ROLES } from '@/db/schema/users';
 import type { PermissionMap } from '@/lib/auth/permissions';
-import { defaultStaffPermissions } from '@/lib/auth/permissions';
 import { isDomainError } from '@/domain/errors';
 import type { FormState } from './auth.actions';
 
@@ -82,13 +81,13 @@ export async function createUserAction(
   });
   if (!parsed.success) return { fieldErrors: fieldErrorsFrom(parsed.error) };
 
-  const usePreset = formData.get('usePreset') === 'on';
+  // The ticked boxes are the whole story. An earlier version also honoured a
+  // `usePreset` flag that replaced them with a full manager preset — a posted
+  // value deciding how much access to grant, which is exactly the kind of thing
+  // the frontend does not get to say. Presets are applied in the browser by
+  // ticking the boxes, so what arrives here is what was on screen.
   const permissions =
-    parsed.data.role === 'OWNER'
-      ? undefined
-      : usePreset
-        ? defaultStaffPermissions()
-        : readPermissions(formData);
+    parsed.data.role === 'OWNER' ? undefined : readPermissions(formData);
 
   let userId: number;
   try {

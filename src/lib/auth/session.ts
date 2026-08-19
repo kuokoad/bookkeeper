@@ -16,11 +16,23 @@ import type { PermissionModule } from '@/db/schema/users';
 
 export const SESSION_COOKIE_NAME = 'bk_session';
 
-/** Absolute lifetime. A shop PC is shared, so this is deliberately not months. */
+/** Idle lifetime. A shop PC is shared, so this is deliberately not months. */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Slide the expiry forward when less than this remains. */
 const RENEW_WHEN_REMAINING_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The ceiling on how long one sign-in can be stretched.
+ *
+ * Sliding the expiry means somebody working through the week is not thrown out
+ * mid-sale. Sliding it without a ceiling means a session that is used often
+ * enough never expires at all — which is not a session, it is a permanent key
+ * cut from one password entry, and on a shared shop PC it outlives the reason
+ * it was issued. Measured from sign-in, not from last use.
+ */
+export const SESSION_ABSOLUTE_MAX_DAYS = 30;
+export const SESSION_ABSOLUTE_MAX_MS = SESSION_ABSOLUTE_MAX_DAYS * 24 * 60 * 60 * 1000;
 
 const TOKEN_BYTES = 32;
 
@@ -126,10 +138,17 @@ export function validateSessionToken(
   }
   if (!user.isActive) return null;
 
-  // Slide the expiry forward for an active user.
+  // However busy the shop, one sign-in does not last for ever.
+  const hardDeadline = session.createdAt.getTime() + SESSION_ABSOLUTE_MAX_MS;
+  if (hardDeadline <= now.getTime()) {
+    db.delete(sessions).where(eq(sessions.id, sessionId)).run();
+    return null;
+  }
+
+  // Slide the expiry forward for an active user, but never past the ceiling.
   let expiresAt = session.expiresAt;
   if (expiresAt.getTime() - now.getTime() < RENEW_WHEN_REMAINING_MS) {
-    expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+    expiresAt = new Date(Math.min(now.getTime() + SESSION_TTL_MS, hardDeadline));
     db.update(sessions).set({ expiresAt, lastSeenAt: now }).where(eq(sessions.id, sessionId)).run();
   } else {
     db.update(sessions).set({ lastSeenAt: now }).where(eq(sessions.id, sessionId)).run();

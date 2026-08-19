@@ -11,6 +11,7 @@ import { daysOverdue } from '@/domain/business-date';
 import { isDomainError } from '@/domain/errors';
 import { formatDate, money, quantity, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
+import { saleDocumentTotals } from '@/domain/sales/present';
 import { qty as makeQty } from '@/domain/quantity';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
   const currency = settings?.currencyCode ?? 'GHS';
+  // Presented as the sale was transacted: the ledger stores every sale net of
+  // tax, which would otherwise print a subtotal contradicting the lines above.
+  const totals = saleDocumentTotals(
+    sale,
+    sale.items.map((item) => item.lineTotalMinor),
+  );
 
   // A cash sale has no invoice. Say so plainly and point at the receipt.
   if (!sale.invoiceNo) {
@@ -165,31 +172,40 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           <div className="flex justify-between gap-4">
             <dt className="text-content-muted">Subtotal</dt>
             <dd className="tabular text-content">
-              {money(minor(sale.subtotalMinor), { currencyCode: currency, bare: true })}
+              {money(totals.subtotal, { currencyCode: currency, bare: true })}
             </dd>
           </div>
-          {sale.discountMinor > 0 && (
+          {totals.discount > 0 && (
             <div className="flex justify-between gap-4">
               <dt className="text-content-muted">Discount</dt>
               <dd className="tabular text-content">
-                −{money(minor(sale.discountMinor), { currencyCode: currency, bare: true })}
+                −{money(totals.discount, { currencyCode: currency, bare: true })}
               </dd>
             </div>
           )}
-          {sale.taxMinor > 0 && (
+          {/* Added on top only when the quoted prices excluded it. */}
+          {totals.tax > 0 && !totals.taxWithinTotal && (
             <div className="flex justify-between gap-4">
               <dt className="text-content-muted">{settings?.taxLabel ?? 'Tax'}</dt>
               <dd className="tabular text-content">
-                {money(minor(sale.taxMinor), { currencyCode: currency, bare: true })}
+                {money(totals.tax, { currencyCode: currency, bare: true })}
               </dd>
             </div>
           )}
           <div className="flex justify-between gap-4 border-t border-line pt-1.5">
             <dt className="font-semibold text-content">Total</dt>
             <dd className="tabular font-semibold text-content">
-              {money(minor(sale.totalMinor), { currencyCode: currency })}
+              {money(totals.total, { currencyCode: currency })}
             </dd>
           </div>
+          {totals.tax > 0 && totals.taxWithinTotal && (
+            <div className="flex justify-between gap-4 text-xs">
+              <dt className="text-content-muted">includes {settings?.taxLabel ?? 'Tax'}</dt>
+              <dd className="tabular text-content-muted">
+                {money(totals.tax, { currencyCode: currency, bare: true })}
+              </dd>
+            </div>
+          )}
           {sale.totalMinor - sale.outstandingMinor > 0 && (
             <div className="flex justify-between gap-4">
               <dt className="text-content-muted">Already paid</dt>

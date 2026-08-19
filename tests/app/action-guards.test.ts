@@ -157,11 +157,15 @@ describe('server action authorisation', () => {
 
     // Both ways in must be throttled, and must share one key so a PIN cannot be
     // used to buy extra guesses at an account.
-    const throttleKeys = [...authSource.matchAll(/const throttleKey = (`[^`]+`)/g)].map(
-      (match) => match[1],
-    );
+    const throttleKeys = [
+      ...authSource.matchAll(/const throttleKey = await clientThrottleKey\((['"][^'"]+['"])\)/g),
+    ].map((match) => match[1]);
     expect(throttleKeys.length).toBe(2);
     expect(new Set(throttleKeys).size).toBe(1);
+
+    // And the key must not be built from a header the caller writes, which
+    // would hand out a fresh allowance for every forged value.
+    expect(authSource).not.toMatch(/throttleKey\s*=\s*`[^`]*ipAddress/);
   });
 });
 
@@ -197,5 +201,48 @@ describe('secrets never leave the server', () => {
     // A client component importing these would ship server code — and the
     // environment, secret included — into the browser bundle.
     expect(offenders.map((file) => relative(process.cwd(), file))).toEqual([]);
+  });
+});
+
+describe('the forced password change is enforced where acting happens', () => {
+  /**
+   * The app shell redirects somebody who must choose a password, which stops
+   * them NAVIGATING. It does not stop them ACTING: a server action is its own
+   * endpoint and no layout runs on the way in. So the check has to live in the
+   * guard the actions themselves call.
+   *
+   * Read from the source, like the rest of this file, so it cannot be quietly
+   * dropped in a refactor of `current-user.ts`.
+   */
+  const guardSource = readFileSync(
+    join(process.cwd(), 'src', 'lib', 'auth', 'current-user.ts'),
+    'utf8',
+  );
+
+  it('requirePermission refuses an account that has not chosen its password', () => {
+    const body = guardSource.slice(
+      guardSource.indexOf('export async function requirePermission'),
+      guardSource.indexOf('export async function requirePageAccess'),
+    );
+
+    expect(body).toContain('assertPasswordChosen');
+  });
+
+  it('the check reads the database rather than trusting the session', () => {
+    // The flag can be set by an owner AFTER the session was minted, so a value
+    // carried in the session would be stale exactly when it matters.
+    const body = guardSource.slice(guardSource.indexOf('function assertPasswordChosen'));
+    expect(body).toContain('mustChangePassword');
+    expect(body).toContain('.from(users)');
+  });
+
+  it('does NOT gate requireUser, which would trap the person', () => {
+    // Changing your own password goes through requireUser. Gating it there
+    // would leave somebody required to change their password and unable to.
+    const body = guardSource.slice(
+      guardSource.indexOf('export async function requireUser'),
+      guardSource.indexOf('function assertPasswordChosen'),
+    );
+    expect(body).not.toContain('assertPasswordChosen');
   });
 });

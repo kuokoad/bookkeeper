@@ -6,6 +6,7 @@ import { hashPassword, hashPin, needsRehash, verifyPassword } from '@/lib/auth/p
 import { createSession, invalidateAllUserSessions, type SessionMetadata } from '@/lib/auth/session';
 import type { PermissionMap, Principal } from '@/lib/auth/permissions';
 import { writeAudit } from './audit.service';
+import { assertActorIsOwner, assertPermissionsGrantable } from './role-guard';
 import { ConflictError, ValidationError } from '@/domain/errors';
 
 /**
@@ -237,7 +238,25 @@ function recordFailedAttempt(
 ): void {
   if (userId !== null) {
     const current = db.select().from(users).where(eq(users.id, userId)).get();
-    const failedCount = (current?.failedLoginCount ?? 0) + 1;
+
+    /**
+     * Serving the lockout gives the attempts back.
+     *
+     * The count used to be cleared only by signing in SUCCESSFULLY, so once an
+     * account had tripped the limit the count stayed at the limit for ever. The
+     * next wrong password — that afternoon, or a month later — crossed it again
+     * immediately and locked the account for another full window. Someone who
+     * mistyped five times one morning was left with one attempt every fifteen
+     * minutes, permanently, with nothing on screen to explain it.
+     *
+     * The lockout is meant to slow a guesser down, not to punish the person who
+     * owns the account into needing an owner to rescue them.
+     */
+    const lockedUntil = current?.lockedUntil ?? null;
+    const lockHasExpired = lockedUntil !== null && lockedUntil.getTime() <= now.getTime();
+
+    const previousCount = lockHasExpired ? 0 : (current?.failedLoginCount ?? 0);
+    const failedCount = previousCount + 1;
     const shouldLock = failedCount >= MAX_FAILED_LOGINS;
 
     db.update(users)
@@ -316,6 +335,17 @@ export async function createUser(
     .get();
   if (existing) {
     throw new ConflictError('That username is already taken.');
+  }
+
+  /**
+   * A null actor is first-run setup, where there is nobody to be an owner yet.
+   * Once the shop has an owner, creating an account that outranks you — or a
+   * staff account carrying rights you were never given — is escalation with one
+   * extra sign-in in the middle, so both are owners-only.
+   */
+  if (actor !== null) {
+    if (input.role === 'OWNER') assertActorIsOwner(db, actor, 'create an owner account');
+    if (input.permissions) assertPermissionsGrantable(db, actor, input.permissions);
   }
 
   // Hashing happens before the transaction — it is async and CPU-bound.

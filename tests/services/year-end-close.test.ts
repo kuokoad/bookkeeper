@@ -284,3 +284,81 @@ describe('reopening a year', () => {
     expect(listClosings(context.db)).toHaveLength(2);
   });
 });
+
+describe('discounts and returns at year end', () => {
+  /**
+   * A discount is a reduction of revenue, not an extra source of it.
+   *
+   * Discounts and sales returns live in contra-revenue accounts, which are
+   * debit-normal: giving GHS 100 away puts a POSITIVE 100 in Sales Discounts.
+   * Treated as ordinary revenue that positive figure gets added to the year's
+   * takings instead of taken off, so the shop is told it earned more by
+   * discounting — and the closing entry debits the account a second time
+   * instead of clearing it, leaving a balance behind for ever.
+   */
+  const discount = (date: string, amount: number) =>
+    post(date, ACCOUNT_CODES.SALES_DISCOUNTS, '1001', amount);
+
+  it('takes discounts OFF the year rather than adding them on', () => {
+    sale('2025-03-01', 100_000);
+    discount('2025-03-01', 10_000);
+    expense('2025-04-01', 40_000);
+
+    const result = closeFinancialYear(context.db, 2025, ACTOR);
+
+    // 100,000 sold, 10,000 given away, 40,000 spent.
+    expect(result.profit).toBe(50_000);
+  });
+
+  it('leaves the discounts account at zero afterwards', () => {
+    sale('2025-03-01', 100_000);
+    discount('2025-03-01', 10_000);
+
+    closeFinancialYear(context.db, 2025, ACTOR);
+
+    // A closed account carries nothing on either side — or has dropped out of
+    // the trial balance altogether, which means the same thing.
+    const trial = getTrialBalance(context.db);
+    const discounts = trial.lines.find((line) => line.code === ACCOUNT_CODES.SALES_DISCOUNTS);
+    expect((discounts?.debit ?? 0) - (discounts?.credit ?? 0)).toBe(0);
+  });
+
+  it('still balances, and the books stay sound', () => {
+    sale('2025-03-01', 100_000);
+    discount('2025-03-01', 10_000);
+    post('2025-03-15', ACCOUNT_CODES.SALES_RETURNS, '1001', 4_000);
+    expense('2025-04-01', 40_000);
+
+    closeFinancialYear(context.db, 2025, ACTOR);
+
+    expect(checkBooksIntegrity(context.db).trialBalanced).toBe(true);
+  });
+});
+
+describe('the integrity check after a close', () => {
+  /**
+   * The books-integrity screen exists to be believed. Every count on it should
+   * be zero on healthy books, so that a number appearing means something is
+   * genuinely wrong and is worth stopping for.
+   *
+   * "Untraced" means a journal entry with no source document behind it. A
+   * year-end close has none by nature — it is not a sale or a payment, it is
+   * the books tidying themselves — so counting it as untraced would put a
+   * permanent red mark on every shop that has ever closed a year, and teach the
+   * owner to ignore the one screen that must not be ignored.
+   */
+  it('reports nothing untraced after closing a year', () => {
+    tradeIn(2025);
+    closeFinancialYear(context.db, 2025, ACTOR);
+
+    expect(checkBooksIntegrity(context.db).untracedEntries).toBe(0);
+  });
+
+  it('reports nothing untraced after reopening one either', () => {
+    tradeIn(2025);
+    closeFinancialYear(context.db, 2025, ACTOR);
+    reopenFinancialYear(context.db, 2025, ACTOR);
+
+    expect(checkBooksIntegrity(context.db).untracedEntries).toBe(0);
+  });
+});

@@ -64,13 +64,30 @@ export const sales = sqliteTable(
     /** NULL for a walk-in cash customer, which is most sales in a small shop. */
     customerId: integer('customer_id').references(() => customers.id, { onDelete: 'restrict' }),
 
-    /** Sum of line totals BEFORE any invoice-level discount. */
+    /**
+     * Sum of line totals BEFORE any invoice-level discount, NET OF TAX.
+     *
+     * "Net of tax" matters only where a shop prices its shelves tax-inclusive:
+     * the line items keep the prices the customer actually saw, while these
+     * document totals are always the tax-exclusive split, so the arithmetic
+     * below holds one way for every sale.
+     */
     subtotalMinor: moneyMinor('subtotal_minor').notNull(),
-    /** Invoice-level discount, on top of any per-line discounts. */
+    /** Invoice-level discount, on top of any per-line discounts. Net of tax. */
     discountMinor: moneyMinor('discount_minor').notNull().default(0),
     taxMinor: moneyMinor('tax_minor').notNull().default(0),
     /** subtotal - discount + tax. What the customer owes for this sale. */
     totalMinor: moneyMinor('total_minor').notNull(),
+
+    /**
+     * Whether the prices on this sale already included tax.
+     *
+     * Snapshotted for the same reason as `termsDays`: the shop can switch the
+     * setting next year, and a receipt reprinted afterwards must still describe
+     * the sale that actually happened. It changes no arithmetic — only whether
+     * the document says "plus VAT" or "includes VAT".
+     */
+    taxInclusive: integer('tax_inclusive', { mode: 'boolean' }).notNull().default(false),
 
     /**
      * Cost of the goods sold, snapshotted at the moment of sale from the
@@ -112,10 +129,33 @@ export const sales = sqliteTable(
       'ck_sales_date_format',
       sql`${t.businessDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`,
     ),
-    check('ck_sales_discount_nonneg', sql`${t.discountMinor} >= 0`),
-    check('ck_sales_tax_nonneg', sql`${t.taxMinor} >= 0`),
-    // A void sale mirrors the original, so totals may be negative; only the
-    // arithmetic relationship must always hold.
+    /**
+     * A sale document points one way or the other, never both.
+     *
+     * An ordinary sale is positive throughout. A void or a return is its mirror
+     * image and is negative throughout, so the pair nets to nothing. What must
+     * never exist is a row with a positive total and a negative discount, or
+     * any other mixture — that is not a document, it is a sign error, and it
+     * would quietly misstate both revenue and tax.
+     *
+     * This replaced a pair of blunter rules requiring discount and tax to be
+     * non-negative full stop. They were unreachable for an honest sale and made
+     * voiding IMPOSSIBLE for any sale carrying a discount or tax: the mirror
+     * row was rejected, so the one correction route the shop is meant to use —
+     * never editing, never deleting, always reversing — was shut for exactly
+     * the sales most likely to need it.
+     */
+    check(
+      'ck_sales_signs_consistent',
+      sql`(
+        ${t.subtotalMinor} >= 0 AND ${t.discountMinor} >= 0
+        AND ${t.taxMinor} >= 0 AND ${t.totalMinor} >= 0
+      ) OR (
+        ${t.subtotalMinor} <= 0 AND ${t.discountMinor} <= 0
+        AND ${t.taxMinor} <= 0 AND ${t.totalMinor} <= 0
+      )`,
+    ),
+    // Holds for a mirror document too, both sides simply being negated.
     check(
       'ck_sales_total_arithmetic',
       sql`${t.totalMinor} = ${t.subtotalMinor} - ${t.discountMinor} + ${t.taxMinor}`,

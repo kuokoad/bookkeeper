@@ -158,7 +158,11 @@ export const journalEntries = sqliteTable(
     occurredAt: timestampMs('occurred_at').notNull(),
 
     sourceType: text('source_type', { enum: JOURNAL_SOURCE_TYPES }).notNull(),
-    /** Primary key of the row in the source table. Null only for OPENING_BALANCE. */
+    /**
+     * Primary key of the row in the source table. Null only where there is
+     * genuinely no source document: OPENING_BALANCE (where the books started)
+     * and YEAR_END_CLOSE (the books tidying themselves).
+     */
     sourceId: integer('source_id'),
 
     memo: text('memo'),

@@ -77,17 +77,38 @@ function decode(encoded: string): DecodedHash | null {
     return null;
   }
 
-  try {
-    return {
-      N: parsedN,
-      r: parsedR,
-      p: parsedP,
-      salt: Buffer.from(salt ?? '', 'base64url'),
-      hash: Buffer.from(hash ?? '', 'base64url'),
-    };
-  } catch {
-    return null;
-  }
+  const saltBytes = Buffer.from(salt ?? '', 'base64url');
+  const hashBytes = Buffer.from(hash ?? '', 'base64url');
+
+  /**
+   * Both halves must be long enough to be real.
+   *
+   * `Buffer.from` does not throw on rubbish — it quietly drops what it cannot
+   * decode, so a blank or corrupt hash portion becomes a ZERO-LENGTH buffer.
+   * The derivation below takes its key length from that buffer, so a
+   * zero-length stored hash derived a zero-length key, compared nothing against
+   * nothing, and returned true: the account accepted ANY password, with a
+   * record that still looked well-formed in the database. A truncated restore
+   * or an interrupted write was enough to cause it.
+   *
+   * The bounds are deliberately loose rather than pinned to today's
+   * `KEY_LENGTH`, so raising it later does not lock everyone out of hashes made
+   * under the old one. `needsRehash` handles that upgrade properly.
+   */
+  const MIN_SALT_BYTES = 8;
+  const MIN_HASH_BYTES = 16;
+  const MAX_HASH_BYTES = 256;
+
+  if (saltBytes.length < MIN_SALT_BYTES) return null;
+  if (hashBytes.length < MIN_HASH_BYTES || hashBytes.length > MAX_HASH_BYTES) return null;
+
+  return {
+    N: parsedN,
+    r: parsedR,
+    p: parsedP,
+    salt: saltBytes,
+    hash: hashBytes,
+  };
 }
 
 /** Hash a password for storage. Returns the full encoded string. */
@@ -135,7 +156,9 @@ export async function verifyPassword(candidate: string, encoded: string): Promis
     maxmem: 128 * decoded.N * decoded.r * 2,
   });
 
-  if (derived.length !== decoded.hash.length) return false;
+  // Belt and braces: `decode` already refuses a hash too short to be one, so
+  // this can no longer be a zero-length comparison that trivially succeeds.
+  if (derived.length === 0 || derived.length !== decoded.hash.length) return false;
   return timingSafeEqual(derived, decoded.hash);
 }
 
