@@ -17,7 +17,19 @@ export const ACCOUNT_CODES = {
 
   // Liabilities
   ACCOUNTS_PAYABLE: '2000',
+  /**
+   * VAT collected on sales, less VAT reclaimable on purchases. Kept as the
+   * general "tax payable" code it has always been, so existing reports and
+   * balances carry on meaning what they meant.
+   */
   TAX_PAYABLE: '2100',
+  /**
+   * The Ghanaian levies, held separately from VAT because they are separate
+   * obligations and — unlike VAT — nothing paid on a purchase can be reclaimed
+   * against them. Netting them into one figure would hide that.
+   */
+  NHIL_PAYABLE: '2110',
+  GETFUND_PAYABLE: '2120',
 
   // Equity
   OWNERS_CAPITAL: '3000',
@@ -146,11 +158,30 @@ export const SYSTEM_ACCOUNTS: readonly AccountDefinition[] = [
   },
   {
     code: ACCOUNT_CODES.TAX_PAYABLE,
-    name: 'Tax Payable',
+    name: 'VAT Payable',
     type: 'LIABILITY',
     normalBalance: 'CREDIT',
-    description: 'Tax collected on sales and not yet remitted.',
+    description:
+      'VAT charged on sales, less VAT paid on purchases, not yet remitted. A debit balance means the authority owes the shop.',
     sortOrder: 210,
+  },
+  {
+    code: ACCOUNT_CODES.NHIL_PAYABLE,
+    name: 'NHIL Payable',
+    type: 'LIABILITY',
+    normalBalance: 'CREDIT',
+    description:
+      'National Health Insurance Levy collected on sales. Not reclaimable on purchases, so nothing is ever set against it.',
+    sortOrder: 211,
+  },
+  {
+    code: ACCOUNT_CODES.GETFUND_PAYABLE,
+    name: 'GETFund Levy Payable',
+    type: 'LIABILITY',
+    normalBalance: 'CREDIT',
+    description:
+      'Ghana Education Trust Fund levy collected on sales. Not reclaimable on purchases.',
+    sortOrder: 212,
   },
 
   {
