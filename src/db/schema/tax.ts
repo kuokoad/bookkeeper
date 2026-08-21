@@ -1,10 +1,27 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
+import { oneOf } from './_check';
 import { boolean, createdAt, moneyMinor, updatedAt } from './_shared';
 import { accounts } from './accounting';
 import { purchases } from './purchases';
 import { sales } from './sales';
+
+/**
+ * What a tax component is charged ON.
+ *
+ *  - `NET`              — the goods value, before any tax.
+ *  - `NET_PLUS_LEVIES`  — the goods value plus every component ahead of it in
+ *                         `sortOrder`, so the tax compounds on those.
+ *
+ * Ghana's GRA computes VAT the second way: NHIL and GETFund are added to the
+ * value first, and VAT is charged on the sum, making the all-in rate 20.75%
+ * rather than 20%. Which treatment a shop uses is data rather than code
+ * because both exist in the wild and an invoice that disagrees with the
+ * authority's own arithmetic is a problem for the shop, not for us.
+ */
+export const TAX_BASES = ['NET', 'NET_PLUS_LEVIES'] as const;
+export type TaxBasis = (typeof TAX_BASES)[number];
 
 /**
  * The taxes a shop charges, and what each sale actually collected.
@@ -31,6 +48,14 @@ export const taxComponents = sqliteTable(
     rateBp: integer('rate_bp').notNull().default(0),
 
     /**
+     * What the rate is charged on — see `TAX_BASES`.
+     *
+     * Defaults to `NET`, which is what every shop was charging before the
+     * column existed. An upgrade must not move anybody's invoice totals.
+     */
+    basis: text('basis', { enum: TAX_BASES }).notNull().default('NET'),
+
+    /**
      * Whether tax paid on a PURCHASE can be reclaimed.
      *
      * In Ghana, VAT is recoverable and the levies are not: NHIL and GETFund
@@ -55,6 +80,7 @@ export const taxComponents = sqliteTable(
     uniqueIndex('uq_tax_components_code').on(t.code),
     index('idx_tax_components_active').on(t.isActive),
     check('ck_tax_components_rate', sql`${t.rateBp} >= 0 AND ${t.rateBp} <= 100000`),
+    check('ck_tax_components_basis', oneOf(t.basis, TAX_BASES)),
     check('ck_tax_components_code', sql`length(${t.code}) > 0`),
     check('ck_tax_components_name', sql`length(${t.name}) > 0`),
   ],
@@ -85,6 +111,8 @@ export const saleTaxes = sqliteTable(
     code: text('code').notNull(),
     name: text('name').notNull(),
     rateBp: integer('rate_bp').notNull(),
+    /** How the rate was applied on the day — snapshotted with the rate itself. */
+    basis: text('basis', { enum: TAX_BASES }).notNull().default('NET'),
     /** Negative on a return or a void, mirroring the document it belongs to. */
     amountMinor: moneyMinor('amount_minor').notNull(),
 
@@ -92,6 +120,7 @@ export const saleTaxes = sqliteTable(
   },
   (t) => [
     index('idx_sale_taxes_sale').on(t.saleId),
+    check('ck_sale_taxes_basis', oneOf(t.basis, TAX_BASES)),
     uniqueIndex('uq_sale_taxes_sale_code').on(t.saleId, t.code),
   ],
 );
@@ -111,6 +140,8 @@ export const purchaseTaxes = sqliteTable(
     code: text('code').notNull(),
     name: text('name').notNull(),
     rateBp: integer('rate_bp').notNull(),
+    /** How the rate was applied on the day — snapshotted with the rate itself. */
+    basis: text('basis', { enum: TAX_BASES }).notNull().default('NET'),
     amountMinor: moneyMinor('amount_minor').notNull(),
     /** Whether this component was reclaimable when the goods were bought. */
     isRecoverable: boolean('is_recoverable').notNull().default(false),
@@ -119,6 +150,7 @@ export const purchaseTaxes = sqliteTable(
   },
   (t) => [
     index('idx_purchase_taxes_purchase').on(t.purchaseId),
+    check('ck_purchase_taxes_basis', oneOf(t.basis, TAX_BASES)),
     uniqueIndex('uq_purchase_taxes_purchase_code').on(t.purchaseId, t.code),
   ],
 );
