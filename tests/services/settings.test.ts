@@ -47,9 +47,7 @@ function currentAsInput(): SettingsInput {
     currencyCode: settings.currencyCode,
     currencySymbol: settings.currencySymbol,
     taxEnabled: settings.taxEnabled,
-    taxRateBp: settings.taxRateBp,
     taxInclusive: settings.taxInclusive,
-    taxLabel: settings.taxLabel,
     lowStockThresholdMilli: settings.lowStockThresholdMilli,
     allowNegativeStock: settings.allowNegativeStock,
     allowOverpayment: settings.allowOverpayment,
@@ -182,26 +180,30 @@ describe('changing the currency', () => {
 });
 
 describe('tax', () => {
-  it('turns on with a rate held in basis points', () => {
-    updateSettings(
-      context.db,
-      { ...currentAsInput(), taxEnabled: true, taxRateBp: 1250, taxLabel: 'VAT' },
-      ACTOR,
-    );
+  /**
+   * Settings owns WHETHER the shop charges tax and whether its prices already
+   * include it. What it charges is the component list, which is edited on its
+   * own and covered by tax-components-crud.test.ts. This form must not be able
+   * to write a rate at all — two places to set one number is how a shop ends
+   * up charging something nobody chose.
+   */
+  it('switches tax on and off without touching what is charged', () => {
+    const before = getSettings(context.db).taxRateBp;
 
-    const settings = getSettings(context.db);
-    expect(settings.taxEnabled).toBe(true);
-    expect(settings.taxRateBp).toBe(1250);
-  });
+    updateSettings(context.db, { ...currentAsInput(), taxEnabled: true }, ACTOR);
+    expect(getSettings(context.db).taxRateBp).toBe(before);
 
-  it('remembers the rate when tax is switched off', () => {
-    updateSettings(context.db, { ...currentAsInput(), taxEnabled: true, taxRateBp: 1500 }, ACTOR);
     updateSettings(context.db, { ...currentAsInput(), taxEnabled: false }, ACTOR);
 
     // Switching it back on must not silently resume at zero.
     const settings = getSettings(context.db);
     expect(settings.taxEnabled).toBe(false);
-    expect(settings.taxRateBp).toBe(1500);
+    expect(settings.taxRateBp).toBe(before);
+  });
+
+  it('records whether prices include tax, which changes what a price means', () => {
+    updateSettings(context.db, { ...currentAsInput(), taxInclusive: true }, ACTOR);
+    expect(getSettings(context.db).taxInclusive).toBe(true);
   });
 });
 
@@ -229,13 +231,6 @@ describe('the audit trail', () => {
     const summary = listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' })[0]?.summary ?? '';
     // "1 → 4" would mean nothing to whoever reads this later.
     expect(summary).toMatch(/Financial year starts: January → April/);
-  });
-
-  it('reports a tax rate as a percentage, the way it was entered', () => {
-    updateSettings(context.db, { ...currentAsInput(), taxEnabled: true, taxRateBp: 1250 }, ACTOR);
-
-    const summary = listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' })[0]?.summary ?? '';
-    expect(summary).toContain('12.5%');
   });
 
   it('writes NOTHING when a save changes nothing', () => {

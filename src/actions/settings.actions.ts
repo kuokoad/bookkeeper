@@ -7,7 +7,6 @@ import { db } from '@/db/client';
 import { requirePermission } from '@/lib/auth/current-user';
 import { clearLogo, setLogo, updateSettings } from '@/services/settings.service';
 import { MAX_IMAGE_BYTES, inspectImage } from '@/lib/image';
-import { parsePercentToBasisPoints } from '@/domain/rate';
 import { parseQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
 import type { FormState } from './auth.actions';
@@ -52,14 +51,9 @@ const settingsSchema = z.object({
   currencySymbol: z.string().trim().min(1, 'Enter the symbol shown on receipts.').max(8),
 
   taxEnabled: z.boolean(),
-  // Held in basis points so the rate stays an integer: 12.5% is 1250, never 0.125.
-  taxRateBp: z
-    .number()
-    .int('Enter the rate as a percentage, up to two decimal places.')
-    .min(0, 'A tax rate cannot be negative.')
-    .max(10_000, 'A tax rate above 100% is not a tax rate.'),
   taxInclusive: z.boolean(),
-  taxLabel: z.string().trim().min(1, 'Give the tax a name, like VAT.').max(20),
+  // The rate and the label are not here: they are derived from the tax
+  // components, which are edited as their own list.
 
   lowStockThresholdMilli: z
     .number()
@@ -107,18 +101,12 @@ export async function updateSettingsAction(
 
   // Parsed here rather than in the schema so a malformed number reports against
   // the field the person typed into, not as a type error.
-  const rate = parseOrFieldError(() =>
-    parsePercentToBasisPoints(String(formData.get('taxRate') ?? '0')),
-  );
-  if (!rate.ok) return { fieldErrors: { taxRate: rate.message } };
-
   const lowStock = parseOrFieldError(() => parseQty(String(formData.get('lowStock') ?? '0')));
   if (!lowStock.ok) return { fieldErrors: { lowStock: lowStock.message } };
   if (lowStock.value < 0) {
     return { fieldErrors: { lowStock: 'A low stock level cannot be negative.' } };
   }
 
-  const taxRateBp = rate.value;
   const lowStockThresholdMilli = lowStock.value as number;
 
   const parsed = settingsSchema.safeParse({
@@ -130,9 +118,7 @@ export async function updateSettingsAction(
     currencyCode: formData.get('currencyCode'),
     currencySymbol: formData.get('currencySymbol'),
     taxEnabled: checkbox(formData, 'taxEnabled'),
-    taxRateBp,
     taxInclusive: checkbox(formData, 'taxInclusive'),
-    taxLabel: formData.get('taxLabel'),
     lowStockThresholdMilli,
     allowNegativeStock: checkbox(formData, 'allowNegativeStock'),
     allowOverpayment: checkbox(formData, 'allowOverpayment'),

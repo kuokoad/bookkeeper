@@ -5,6 +5,12 @@ import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { getLogoSummary, getSettings, hasPostedTransactions } from '@/services/settings.service';
+import {
+  allInTaxRateBp,
+  listTaxComponents,
+  listTaxHoldingAccounts,
+  taxComponentUsage,
+} from '@/services/tax.service';
 import { formatBasisPoints } from '@/domain/rate';
 import { toQtyInputString, type Qty } from '@/domain/quantity';
 import { Alert } from '@/components/ui/alert';
@@ -12,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card, PageHeader } from '@/components/ui/page';
 import { SettingsForm, type SettingsFormValues } from './settings-form';
 import { LogoForm } from './logo-form';
+import { TaxComponents, type TaxComponentRowValues } from './tax-components';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -22,6 +29,24 @@ export default async function SettingsPage() {
   const currencyLocked = hasPostedTransactions(db);
   const logo = getLogoSummary(db);
 
+  // The all-in rate comes from the domain rather than from adding the rates up
+  // here: once a component is charged on the value PLUS the ones above it, the
+  // combined figure is not the sum of the percentages.
+  const allInRateBp = allInTaxRateBp(db);
+  const taxRows: TaxComponentRowValues[] = listTaxComponents(db).map((row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    rate: formatBasisPoints(row.rateBp),
+    basis: row.basis,
+    isRecoverable: row.isRecoverable,
+    glAccountId: row.glAccountId,
+    sortOrder: row.sortOrder,
+    isActive: row.isActive,
+    usage: taxComponentUsage(db, row.id),
+  }));
+  const holdingAccounts = listTaxHoldingAccounts(db);
+
   const values: SettingsFormValues = {
     businessName: settings.businessName,
     tagline: settings.tagline ?? '',
@@ -31,11 +56,10 @@ export default async function SettingsPage() {
     currencyCode: settings.currencyCode,
     currencySymbol: settings.currencySymbol,
     taxEnabled: settings.taxEnabled,
-    // Rendered by the same domain functions the form is parsed with, so what
-    // is shown and what is saved cannot drift apart.
-    taxRate: formatBasisPoints(settings.taxRateBp),
     taxInclusive: settings.taxInclusive,
-    taxLabel: settings.taxLabel,
+    // Rendered by the same domain function the rates are parsed with, so what
+    // is shown and what is saved cannot drift apart.
+    taxSummary: `${formatBasisPoints(allInRateBp)}%`,
     lowStock: toQtyInputString(settings.lowStockThresholdMilli as Qty),
     allowNegativeStock: settings.allowNegativeStock,
     allowOverpayment: settings.allowOverpayment,
@@ -77,6 +101,11 @@ export default async function SettingsPage() {
             }}
           />
           <SettingsForm values={values} currencyLocked={currencyLocked} />
+          <TaxComponents
+            rows={taxRows}
+            accounts={holdingAccounts}
+            allIn={formatBasisPoints(allInRateBp)}
+          />
         </div>
       ) : (
         <Card>

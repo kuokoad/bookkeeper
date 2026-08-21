@@ -59,9 +59,13 @@ export interface SettingsInput {
   currencySymbol: string;
 
   taxEnabled: boolean;
-  taxRateBp: number;
   taxInclusive: boolean;
-  taxLabel: string;
+  /**
+   * NOT here: the rate and the label. Those are DERIVED from the tax
+   * components — the list of what the shop charges is the one place a rate is
+   * edited, and letting this form write them too is how the two end up
+   * disagreeing. See `syncDerivedTaxSettings` in the tax service.
+   */
 
   lowStockThresholdMilli: number;
   allowNegativeStock: boolean;
@@ -214,11 +218,10 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         currencyCode: input.currencyCode,
         currencySymbol: input.currencySymbol,
         taxEnabled: input.taxEnabled,
-        // Keep the rate that was set even when tax is switched off, so switching
-        // it back on does not silently resume at zero.
-        taxRateBp: input.taxRateBp,
+        // The rate and label are deliberately absent: they belong to the
+        // components. Switching tax off leaves them alone, so switching it back
+        // on resumes at what the shop was charging rather than at zero.
         taxInclusive: input.taxInclusive,
-        taxLabel: input.taxLabel,
         lowStockThresholdMilli: input.lowStockThresholdMilli,
         allowNegativeStock: input.allowNegativeStock,
         allowOverpayment: input.allowOverpayment,
@@ -241,9 +244,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
       describeChange('Currency', before.currencyCode, input.currencyCode),
       describeChange('Currency symbol', before.currencySymbol, input.currencySymbol),
       describeChange('Tax', before.taxEnabled, input.taxEnabled),
-      describeChange('Tax rate', `${before.taxRateBp / 100}%`, `${input.taxRateBp / 100}%`),
       describeChange('Prices include tax', before.taxInclusive, input.taxInclusive),
-      describeChange('Tax name', before.taxLabel, input.taxLabel),
       describeChange(
         'Low stock level',
         before.lowStockThresholdMilli / 1000,

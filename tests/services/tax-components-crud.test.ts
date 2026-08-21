@@ -5,15 +5,18 @@ import { createTestDatabase, accountIdFor, type TestDatabase } from '../helpers/
 import { businessSettings, taxComponents } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import {
+  allInTaxRateBp,
   applyTax,
   createTaxComponent,
   getTaxProfile,
   listTaxComponents,
+  listTaxHoldingAccounts,
   setTaxComponentActive,
   taxComponentUsage,
   updateTaxComponent,
   type TaxComponentInput,
 } from '@/services/tax.service';
+import { getSettings } from '@/services/settings.service';
 import { minor } from '@/domain/money';
 
 /**
@@ -285,5 +288,96 @@ describe('switching a tax off', () => {
 describe('what a component has already charged', () => {
   it('is nothing before any sale has used it', () => {
     expect(taxComponentUsage(context.db, idOf('VAT'))).toBe(0);
+  });
+});
+
+describe('the rate the till still prices from', () => {
+  /**
+   * Sales are priced from the old single-rate setting until that path reads
+   * the components directly. It is DERIVED from them, so the two cannot
+   * disagree — the component list is the only place a rate is edited.
+   */
+  it('is set up from the components at install, not left at zero', () => {
+    // Without this a fresh shop would hold three taxes and charge none of them
+    // the moment somebody switched tax on.
+    expect(getSettings(context.db).taxRateBp).toBe(2_000);
+  });
+
+  it('follows a rate change', () => {
+    updateTaxComponent(
+      context.db,
+      idOf('VAT'),
+      {
+        code: 'VAT',
+        name: 'VAT',
+        rateBp: 1_600,
+        basis: 'NET',
+        isRecoverable: true,
+        glAccountId: accountIdFor(context.db, ACCOUNT_CODES.TAX_PAYABLE),
+        sortOrder: 30,
+      },
+      ACTOR,
+    );
+
+    expect(getSettings(context.db).taxRateBp).toBe(2_100);
+  });
+
+  it('follows a tax being switched off', () => {
+    setTaxComponentActive(context.db, idOf('GETFUND'), false, ACTOR);
+    expect(getSettings(context.db).taxRateBp).toBe(1_750);
+  });
+
+  it('carries the compounding into the single figure', () => {
+    updateTaxComponent(
+      context.db,
+      idOf('VAT'),
+      {
+        code: 'VAT',
+        name: 'VAT',
+        rateBp: 1_500,
+        basis: 'NET_PLUS_LEVIES',
+        isRecoverable: true,
+        glAccountId: accountIdFor(context.db, ACCOUNT_CODES.TAX_PAYABLE),
+        sortOrder: 30,
+      },
+      ACTOR,
+    );
+
+    // 20.75%, not the 20% that adding the percentages would give.
+    expect(getSettings(context.db).taxRateBp).toBe(2_075);
+  });
+
+  it('names the tax on the receipt when there is only one, and does not pretend otherwise', () => {
+    expect(getSettings(context.db).taxLabel).toBe('Tax');
+
+    setTaxComponentActive(context.db, idOf('NHIL'), false, ACTOR);
+    setTaxComponentActive(context.db, idOf('GETFUND'), false, ACTOR);
+
+    // One line on a receipt cannot name three taxes; with one, it can.
+    expect(getSettings(context.db).taxLabel).toBe('VAT');
+  });
+});
+
+describe('what the settings screen shows', () => {
+  it('reports the all-in rate even while tax is switched off', () => {
+    // getTaxProfile reports nothing when tax is off, which is right for pricing
+    // a sale and useless for a screen that has to show what is set up.
+    expect(getTaxProfile(context.db).totalRateBp).toBe(0);
+    expect(allInTaxRateBp(context.db)).toBe(2_000);
+  });
+
+  it('offers only accounts a tax may actually be held in', () => {
+    const offered = listTaxHoldingAccounts(context.db);
+    const codes = offered.map((account) => account.code);
+
+    // The three tax accounts, and Accounts Payable, are all liabilities.
+    expect(codes).toContain(ACCOUNT_CODES.TAX_PAYABLE);
+    expect(codes).toContain(ACCOUNT_CODES.NHIL_PAYABLE);
+    expect(codes).toContain(ACCOUNT_CODES.GETFUND_PAYABLE);
+
+    // Nothing that would book tax as money the shop earned or owns.
+    expect(codes).not.toContain(ACCOUNT_CODES.SALES_REVENUE);
+    expect(codes).not.toContain(ACCOUNT_CODES.CASH);
+    expect(codes).not.toContain(ACCOUNT_CODES.INVENTORY);
   });
 });

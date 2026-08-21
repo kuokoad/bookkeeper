@@ -202,10 +202,13 @@ describe('a shop that was already charging tax', () => {
   });
 
   it('leaves a shop that charged nothing to take the defaults', () => {
-    const shop = createTestDatabase();
+    // A shop from before this feature that never set a rate: no components,
+    // and a rate of zero. `existingShopAt` winds both back, which matters now
+    // that the seed derives `taxRateBp` from the components it creates — a
+    // database that still held the derived figure would not be a pre-feature
+    // database at all.
+    const shop = existingShopAt(0, false);
     try {
-      shop.connection.prepare('DELETE FROM tax_components').run();
-      // No rate was ever configured, so there is nothing to preserve.
       shop.db.transaction((tx) => seedTaxComponents(tx as never, new Date()));
 
       const active = shop.db

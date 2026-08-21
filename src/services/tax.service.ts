@@ -1,4 +1,4 @@
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -217,6 +217,109 @@ function assertHoldingAccount(tx: Tx, glAccountId: number): void {
   }
 }
 
+/**
+ * Keep the old single-rate settings in step with the components.
+ *
+ * TEMPORARY. Sales are still priced from `businessSettings.taxRateBp` and
+ * posted under `taxLabel`, so until that path reads the components directly
+ * those two fields have to keep saying what the components say. They are
+ * DERIVED here and nowhere else: the component list is the one place a rate
+ * is edited, and this stops the two drifting the moment somebody changes one.
+ *
+ * The rate written is the ALL-IN figure, so a shop charging NHIL, GETFund and
+ * VAT keeps totalling 20% (or 20.75% with VAT compounding) exactly as before.
+ * The single line on a receipt cannot name three taxes, so it says "Tax"
+ * unless there is only one, which is the last thing this bridge gets wrong
+ * before it goes away.
+ */
+export function syncDerivedTaxSettings(tx: Tx, at: Date = new Date()): void {
+  const active = tx
+    .select()
+    .from(taxComponents)
+    .where(eq(taxComponents.isActive, true))
+    .orderBy(asc(taxComponents.sortOrder), asc(taxComponents.id))
+    .all()
+    .filter((row) => row.rateBp > 0);
+
+  const components: TaxComponent[] = active.map((row) => ({
+    code: row.code,
+    name: row.name,
+    rateBp: row.rateBp,
+    basis: row.basis,
+    isRecoverable: row.isRecoverable,
+  }));
+
+  const only = components.length === 1 ? components[0]!.name.slice(0, 20) : null;
+
+  tx.update(businessSettings)
+    .set({
+      taxRateBp: totalRateBp(components),
+      // Never blank: the column is NOT NULL and the label prints on receipts.
+      taxLabel: only ?? 'Tax',
+      updatedAt: at,
+    })
+    .where(eq(businessSettings.id, 1))
+    .run();
+}
+
+/**
+ * The all-in rate, whether or not the shop is currently charging tax.
+ *
+ * `getTaxProfile` reports nothing when tax is switched off, which is right for
+ * pricing a sale and wrong for a settings screen: the owner still needs to see
+ * what they have set up before they switch it on.
+ */
+export function allInTaxRateBp(db: Db | Tx): number {
+  const rows = db
+    .select()
+    .from(taxComponents)
+    .where(eq(taxComponents.isActive, true))
+    .orderBy(asc(taxComponents.sortOrder), asc(taxComponents.id))
+    .all()
+    .filter((row) => row.rateBp > 0);
+
+  return totalRateBp(
+    rows.map((row) => ({
+      code: row.code,
+      name: row.name,
+      rateBp: row.rateBp,
+      basis: row.basis,
+      isRecoverable: row.isRecoverable,
+    })),
+  );
+}
+
+/**
+ * The accounts a tax may be held in.
+ *
+ * Liabilities only, and postable ones: tax collected is money owed to the
+ * authority, and a heading exists to group its children rather than to hold a
+ * balance of its own.
+ */
+export function listTaxHoldingAccounts(db: Db | Tx) {
+  const rows = db
+    .select({ id: accounts.id, code: accounts.code, name: accounts.name })
+    .from(accounts)
+    .where(and(eq(accounts.type, 'LIABILITY'), eq(accounts.isActive, true)))
+    .orderBy(asc(accounts.code))
+    .all();
+
+  // A heading is an account with children. Filtered here rather than with a
+  // correlated subquery: drizzle only qualifies column names when the outer
+  // query has a join, so `WHERE parent_id = id` on a single-table select binds
+  // to the wrong table and silently returns nonsense. See catalog.service.
+  const headings = new Set(
+    db
+      .select({ parentId: accounts.parentId })
+      .from(accounts)
+      .where(isNotNull(accounts.parentId))
+      .all()
+      .map((row) => row.parentId),
+  );
+
+  return rows.filter((row) => !headings.has(row.id));
+}
+
 /** Every component, in the order they appear on a receipt. */
 export function listTaxComponents(db: Db | Tx, includeInactive = true) {
   const query = db.select().from(taxComponents);
@@ -257,6 +360,7 @@ export function createTaxComponent(db: Db, input: TaxComponentInput, actor: Acto
       at: now,
     });
 
+    syncDerivedTaxSettings(tx, now);
     return inserted.id;
   });
 }
@@ -306,6 +410,8 @@ export function updateTaxComponent(
       metadata: { before: { ...existing }, after: { ...clean } },
       at: now,
     });
+
+    syncDerivedTaxSettings(tx, now);
   });
 }
 
@@ -396,5 +502,7 @@ export function setTaxComponentActive(db: Db, id: number, isActive: boolean, act
       summary: `${existing.name} ${isActive ? 'switched on' : 'switched off'}`,
       at: now,
     });
+
+    syncDerivedTaxSettings(tx, now);
   });
 }

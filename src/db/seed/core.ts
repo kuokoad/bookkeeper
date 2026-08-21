@@ -11,6 +11,7 @@ import {
 } from '@/domain/accounting/chart-of-accounts';
 import { DEFAULT_SEQUENCES } from '@/services/sequence.service';
 import { writeAudit } from '@/services/audit.service';
+import { syncDerivedTaxSettings } from '@/services/tax.service';
 
 /**
  * Baseline data every shop needs before it can record anything: settings, the
@@ -226,6 +227,11 @@ export function seedTaxComponents(tx: Tx, now: Date): void {
    * shop that set 12.5% and then turned tax off still means 12.5% when it
    * turns tax back on, and its Settings screen still says so — taking it to
    * 20% behind that unchanged number is the same overcharge, only delayed.
+   *
+   * Only reachable before any component exists, which is what makes reading
+   * `taxRateBp` safe: once components are set up, that field is DERIVED from
+   * them by `syncDerivedTaxSettings` and no longer represents a rate anybody
+   * chose. The early return above is what keeps those two apart.
    */
   const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
   const existingRate = settings?.taxRateBp ?? 0;
@@ -304,6 +310,10 @@ export function seedCore(tx: Tx, now: Date = new Date()): void {
   seedChartOfAccounts(tx, now);
   seedPaymentAccounts(tx, now);
   seedTaxComponents(tx, now);
+  // The old single-rate settings are derived from the components. Without this
+  // a freshly seeded shop would hold three taxes and charge none of them the
+  // moment somebody switched tax on.
+  syncDerivedTaxSettings(tx, now);
 
   writeAudit(tx, {
     action: 'CREATE',

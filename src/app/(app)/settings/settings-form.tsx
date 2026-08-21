@@ -19,10 +19,9 @@ export interface SettingsFormValues {
   currencyCode: string;
   currencySymbol: string;
   taxEnabled: boolean;
-  /** Percentage as typed, e.g. "12.5". Converted to basis points on the server. */
-  taxRate: string;
   taxInclusive: boolean;
-  taxLabel: string;
+  /** What the shop currently charges, all in, e.g. "20". Shown, never edited here. */
+  taxSummary: string;
   /** Whole units as typed, e.g. "5" or "2.5". */
   lowStock: string;
   allowNegativeStock: boolean;
@@ -254,56 +253,21 @@ export function SettingsForm({
 
           {/*
             Hidden rather than unmounted. An unmounted input submits nothing, so
-            saving with tax switched off would send no tax name at all — failing
-            validation on a field nobody can see — and would quietly reset
-            "prices include tax" to off. Kept in the DOM, the stored values ride
-            along untouched.
+            saving with tax switched off would quietly reset "prices include
+            tax". Kept in the DOM, the stored value rides along untouched.
           */}
-          <div
-            hidden={!taxEnabled}
-            className="grid gap-4 border-l-2 border-line pl-4 sm:grid-cols-2"
-          >
-              <Field
-                label="Rate"
-                htmlFor="taxRate"
-                hint="A percentage, like 12.5"
-                required
-                error={state.fieldErrors?.['taxRate']}
-              >
-                <TextInput
-                  id="taxRate"
-                  name="taxRate"
-                  inputMode="decimal"
-                  defaultValue={values.taxRate}
-                  className="tabular"
-                  invalid={Boolean(state.fieldErrors?.['taxRate'])}
-                />
-              </Field>
+          <div hidden={!taxEnabled} className="space-y-4 border-l-2 border-line pl-4">
+            <Toggle
+              name="taxInclusive"
+              label="My prices already include tax"
+              hint="On: the tax is worked out of the price shown. Off: it is added on top."
+              defaultChecked={values.taxInclusive}
+            />
 
-              <Field
-                label="What it is called"
-                htmlFor="taxLabel"
-                hint="Appears on receipts, e.g. VAT."
-                required
-                error={state.fieldErrors?.['taxLabel']}
-              >
-                <TextInput
-                  id="taxLabel"
-                  name="taxLabel"
-                  defaultValue={values.taxLabel}
-                  maxLength={20}
-                  invalid={Boolean(state.fieldErrors?.['taxLabel'])}
-                />
-              </Field>
-
-              <div className="sm:col-span-2">
-                <Toggle
-                  name="taxInclusive"
-                  label="My prices already include tax"
-                  hint="On: the tax is worked out of the price shown. Off: it is added on top."
-                  defaultChecked={values.taxInclusive}
-                />
-              </div>
+            <p className="text-sm text-content-muted">
+              Currently charging <span className="font-medium text-content">{values.taxSummary}</span>.
+              The individual taxes and their rates are set below.
+            </p>
           </div>
         </div>
       </Card>
