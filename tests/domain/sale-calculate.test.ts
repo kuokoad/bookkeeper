@@ -11,6 +11,12 @@ import {
 import { minor, sum, type Minor } from '@/domain/money';
 import { fromUnits, parseQty, type Qty } from '@/domain/quantity';
 import { ValidationError } from '@/domain/errors';
+import type { TaxComponent } from '@/domain/tax/components';
+
+/** A single 12.5% tax, the shape the sale arithmetic now takes. */
+const ONE_TAX: TaxComponent[] = [
+  { code: 'VAT', name: 'VAT', rateBp: 1_250, basis: 'NET', isRecoverable: true },
+];
 
 const m = (n: number): Minor => minor(n);
 const u = (n: number): Qty => fromUnits(n);
@@ -138,7 +144,7 @@ describe('tax', () => {
     // GHS 100.00 at 12.5% = GHS 12.50 tax
     const result = calculateSale({
       lines: [{ productId: 1, qty: u(1), unitPrice: m(10_000) }],
-      taxRateBp: 1_250,
+      taxComponents: ONE_TAX,
     });
     expect(result.netBeforeTax).toBe(10_000);
     expect(result.tax).toBe(1_250);
@@ -149,7 +155,7 @@ describe('tax', () => {
     // GHS 112.50 inclusive of 12.5% contains GHS 12.50 tax.
     const result = calculateSale({
       lines: [{ productId: 1, qty: u(1), unitPrice: m(11_250) }],
-      taxRateBp: 1_250,
+      taxComponents: ONE_TAX,
       taxInclusive: true,
     });
     expect(result.total).toBe(11_250);
@@ -159,7 +165,6 @@ describe('tax', () => {
   it('is zero when tax is switched off', () => {
     const result = calculateSale({
       lines: [{ productId: 1, qty: u(1), unitPrice: m(10_000) }],
-      taxRateBp: 0,
     });
     expect(result.tax).toBe(0);
     expect(result.total).toBe(10_000);
@@ -169,7 +174,7 @@ describe('tax', () => {
     const result = calculateSale({
       lines: [{ productId: 1, qty: u(1), unitPrice: m(10_000) }],
       invoiceDiscount: m(2_000),
-      taxRateBp: 1_250,
+      taxComponents: ONE_TAX,
     });
     expect(result.netBeforeTax).toBe(8_000);
     expect(result.tax).toBe(1_000);

@@ -183,29 +183,42 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
               </dd>
             </div>
           )}
-          {/* Added on top only when the quoted prices excluded it. */}
-          {totals.tax > 0 && !totals.taxWithinTotal && (
-            <div className="flex justify-between gap-4">
-              <dt className="text-content-muted">{settings?.taxLabel ?? 'Tax'}</dt>
-              <dd className="tabular text-content">
-                {money(totals.tax, { currencyCode: currency, bare: true })}
-              </dd>
-            </div>
-          )}
+          {/*
+            Added on top only when the quoted prices excluded it. One line per
+            tax, named from the sale itself: a VAT invoice has to show NHIL, the
+            GETFund levy and VAT separately, and a reprint has to show what was
+            charged on the day rather than what the shop charges now.
+          */}
+          {!totals.taxWithinTotal &&
+            sale.taxes.map(
+              (line) =>
+                line.amountMinor !== 0 && (
+                  <div key={line.id} className="flex justify-between gap-4">
+                    <dt className="text-content-muted">{line.name}</dt>
+                    <dd className="tabular text-content">
+                      {money(minor(line.amountMinor), { currencyCode: currency, bare: true })}
+                    </dd>
+                  </div>
+                ),
+            )}
           <div className="flex justify-between gap-4 border-t border-line pt-1.5">
             <dt className="font-semibold text-content">Total</dt>
             <dd className="tabular font-semibold text-content">
               {money(totals.total, { currencyCode: currency })}
             </dd>
           </div>
-          {totals.tax > 0 && totals.taxWithinTotal && (
-            <div className="flex justify-between gap-4 text-xs">
-              <dt className="text-content-muted">includes {settings?.taxLabel ?? 'Tax'}</dt>
-              <dd className="tabular text-content-muted">
-                {money(totals.tax, { currencyCode: currency, bare: true })}
-              </dd>
-            </div>
-          )}
+          {totals.taxWithinTotal &&
+            sale.taxes.map(
+              (line) =>
+                line.amountMinor !== 0 && (
+                  <div key={line.id} className="flex justify-between gap-4 text-xs">
+                    <dt className="text-content-muted">includes {line.name}</dt>
+                    <dd className="tabular text-content-muted">
+                      {money(minor(line.amountMinor), { currencyCode: currency, bare: true })}
+                    </dd>
+                  </div>
+                ),
+            )}
           {sale.totalMinor - sale.outstandingMinor > 0 && (
             <div className="flex justify-between gap-4">
               <dt className="text-content-muted">Already paid</dt>

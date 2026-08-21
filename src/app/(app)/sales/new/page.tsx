@@ -11,6 +11,7 @@ import { toBusinessDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/ui/page';
 import { Pos } from './pos';
+import { getTaxProfile } from '@/services/tax.service';
 
 export const metadata: Metadata = { title: 'New sale' };
 export const dynamic = 'force-dynamic';
@@ -81,7 +82,7 @@ export default async function NewSalePage() {
           accounts={accounts}
           today={toBusinessDate()}
           currencyCode={settings?.currencyCode ?? 'GHS'}
-          taxRateBp={settings?.taxEnabled ? (settings?.taxRateBp ?? 0) : 0}
+          taxComponents={getTaxProfile(db).components}
           taxInclusive={settings?.taxInclusive ?? false}
         />
       )}

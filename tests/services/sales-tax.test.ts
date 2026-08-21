@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
-import { businessSettings, paymentAccounts, sales } from '@/db/schema';
+import { paymentAccounts, sales } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { createProduct } from '@/services/catalog.service';
 import { createStockAdjustment } from '@/services/stock-adjustment.service';
@@ -10,6 +10,7 @@ import { createSale } from '@/services/sale.service';
 import { getAccountBalanceByCode, getTrialBalance } from '@/services/reporting/balances.service';
 import { minor, type Minor } from '@/domain/money';
 import { fromUnits, type Qty } from '@/domain/quantity';
+import { setSingleTax } from '../helpers/tax';
 
 /**
  * Selling at prices that already include tax.
@@ -37,11 +38,7 @@ let CASH_ACCOUNT = 0;
 const RATE_BP = 1_250;
 
 function setTax(inclusive: boolean) {
-  context.db
-    .update(businessSettings)
-    .set({ taxEnabled: true, taxRateBp: RATE_BP, taxInclusive: inclusive, taxLabel: 'VAT' })
-    .where(eq(businessSettings.id, 1))
-    .run();
+  setSingleTax(context.db, { rateBp: RATE_BP, inclusive });
 }
 
 function makeProduct(name: string, cost: number, price: number): number {

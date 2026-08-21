@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
-import { businessSettings, saleItems } from '@/db/schema';
+import { saleItems } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { createProduct } from '@/services/catalog.service';
 import { createStockAdjustment } from '@/services/stock-adjustment.service';
@@ -12,6 +12,7 @@ import { createCustomerReturn } from '@/services/returns.service';
 import { getAccountBalanceByCode, getTrialBalance } from '@/services/reporting/balances.service';
 import { minor, type Minor } from '@/domain/money';
 import { fromUnits, type Qty } from '@/domain/quantity';
+import { setSingleTax } from '../helpers/tax';
 
 /**
  * Giving the tax back when the goods come back.
@@ -36,11 +37,7 @@ let CUSTOMER = 0;
 
 /** 12.5%, added on top of the shelf price. */
 function taxedShop() {
-  context.db
-    .update(businessSettings)
-    .set({ taxEnabled: true, taxRateBp: 1_250, taxInclusive: false, taxLabel: 'VAT' })
-    .where(eq(businessSettings.id, 1))
-    .run();
+  setSingleTax(context.db, { rateBp: 1_250 });
 }
 
 function stockedProduct(): number {

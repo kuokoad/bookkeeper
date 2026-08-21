@@ -8,6 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
+import { minor } from '@/domain/money';
+import {
+  taxOnNet,
+  taxWithinGross,
+  type TaxComponent,
+  type TaxLine,
+} from '@/domain/tax/components';
 
 export interface PosProduct {
   id: number;
@@ -94,7 +101,7 @@ export function Pos({
   accounts,
   today,
   currencyCode,
-  taxRateBp,
+  taxComponents,
   taxInclusive,
 }: {
   products: PosProduct[];
@@ -102,7 +109,7 @@ export function Pos({
   accounts: PosAccount[];
   today: string;
   currencyCode: string;
-  taxRateBp: number;
+  taxComponents: TaxComponent[];
   taxInclusive: boolean;
 }) {
   const [state, formAction, pending] = useActionState<SaleFormState, FormData>(
@@ -225,11 +232,26 @@ export function Pos({
 
     const discount = invoiceDiscount ? toMinor(invoiceDiscount) : 0;
     const net = Math.max(0, subtotal - (Number.isNaN(discount) ? 0 : discount));
-    const tax = taxRateBp === 0
-      ? 0
-      : taxInclusive
-        ? Math.round((net * taxRateBp) / (10_000 + taxRateBp))
-        : Math.round((net * taxRateBp) / 10_000);
+    /**
+     * Priced by the SAME domain functions the server uses, not by a second
+     * implementation of the arithmetic here. Ghana charges three taxes on one
+     * sale and the customer has to see each; more to the point, a till that
+     * quotes one figure while the ledger records another is how a shop starts
+     * arguing with its own receipts.
+     */
+    let taxLines: TaxLine[] = [];
+    let tax = 0;
+    try {
+      const breakdown = taxInclusive
+        ? taxWithinGross(minor(net), taxComponents)
+        : taxOnNet(minor(net), taxComponents);
+      taxLines = breakdown.lines;
+      tax = breakdown.total;
+    } catch {
+      // A half-typed amount is not a crash. The server is the authority and
+      // will refuse it too; here it just means the preview is not ready.
+      invalid = true;
+    }
     const total = taxInclusive ? net : net + tax;
 
     const tendered =
@@ -239,6 +261,7 @@ export function Pos({
     return {
       subtotal,
       discount: Number.isNaN(discount) ? 0 : discount,
+      taxLines,
       tax,
       total,
       tendered,
@@ -246,7 +269,7 @@ export function Pos({
       outstanding: Math.max(0, total - tendered),
       invalid,
     };
-  }, [lines, invoiceDiscount, tenderAmount, secondAmount, taxRateBp, taxInclusive]);
+  }, [lines, invoiceDiscount, tenderAmount, secondAmount, taxComponents, taxInclusive]);
 
   const overselling = lines.filter(
     (line) => line.trackInventory && toMilli(line.qty) > line.qtyOnHandMilli,
@@ -508,11 +531,18 @@ export function Pos({
                   <dd className="tabular text-content">−{fmt(totals.discount)}</dd>
                 </div>
               )}
-              {totals.tax > 0 && (
-                <div className="flex justify-between">
-                  <dt className="text-content-muted">Tax</dt>
-                  <dd className="tabular text-content">{fmt(totals.tax)}</dd>
-                </div>
+              {/*
+                One line per tax, named. A VAT invoice has to show each, and the
+                customer at the counter is entitled to the same breakdown.
+              */}
+              {totals.taxLines.map(
+                (line) =>
+                  line.amount !== 0 && (
+                    <div key={line.code} className="flex justify-between">
+                      <dt className="text-content-muted">{line.name}</dt>
+                      <dd className="tabular text-content">{fmt(line.amount)}</dd>
+                    </div>
+                  ),
               )}
               <div className="flex justify-between border-t border-line pt-2 text-lg font-semibold">
                 <dt className="text-content">Total</dt>

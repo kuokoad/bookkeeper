@@ -23,6 +23,8 @@ import { postJournalEntry, type Actor } from './journal.service';
 import { recordStockMovement } from './inventory.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { getSaleOutstanding } from './sale.service';
+import { readSaleTaxes, taxAccountFor, writeSaleTaxes } from './tax.service';
+import { taxShareOf } from '@/domain/tax/components';
 
 /**
  * Returns — goods coming back, in either direction.
@@ -173,10 +175,39 @@ export function createCustomerReturn(
      * other way round.
      */
     const saleNetRevenue = sum([...netByItemId.values()]);
-    const taxShare =
-      isZero(minor(original.taxMinor)) || saleNetRevenue === 0
-        ? ZERO
-        : mulDiv(minor(original.taxMinor), totalRevenue, saleNetRevenue);
+
+    /**
+     * Component by component, not as one figure.
+     *
+     * NHIL, the GETFund levy and VAT are three separate obligations sitting in
+     * three separate accounts, and only VAT can be set against what was paid on
+     * purchases. Handing back a single lump would leave the levy accounts
+     * holding tax on goods that came back, and the VAT account short.
+     */
+    const chargedLines = readSaleTaxes(tx, originalSaleId).map((row) => ({
+      code: row.code,
+      name: row.name,
+      rateBp: row.rateBp,
+      basis: row.basis,
+      isRecoverable: false,
+      componentId: row.componentId,
+      amount: minor(row.amountMinor),
+    }));
+
+    // `taxShareOf` returns the domain's own line shape, so the component ids
+    // are zipped back on by position — the shares come out in the order they
+    // went in, one for one.
+    const returnedLines =
+      chargedLines.length === 0 || saleNetRevenue === 0
+        ? []
+        : taxShareOf(chargedLines, totalRevenue, minor(saleNetRevenue)).map((line, index) => ({
+            ...line,
+            componentId: chargedLines[index]?.componentId ?? null,
+          }));
+
+    const taxShare = isZero(minor(original.taxMinor))
+      ? ZERO
+      : sum(returnedLines.map((line) => line.amount));
 
     /**
      * Where prices INCLUDED tax, `totalRevenue` already contains it, so the tax
@@ -217,6 +248,19 @@ export function createCustomerReturn(
       .get();
 
     if (!returnSale) throw new ConflictError('Could not create the return.');
+
+    // Negative, mirroring the document, and snapshotted like the sale's own.
+    writeSaleTaxes(
+      tx,
+      returnSale.id,
+      returnedLines.map((line) => ({ ...line, amount: minor(-line.amount) })),
+      new Map(
+        returnedLines
+          .filter((line) => line.componentId !== null)
+          .map((line) => [line.code, line.componentId as number]),
+      ),
+      occurredAt,
+    );
 
     // --- stock back in, at the original cost -----------------------------
     resolved.forEach((line, index) => {
@@ -304,11 +348,14 @@ export function createCustomerReturn(
       );
     }
 
-    // The shop stops owing tax it collected on a sale that did not stand.
-    if (!isZero(taxShare)) {
+    // The shop stops owing tax it collected on a sale that did not stand —
+    // each component out of the account it went into. A levy handed back
+    // through the VAT account would leave both wrong and the return unfileable.
+    for (const line of returnedLines) {
+      if (isZero(line.amount)) continue;
       lines.push(
-        debit(accountIdByCode(tx, ACCOUNT_CODES.TAX_PAYABLE), taxShare, {
-          description: `${receiptNo} tax on goods returned`,
+        debit(taxAccountFor(tx, line), line.amount, {
+          description: `${receiptNo} ${line.name} on goods returned`,
         }),
       );
     }

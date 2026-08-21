@@ -25,6 +25,12 @@ import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.ser
 import { recordStockMovement } from './inventory.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { getCustomerBalance } from './customer.service';
+import {
+  getTaxProfile,
+  readSaleTaxes,
+  taxAccountFor,
+  writeSaleTaxes,
+} from './tax.service';
 
 /**
  * Completing a sale — the most important transaction in the application.
@@ -109,6 +115,10 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
       };
     });
 
+    // What the shop charges, and how. Read once inside the transaction so a
+    // rate changed mid-sale cannot apply to half of it.
+    const taxProfile = getTaxProfile(tx);
+
     // --- compute every figure in the pure domain -------------------------
     const totals = calculateSale({
       lines: resolved.map((entry) => ({
@@ -118,8 +128,8 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
         ...(entry.request.discount !== undefined ? { discount: entry.request.discount } : {}),
       })),
       ...(input.invoiceDiscount !== undefined ? { invoiceDiscount: input.invoiceDiscount } : {}),
-      taxRateBp: settings.taxEnabled ? settings.taxRateBp : 0,
-      taxInclusive: settings.taxInclusive,
+      taxComponents: taxProfile.components,
+      taxInclusive: taxProfile.inclusive,
     });
 
     const tender = calculateTender(totals.total, input.tenders);
@@ -206,6 +216,11 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
       .get();
 
     if (!sale) throw new ConflictError('Could not create the sale.');
+
+    // What each tax charged, snapshotted onto the document. `sales.taxMinor`
+    // stays the total of these, so every report that asks for "the tax" keeps
+    // working without knowing about the breakdown.
+    writeSaleTaxes(tx, sale.id, totals.taxLines, taxProfile.componentIdByCode, occurredAt);
 
     // --- lines, stock and COGS -------------------------------------------
     const allowNegative = settings.allowNegativeStock;
@@ -348,10 +363,15 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
       }),
     );
 
-    if (!isZero(totals.tax)) {
+    // Each tax to its OWN account. NHIL, GETFund and VAT are three separate
+    // obligations remitted on the same return but accounted for separately,
+    // and only VAT can be set against what was paid on purchases. Netted into
+    // one figure that distinction disappears, and with it any way to file.
+    for (const taxLine of totals.taxLines) {
+      if (isZero(taxLine.amount)) continue;
       lines.push(
-        credit(accountIdByCode(tx, ACCOUNT_CODES.TAX_PAYABLE), totals.tax, {
-          description: `${receiptNo} ${settings.taxLabel}`,
+        credit(taxAccountFor(tx, taxLine), taxLine.amount, {
+          description: `${receiptNo} ${taxLine.name}`,
         }),
       );
     }
@@ -500,6 +520,29 @@ export function voidSale(
       .get();
 
     if (!reversal) throw new ConflictError('Could not create the reversing sale.');
+
+    // Mirror each tax the original charged, line for line, from what it
+    // actually charged rather than from today's rates. A void of a sale made
+    // before the budget moved VAT has to give back the VAT that was collected.
+    const originalTaxes = readSaleTaxes(tx, saleId);
+    writeSaleTaxes(
+      tx,
+      reversal.id,
+      originalTaxes.map((row) => ({
+        code: row.code,
+        name: row.name,
+        rateBp: row.rateBp,
+        basis: row.basis,
+        amount: minor(-row.amountMinor),
+        isRecoverable: false,
+      })),
+      new Map(
+        originalTaxes
+          .filter((row) => row.componentId !== null)
+          .map((row) => [row.code, row.componentId as number]),
+      ),
+      now,
+    );
 
     items.forEach((item, index) => {
       const product = tx.select().from(products).where(eq(products.id, item.productId)).get();
@@ -802,6 +845,10 @@ export function getSale(db: Db, saleId: number) {
     customerPhone: sale.customerPhone,
     items,
     tenders,
+    // What each tax charged ON THE DAY, for the receipt and the invoice. A
+    // reprint after the budget moves a rate must show what the customer paid,
+    // which is why these are read back rather than recomputed.
+    taxes: readSaleTaxes(db as unknown as Tx, saleId),
     outstandingMinor: getSaleOutstanding(db, saleId),
   };
 }

@@ -4,6 +4,12 @@ import { calculateSale } from '@/domain/sales/calculate';
 import { saleDocumentTotals } from '@/domain/sales/present';
 import { minor, type Minor } from '@/domain/money';
 import { fromUnits, type Qty } from '@/domain/quantity';
+import type { TaxComponent } from '@/domain/tax/components';
+
+/** A single 12.5% tax, the shape the sale arithmetic now takes. */
+const ONE_TAX: TaxComponent[] = [
+  { code: 'VAT', name: 'VAT', rateBp: 1_250, basis: 'NET', isRecoverable: true },
+];
 
 const m = (n: number): Minor => minor(n);
 const u = (n: number): Qty => fromUnits(n);
@@ -42,7 +48,7 @@ describe('printing a tax-inclusive sale', () => {
     const { printed } = priceAndPrint(
       {
         lines: [{ productId: 1, qty: u(2), unitPrice: m(11_250) }],
-        taxRateBp: 1_250,
+        taxComponents: ONE_TAX,
         taxInclusive: true,
       },
       true,
@@ -60,7 +66,7 @@ describe('printing a tax-inclusive sale', () => {
       {
         lines: [{ productId: 1, qty: u(2), unitPrice: m(11_250) }],
         invoiceDiscount: m(2_250),
-        taxRateBp: 1_250,
+        taxComponents: ONE_TAX,
         taxInclusive: true,
       },
       true,
@@ -78,7 +84,7 @@ describe('printing a tax-inclusive sale', () => {
       {
         lines: [{ productId: 1, qty: u(3), unitPrice: m(11_250), discount: m(1_000) }],
         invoiceDiscount: m(1_337),
-        taxRateBp: 1_250,
+        taxComponents: ONE_TAX,
         taxInclusive: true,
       },
       true,
@@ -93,7 +99,7 @@ describe('printing a tax-exclusive sale', () => {
     const { printed, stored } = priceAndPrint(
       {
         lines: [{ productId: 1, qty: u(1), unitPrice: m(10_000) }],
-        taxRateBp: 1_250,
+        taxComponents: ONE_TAX,
       },
       false,
     );
@@ -109,14 +115,27 @@ describe('printing a tax-exclusive sale', () => {
 });
 
 describe('the stored identity holds either way', () => {
-  const cases = [
-    { label: 'no tax', taxRateBp: 0, taxInclusive: false },
-    { label: 'tax added on', taxRateBp: 1_250, taxInclusive: false },
-    { label: 'tax within the price', taxRateBp: 1_250, taxInclusive: true },
-    { label: 'an awkward rate, within the price', taxRateBp: 733, taxInclusive: true },
+  const one = (rateBp: number, basis: TaxComponent['basis'] = 'NET'): TaxComponent[] => [
+    { code: 'VAT', name: 'VAT', rateBp, basis, isRecoverable: true },
   ];
 
-  for (const { label, taxRateBp, taxInclusive } of cases) {
+  /** Ghana's three, as the GRA computes them: VAT on top of the levies. */
+  const GHANA_GRA: TaxComponent[] = [
+    { code: 'NHIL', name: 'NHIL', rateBp: 250, basis: 'NET', isRecoverable: false },
+    { code: 'GETFUND', name: 'GETFund', rateBp: 250, basis: 'NET', isRecoverable: false },
+    { code: 'VAT', name: 'VAT', rateBp: 1_500, basis: 'NET_PLUS_LEVIES', isRecoverable: true },
+  ];
+
+  const cases = [
+    { label: 'no tax', taxComponents: [], taxInclusive: false },
+    { label: 'tax added on', taxComponents: one(1_250), taxInclusive: false },
+    { label: 'tax within the price', taxComponents: one(1_250), taxInclusive: true },
+    { label: 'an awkward rate, within the price', taxComponents: one(733), taxInclusive: true },
+    { label: "Ghana's three, added on", taxComponents: GHANA_GRA, taxInclusive: false },
+    { label: "Ghana's three, within the price", taxComponents: GHANA_GRA, taxInclusive: true },
+  ];
+
+  for (const { label, taxComponents, taxInclusive } of cases) {
     it(`${label}: subtotal − discount + tax = total, to the pesewa`, () => {
       const { stored } = priceAndPrint(
         {
@@ -125,7 +144,7 @@ describe('the stored identity holds either way', () => {
             { productId: 2, qty: u(7), unitPrice: m(1_111) },
           ],
           invoiceDiscount: m(1_234),
-          taxRateBp,
+          taxComponents,
           taxInclusive,
         },
         taxInclusive,

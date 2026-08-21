@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 
 import type { Db, Tx } from '@/db/types';
 import {
+  purchaseTaxes,
   accounts,
   businessSettings,
   paymentAccounts,
@@ -21,7 +22,6 @@ import {
   allocate,
   isZero,
   minor,
-  percentOf,
   subtract,
   sum,
   ZERO,
@@ -33,6 +33,13 @@ import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { recordStockMovement } from './inventory.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
+import {
+  getTaxProfile,
+  nonRecoverableTotal,
+  taxAccountFor,
+  writePurchaseTaxes,
+} from './tax.service';
+import { taxOnNet } from '@/domain/tax/components';
 
 /**
  * Recording a purchase — the mirror of a sale.
@@ -137,9 +144,29 @@ export function createPurchase(
     }
 
     const netBeforeTax = subtract(subtotal, invoiceDiscount);
-    const taxRateBp = settings.taxEnabled ? settings.taxRateBp : 0;
-    const tax = taxRateBp === 0 ? ZERO : percentOf(netBeforeTax, taxRateBp);
+
+    /**
+     * Tax paid to a supplier, component by component.
+     *
+     * A supplier invoice is priced net and the tax is added on top, whichever
+     * way the shop prices its own shelves — that setting is about what this
+     * shop charges, not what it is charged.
+     */
+    const taxProfile = getTaxProfile(tx);
+    const taxBreakdown = taxOnNet(netBeforeTax, taxProfile.components);
+    const tax = taxBreakdown.total;
     const total = sum([netBeforeTax, tax]);
+
+    /**
+     * What can be reclaimed, and what the goods actually cost.
+     *
+     * In Ghana VAT paid to a supplier is set against VAT collected, so it is an
+     * asset rather than a cost. NHIL and GETFund are not reclaimable against
+     * anything: they are part of what the goods cost, and stock priced without
+     * them understates the cost of every sale made from it — which quietly
+     * overstates the profit on every one.
+     */
+    const nonRecoverableTax = nonRecoverableTotal(taxBreakdown.lines);
 
     const tendered = sum(input.tenders.map((tender) => tender.amount));
     if (tendered < 0) throw new ValidationError('A payment cannot be negative.');
@@ -179,6 +206,16 @@ export function createPurchase(
 
     if (!purchase) throw new ConflictError('Could not create the purchase.');
 
+    // What was paid, component by component, with whether each was reclaimable
+    // ON THE DAY — the law changes and a reprint has to show what was true.
+    writePurchaseTaxes(
+      tx,
+      purchase.id,
+      taxBreakdown.lines,
+      taxProfile.componentIdByCode,
+      occurredAt,
+    );
+
     // --- stock in ---------------------------------------------------------
     //
     // Only the goods value goes into inventory. Any invoice-level discount is
@@ -196,9 +233,18 @@ export function createPurchase(
           lines.map((line) => line.lineTotal),
         );
 
+    // The levies that cannot be reclaimed ride along with the goods, spread
+    // the same way, so each line carries its own share of what it really cost.
+    const leviesShares = isZero(nonRecoverableTax)
+      ? lines.map(() => ZERO)
+      : allocate(
+          nonRecoverableTax,
+          lines.map((line) => line.lineTotal),
+        );
+
     lines.forEach((line, index) => {
       const lineShare = discountShares[index] ?? ZERO;
-      const lineCost = subtract(line.lineTotal, lineShare);
+      const lineCost = sum([subtract(line.lineTotal, lineShare), leviesShares[index] ?? ZERO]);
 
       if (line.product.trackInventory) {
         recordStockMovement(tx, {
@@ -235,7 +281,10 @@ export function createPurchase(
     });
 
     // Goods that are not stock-tracked are an immediate expense, not inventory.
-    const nonInventoryValue = subtract(netBeforeTax, inventoryValue);
+    // The non-reclaimable levies were added to the line costs above, so they
+    // are already inside `inventoryValue` and must be counted here too, or the
+    // entry would not balance.
+    const nonInventoryValue = subtract(sum([netBeforeTax, nonRecoverableTax]), inventoryValue);
 
     // --- tender -----------------------------------------------------------
     const journalLines: DraftLine[] = [];
@@ -286,10 +335,14 @@ export function createPurchase(
         }),
       );
     }
-    if (!isZero(tax)) {
+    // Only the reclaimable part is an asset. Each component goes against the
+    // account it will be set off in, so the VAT account nets output against
+    // input and the levy accounts are never touched by a purchase at all.
+    for (const taxLine of taxBreakdown.lines) {
+      if (!taxLine.isRecoverable || isZero(taxLine.amount)) continue;
       journalLines.push(
-        debit(accountIdByCode(tx, ACCOUNT_CODES.TAX_PAYABLE), tax, {
-          description: `${purchaseNo} ${settings.taxLabel}`,
+        debit(taxAccountFor(tx, taxLine), taxLine.amount, {
+          description: `${purchaseNo} ${taxLine.name} reclaimable`,
         }),
       );
     }
@@ -433,6 +486,34 @@ export function voidPurchase(
       .get();
 
     if (!reversal) throw new ConflictError('Could not create the reversing purchase.');
+
+    // Mirror what was paid, so a tax return reading these rows nets a voided
+    // purchase back out instead of still reclaiming its VAT.
+    const originalTaxes = tx
+      .select()
+      .from(purchaseTaxes)
+      .where(eq(purchaseTaxes.purchaseId, purchaseId))
+      .orderBy(asc(purchaseTaxes.id))
+      .all();
+
+    writePurchaseTaxes(
+      tx,
+      reversal.id,
+      originalTaxes.map((row) => ({
+        code: row.code,
+        name: row.name,
+        rateBp: row.rateBp,
+        basis: row.basis,
+        amount: minor(-row.amountMinor),
+        isRecoverable: row.isRecoverable,
+      })),
+      new Map(
+        originalTaxes
+          .filter((row) => row.componentId !== null)
+          .map((row) => [row.code, row.componentId as number]),
+      ),
+      now,
+    );
 
     /**
      * The goods leave at the cost they arrived at, not at today's average.

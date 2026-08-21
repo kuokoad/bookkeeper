@@ -62,8 +62,14 @@ const saleCount = sql<number>`COALESCE(SUM(CASE WHEN ${sales.kind} = 'SALE' THEN
 export interface SalesByDay {
   businessDate: string;
   saleCount: number;
+  /** Takings: what customers actually paid, tax included. */
   total: Minor;
+  /** The part of the takings that is owed to the tax authority. */
+  tax: Minor;
+  /** total - tax. What the shop earned, and what the Profit & Loss reports. */
+  net: Minor;
   cogs: Minor;
+  /** net - cogs. Tax is money held for somebody else, never profit. */
   profit: Minor;
 }
 
@@ -73,6 +79,7 @@ export function getSalesByDay(db: Db, period: Period): SalesByDay[] {
       businessDate: sales.businessDate,
       saleCount,
       total: sql<number>`COALESCE(SUM(${sales.totalMinor}), 0)`,
+      tax: sql<number>`COALESCE(SUM(${sales.taxMinor}), 0)`,
       cogs: sql<number>`COALESCE(SUM(${sales.cogsMinor}), 0)`,
     })
     .from(sales)
@@ -80,13 +87,21 @@ export function getSalesByDay(db: Db, period: Period): SalesByDay[] {
     .groupBy(sales.businessDate)
     .orderBy(asc(sales.businessDate))
     .all()
-    .map((row) => ({
-      businessDate: row.businessDate,
-      saleCount: row.saleCount,
-      total: minor(row.total),
-      cogs: minor(row.cogs),
-      profit: subtract(minor(row.total), minor(row.cogs)),
-    }));
+    .map((row) => {
+      // Tax is collected on the authority's behalf, so it is neither earnings
+      // nor profit. Counted as either, a taxed shop reads its own margin as
+      // the whole tax take better than it is.
+      const net = subtract(minor(row.total), minor(row.tax));
+      return {
+        businessDate: row.businessDate,
+        saleCount: row.saleCount,
+        total: minor(row.total),
+        tax: minor(row.tax),
+        net,
+        cogs: minor(row.cogs),
+        profit: subtract(net, minor(row.cogs)),
+      };
+    });
 }
 
 export interface SalesByProduct {

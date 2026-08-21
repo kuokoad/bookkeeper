@@ -29,6 +29,7 @@ import { getBalanceSheet, getCashFlow, getProfitAndLoss } from '@/services/repor
 import { getSalesByDay } from '@/services/reporting/operations.service';
 import { checkBooksIntegrity } from '@/services/reporting/ledger.service';
 import { minor, sum as sumMinor, type Minor } from '@/domain/money';
+import { setGhanaTaxes } from '../helpers/tax';
 import { fromUnits, type Qty } from '@/domain/quantity';
 
 /**
@@ -97,8 +98,10 @@ function expectReportsAgree(label: string): void {
   const heldPerAccount = sumMinor(getPaymentAccountBalances(context.db).map((a) => a.balance));
   expect(flow.closingBalance, `${label}: cash flow vs payment accounts`).toBe(heldPerAccount);
 
-  // Sales on the operations report tie to revenue on the Profit & Loss.
-  const byDay = getSalesByDay(context.db, period).reduce((running, day) => running + day.total, 0);
+  // Sales on the operations report tie to revenue on the Profit & Loss. Net of
+  // tax on both sides: the takings include money held for the authority, which
+  // the P&L has never counted as revenue and neither should this.
+  const byDay = getSalesByDay(context.db, period).reduce((running, day) => running + day.net, 0);
   expect(byDay, `${label}: sales by day vs P&L net sales`).toBe(
     getProfitAndLoss(context.db, period).netSales,
   );
@@ -271,6 +274,187 @@ describe('a messy but ordinary week', () => {
     voidSale(context.db, mistake.saleId, 'Rang up against the wrong customer', ACTOR);
 
     expectReportsAgree('after the whole week');
+  });
+
+
+  it("holds when the shop charges Ghana's three taxes", () => {
+    /**
+     * The same messy week, with tax switched on.
+     *
+     * This is where Phase 3 could quietly break the books. Every sale now
+     * credits three separate liability accounts instead of one, every purchase
+     * splits its tax into a reclaimable part and a part that belongs in the
+     * cost of the goods, and a return has to take each component back out of
+     * the account it went into. If any of that is a pesewa out, the trial
+     * balance stops balancing or the stock stops agreeing with the Inventory
+     * account — and the owner has no way to tell which figure is lying.
+     */
+    setGhanaTaxes(context.db);
+
+    const rice = createProduct(
+      context.db,
+      { name: 'Rice 5kg', costPrice: m(6_000), sellingPrice: m(10_000), unit: 'bag' },
+      ACTOR,
+    );
+    const oil = createProduct(
+      context.db,
+      { name: 'Oil 1L', costPrice: m(2_000), sellingPrice: m(3_500), unit: 'bottle' },
+      ACTOR,
+    );
+
+    createStockAdjustment(
+      context.db,
+      {
+        businessDate: DAY,
+        reason: 'OPENING_STOCK',
+        items: [
+          { productId: rice, direction: 'IN', qty: u(20), totalCost: m(120_000) },
+          { productId: oil, direction: 'IN', qty: u(30), totalCost: m(60_000) },
+        ],
+      },
+      ACTOR,
+    );
+    expectReportsAgree('taxed: after opening stock');
+
+    recordOwnerCapital(
+      context.db,
+      { businessDate: DAY, paymentAccountId: CASH, amount: m(200_000) },
+      ACTOR,
+    );
+
+    /**
+     * A delivery carrying tax.
+     *
+     * The VAT is reclaimable and goes to the VAT account as an asset; NHIL and
+     * GETFund are not, so they belong in what the rice cost. Booked as a
+     * reclaimable asset they would overstate what the authority owes the shop
+     * AND understate the cost of every bag sold from this delivery.
+     */
+    createPurchase(
+      context.db,
+      {
+        businessDate: DAY,
+        supplierId: SUPPLIER,
+        items: [{ productId: rice, qty: u(10), unitCost: m(6_500) }],
+        tenders: [{ paymentAccountId: CASH, amount: m(30_000) }],
+      },
+      ACTOR,
+    );
+    expectReportsAgree('taxed: after a part-paid delivery');
+
+    // A cash sale and a credit sale, both carrying all three taxes.
+    createSale(
+      context.db,
+      {
+        businessDate: DAY,
+        items: [{ productId: oil, qty: u(4) }],
+        tenders: [{ paymentAccountId: MOMO, amount: m(16_800) }],
+      },
+      ACTOR,
+    );
+
+    const credit = createSale(
+      context.db,
+      {
+        businessDate: DAY,
+        customerId: CUSTOMER,
+        items: [{ productId: rice, qty: u(5) }],
+        tenders: [],
+      },
+      ACTOR,
+    );
+    expectReportsAgree('taxed: after two sales');
+
+    // Goods come back, so the tax on them comes back too — component by
+    // component, out of the three accounts it went into.
+    createCustomerReturn(
+      context.db,
+      credit.saleId,
+      { businessDate: LATER, items: [{ itemId: firstItemOf(credit.saleId), qty: u(2) }], refunds: [] },
+      ACTOR,
+    );
+    expectReportsAgree('taxed: after a return');
+
+    /**
+     * And a sale rung up wrong is voided.
+     *
+     * GHS 105.00 of oil carries GHS 21.01 of tax, not GHS 21.00: each levy is
+     * 2.5% of 105.00, which is 2.625 and rounds to 2.63, so the three parts
+     * come to a pesewa more than 20% of the whole would. That is the point of
+     * rounding each component on its own base — the authority is owed 2.63 of
+     * NHIL, and no combined rate can produce that figure.
+     */
+    const mistake = createSale(
+      context.db,
+      {
+        businessDate: LATER,
+        items: [{ productId: oil, qty: u(3) }],
+        tenders: [{ paymentAccountId: CASH, amount: m(12_601) }],
+      },
+      ACTOR,
+    );
+    voidSale(context.db, mistake.saleId, 'Rang up against the wrong customer', ACTOR);
+    expectReportsAgree('taxed: after the whole week');
+
+    /**
+     * Each tax in its own account, and the levies untouched by the purchase.
+     *
+     * Netted into one figure the shop could not file: only VAT can be set
+     * against what was paid to a supplier, and a single "tax payable" balance
+     * hides which part of it that is.
+     */
+    const nhil = getAccountBalanceByCode(context.db, ACCOUNT_CODES.NHIL_PAYABLE);
+    const getfund = getAccountBalanceByCode(context.db, ACCOUNT_CODES.GETFUND_PAYABLE);
+    const vat = getAccountBalanceByCode(context.db, ACCOUNT_CODES.TAX_PAYABLE);
+
+    /** What the sales themselves say each component charged. */
+    const chargedOnSales = (code: string): number =>
+      (
+        context.connection
+          .prepare('SELECT COALESCE(SUM(amount_minor), 0) AS total FROM sale_taxes WHERE code = ?')
+          .get(code) as { total: number }
+      ).total;
+
+    // The levies are collected and never reclaimed, so their accounts hold
+    // exactly what the sales charged — the delivery must not have touched
+    // them. If a purchase had booked its levies as reclaimable, these would be
+    // short by that amount and the shop would under-remit on every return.
+    expect(nhil, 'NHIL account vs what sales charged').toBe(chargedOnSales('NHIL'));
+    expect(getfund, 'GETFund account vs what sales charged').toBe(chargedOnSales('GETFUND'));
+    expect(nhil, 'NHIL actually collected').toBeGreaterThan(0);
+    expect(getfund, 'the two levies are the same rate on the same sales').toBe(nhil);
+
+    /**
+     * VAT is the only one that nets, and here it nets NEGATIVE.
+     *
+     * The delivery reclaimed GHS 97.50 while the sales collected GHS 66.00, so
+     * the authority owes this shop GHS 31.50. That is a debit balance on a
+     * liability account and it is correct — a shop that buys more than it
+     * sells in a period is owed the difference. The levy accounts opposite
+     * cannot do this, which is exactly why they are kept apart.
+     */
+    const reclaimedOnPurchases = (
+      context.connection
+        .prepare(
+          'SELECT COALESCE(SUM(amount_minor), 0) AS total FROM purchase_taxes WHERE code = ? AND is_recoverable = 1',
+        )
+        .get('VAT') as { total: number }
+    ).total;
+
+    expect(vat, 'VAT collected less VAT reclaimed').toBe(
+      chargedOnSales('VAT') - reclaimedOnPurchases,
+    );
+    expect(reclaimedOnPurchases, 'VAT was reclaimed on the delivery').toBeGreaterThan(0);
+
+    // And nothing reclaimable was recorded against the levies at all.
+    const reclaimedLevies = (
+      context.connection
+        .prepare(
+          "SELECT COALESCE(SUM(amount_minor), 0) AS total FROM purchase_taxes WHERE code <> 'VAT' AND is_recoverable = 1",
+        )
+        .get() as { total: number }
+    ).total;
+    expect(reclaimedLevies, 'levies are never reclaimable').toBe(0);
   });
 
   it('holds when stock is allowed to go negative', () => {

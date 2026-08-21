@@ -10,7 +10,12 @@ import {
   TAX_BASES,
   type TaxBasis,
 } from '@/db/schema';
-import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
+import {
+  ConflictError,
+  InvariantViolatedError,
+  NotFoundError,
+  ValidationError,
+} from '@/domain/errors';
 import { minor, type Minor } from '@/domain/money';
 import {
   taxOnNet,
@@ -120,6 +125,128 @@ export function nonRecoverableTotal(
   );
 }
 
+// --- recording on a document ----------------------------------------------
+
+/**
+ * The account a component's tax is held in.
+ *
+ * Resolved by id where the document recorded one, because that survives a
+ * rename; by code otherwise. A component that has since been removed falls
+ * back to the general tax account rather than failing — the shop still owes
+ * (or has stopped owing) the money, and refusing to record a return because
+ * somebody tidied up a rate would be worse than booking it one account over.
+ */
+export function taxAccountFor(
+  tx: Tx,
+  line: { componentId?: number | null; code: string },
+): number {
+  if (typeof line.componentId === 'number') {
+    const byId = tx
+      .select({ glAccountId: taxComponents.glAccountId })
+      .from(taxComponents)
+      .where(eq(taxComponents.id, line.componentId))
+      .get();
+    if (byId) return byId.glAccountId;
+  }
+
+  const byCode = tx
+    .select({ glAccountId: taxComponents.glAccountId })
+    .from(taxComponents)
+    .where(eq(taxComponents.code, line.code))
+    .get();
+  if (byCode) return byCode.glAccountId;
+
+  const fallback = tx
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(eq(accounts.code, TAX_PAYABLE_CODE))
+    .get();
+  if (!fallback) {
+    throw new InvariantViolatedError(`No account to hold ${line.code} tax in.`, { code: line.code });
+  }
+  return fallback.id;
+}
+
+/** The general tax account, used only when a component has been removed. */
+const TAX_PAYABLE_CODE = '2100';
+
+export interface RecordedTaxLine {
+  code: string;
+  name: string;
+  rateBp: number;
+  basis: TaxBasis;
+  amount: Minor;
+  isRecoverable: boolean;
+}
+
+/**
+ * Snapshot what a sale actually charged.
+ *
+ * The code, name, rate and basis are COPIED onto the document rather than
+ * pointed at. A receipt reprinted after the budget moves VAT has to show what
+ * the customer was charged on the day, and a return filed for last month has
+ * to be worked out from what was actually collected.
+ */
+export function writeSaleTaxes(
+  tx: Tx,
+  saleId: number,
+  lines: readonly RecordedTaxLine[],
+  componentIdByCode: ReadonlyMap<string, number>,
+  at: Date,
+): void {
+  for (const line of lines) {
+    if (line.amount === 0) continue;
+    tx.insert(saleTaxes)
+      .values({
+        saleId,
+        componentId: componentIdByCode.get(line.code) ?? null,
+        code: line.code,
+        name: line.name,
+        rateBp: line.rateBp,
+        basis: line.basis,
+        amountMinor: line.amount,
+        createdAt: at,
+      })
+      .run();
+  }
+}
+
+/** The same, for tax paid to a supplier. */
+export function writePurchaseTaxes(
+  tx: Tx,
+  purchaseId: number,
+  lines: readonly RecordedTaxLine[],
+  componentIdByCode: ReadonlyMap<string, number>,
+  at: Date,
+): void {
+  for (const line of lines) {
+    if (line.amount === 0) continue;
+    tx.insert(purchaseTaxes)
+      .values({
+        purchaseId,
+        componentId: componentIdByCode.get(line.code) ?? null,
+        code: line.code,
+        name: line.name,
+        rateBp: line.rateBp,
+        basis: line.basis,
+        amountMinor: line.amount,
+        isRecoverable: line.isRecoverable,
+        createdAt: at,
+      })
+      .run();
+  }
+}
+
+/** What a sale charged, as recorded on the day. */
+export function readSaleTaxes(tx: Tx, saleId: number) {
+  return tx
+    .select()
+    .from(saleTaxes)
+    .where(eq(saleTaxes.saleId, saleId))
+    .orderBy(asc(saleTaxes.id))
+    .all();
+}
+
 // --- setup ----------------------------------------------------------------
 
 /**
@@ -218,19 +345,15 @@ function assertHoldingAccount(tx: Tx, glAccountId: number): void {
 }
 
 /**
- * Keep the old single-rate settings in step with the components.
+ * Keep `businessSettings.taxRateBp` and `taxLabel` in step with the components.
  *
- * TEMPORARY. Sales are still priced from `businessSettings.taxRateBp` and
- * posted under `taxLabel`, so until that path reads the components directly
- * those two fields have to keep saying what the components say. They are
- * DERIVED here and nowhere else: the component list is the one place a rate
- * is edited, and this stops the two drifting the moment somebody changes one.
+ * Nothing prices a sale from them any more — sales, returns and purchases all
+ * read the component list directly. They are kept up to date because they are
+ * still on the settings row, still shown in the change history, and a stale
+ * number sitting beside a live one is a trap for whoever reads it next.
  *
- * The rate written is the ALL-IN figure, so a shop charging NHIL, GETFund and
- * VAT keeps totalling 20% (or 20.75% with VAT compounding) exactly as before.
- * The single line on a receipt cannot name three taxes, so it says "Tax"
- * unless there is only one, which is the last thing this bridge gets wrong
- * before it goes away.
+ * The rate is the ALL-IN figure. The single label cannot name three taxes, so
+ * it says "Tax" unless there is only one.
  */
 export function syncDerivedTaxSettings(tx: Tx, at: Date = new Date()): void {
   const active = tx
@@ -254,7 +377,7 @@ export function syncDerivedTaxSettings(tx: Tx, at: Date = new Date()): void {
   tx.update(businessSettings)
     .set({
       taxRateBp: totalRateBp(components),
-      // Never blank: the column is NOT NULL and the label prints on receipts.
+      // Never blank: the column is NOT NULL and it labels the change history.
       taxLabel: only ?? 'Tax',
       updatedAt: at,
     })

@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
-import { businessSettings, paymentAccounts, sales } from '@/db/schema';
+import { paymentAccounts, sales } from '@/db/schema';
 import { createProduct } from '@/services/catalog.service';
 import { createStockAdjustment } from '@/services/stock-adjustment.service';
 import { createSale, voidSale } from '@/services/sale.service';
 import { getTrialBalance } from '@/services/reporting/balances.service';
 import { minor, type Minor } from '@/domain/money';
 import { fromUnits, type Qty } from '@/domain/quantity';
+import { setSingleTax } from '../helpers/tax';
 
 /**
  * Voiding a sale that was not plain and simple.
@@ -76,11 +76,7 @@ describe('voiding', () => {
   });
 
   it('works on a sale that carried tax', () => {
-    context.db
-      .update(businessSettings)
-      .set({ taxEnabled: true, taxRateBp: 1_250, taxInclusive: false, taxLabel: 'VAT' })
-      .where(eq(businessSettings.id, 1))
-      .run();
+      setSingleTax(context.db, { rateBp: 1_250, inclusive: false });
 
     const product = stockedProduct(10_000);
     const created = createSale(
@@ -98,11 +94,7 @@ describe('voiding', () => {
   });
 
   it('works on a tax-inclusive sale with a discount', () => {
-    context.db
-      .update(businessSettings)
-      .set({ taxEnabled: true, taxRateBp: 1_250, taxInclusive: true, taxLabel: 'VAT' })
-      .where(eq(businessSettings.id, 1))
-      .run();
+      setSingleTax(context.db, { rateBp: 1_250, inclusive: true });
 
     const product = stockedProduct(11_250);
     const created = createSale(

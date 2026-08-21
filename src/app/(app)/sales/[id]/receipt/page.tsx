@@ -158,27 +158,41 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
               </dd>
             </div>
           )}
-          {/* Added on top only when the shelf prices excluded it. */}
-          {totals.tax > 0 && !totals.taxWithinTotal && (
-            <div className="flex justify-between">
-              <dt className="text-content-muted">{settings?.taxLabel ?? 'Tax'}</dt>
-              <dd className="tabular text-content">{money(totals.tax, { bare: true })}</dd>
-            </div>
-          )}
+          {/*
+            Added on top only when the shelf prices excluded it. One line per
+            tax: a VAT invoice has to show each separately, and the names come
+            from the sale itself rather than from today's settings.
+          */}
+          {!totals.taxWithinTotal &&
+            sale.taxes.map(
+              (line) =>
+                line.amountMinor !== 0 && (
+                  <div key={line.id} className="flex justify-between">
+                    <dt className="text-content-muted">{line.name}</dt>
+                    <dd className="tabular text-content">
+                      {money(minor(line.amountMinor), { bare: true })}
+                    </dd>
+                  </div>
+                ),
+            )}
           <div className="flex justify-between border-t border-line pt-1 text-base font-semibold">
             <dt className="text-content">Total</dt>
             <dd className="tabular text-content">
               {money(totals.total, { currencyCode: currency })}
             </dd>
           </div>
-          {totals.tax > 0 && totals.taxWithinTotal && (
-            <div className="flex justify-between text-xs">
-              <dt className="text-content-muted">
-                includes {settings?.taxLabel ?? 'Tax'}
-              </dt>
-              <dd className="tabular text-content-muted">{money(totals.tax, { bare: true })}</dd>
-            </div>
-          )}
+          {totals.taxWithinTotal &&
+            sale.taxes.map(
+              (line) =>
+                line.amountMinor !== 0 && (
+                  <div key={line.id} className="flex justify-between text-xs">
+                    <dt className="text-content-muted">includes {line.name}</dt>
+                    <dd className="tabular text-content-muted">
+                      {money(minor(line.amountMinor), { bare: true })}
+                    </dd>
+                  </div>
+                ),
+            )}
         </dl>
 
         <dl className="mt-3 space-y-1 border-t border-dashed border-line pt-2 text-xs">

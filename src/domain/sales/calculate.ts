@@ -3,8 +3,6 @@ import {
   allocate,
   atLeastZero,
   isZero,
-  mulDiv,
-  percentOf,
   subtract,
   sum,
   ZERO,
@@ -12,6 +10,7 @@ import {
 } from '../money';
 import { extendPrice, type Qty } from '../quantity';
 import { ValidationError } from '../errors';
+import { taxOnNet, taxWithinGross, type TaxComponent, type TaxLine } from '../tax/components';
 
 /**
  * Sale arithmetic — pure, and the only place a sale total is ever computed.
@@ -45,8 +44,14 @@ export interface SaleTotalsInput {
   lines: readonly SaleLineInput[];
   /** Invoice-level discount applied after line discounts. */
   invoiceDiscount?: Minor;
-  /** Tax rate in basis points (1250 = 12.5%). Zero when tax is off. */
-  taxRateBp?: number;
+  /**
+   * What the shop charges, in receipt order. Empty when tax is off.
+   *
+   * A LIST rather than a rate: Ghana collects NHIL, the GETFund levy and VAT
+   * on the same sale, each owed to a different purpose and each shown
+   * separately on the invoice, so one combined figure cannot represent them.
+   */
+  taxComponents?: readonly TaxComponent[];
   /** When true, the quoted prices already include tax. */
   taxInclusive?: boolean;
 }
@@ -60,6 +65,8 @@ export interface SaleTotals {
   totalDiscount: Minor;
   /** Taxable base: subtotal - invoiceDiscount. */
   netBeforeTax: Minor;
+  /** Every component charged, in receipt order. Sums to `tax`, exactly. */
+  taxLines: TaxLine[];
   tax: Minor;
   /** What the customer must pay. */
   total: Minor;
@@ -154,39 +161,38 @@ export function calculateSale(input: SaleTotalsInput): SaleTotals {
   });
 
   const netBeforeTax = subtract(subtotal, invoiceDiscount);
-  const taxRateBp = input.taxRateBp ?? 0;
-
-  if (taxRateBp < 0) {
-    throw new ValidationError('A tax rate cannot be negative.');
-  }
+  const components = input.taxComponents ?? [];
 
   const lineDiscounts = sum(lines.map((line) => line.discount));
   const totalDiscount = add(lineDiscounts, invoiceDiscount);
 
+  let taxLines: TaxLine[];
   let tax: Minor;
   let total: Minor;
   let subtotalExTax: Minor;
   let invoiceDiscountExTax: Minor;
   let totalDiscountExTax: Minor;
 
-  if (taxRateBp === 0) {
+  if (components.length === 0) {
+    taxLines = [];
     tax = ZERO;
     total = netBeforeTax;
     subtotalExTax = subtotal;
     invoiceDiscountExTax = invoiceDiscount;
     totalDiscountExTax = totalDiscount;
   } else if (input.taxInclusive) {
-    // Prices already include tax: extract the tax portion out of the total.
-    // tax = net x rate / (10000 + rate)
-    tax = percentOfInclusive(netBeforeTax, taxRateBp);
+    // Prices already include tax: take the tax back out of the total.
+    const breakdown = taxWithinGross(netBeforeTax, components);
+    taxLines = breakdown.lines;
+    tax = breakdown.total;
     total = netBeforeTax;
 
     // A discount given on a tax-inclusive price reduces the tax as well as the
     // takings, in the same proportion — hand back GHS 22.50 of a 12.5% price
     // and GHS 2.50 of that was tax you no longer owe. So each discount has its
     // own embedded tax stripped out before it reaches the ledger.
-    const taxInInvoiceDiscount = percentOfInclusive(invoiceDiscount, taxRateBp);
-    const taxInLineDiscounts = percentOfInclusive(lineDiscounts, taxRateBp);
+    const taxInInvoiceDiscount = taxWithinGross(invoiceDiscount, components).total;
+    const taxInLineDiscounts = taxWithinGross(lineDiscounts, components).total;
 
     invoiceDiscountExTax = subtract(invoiceDiscount, taxInInvoiceDiscount);
     totalDiscountExTax = subtract(
@@ -199,7 +205,9 @@ export function calculateSale(input: SaleTotalsInput): SaleTotals {
     // could miss by a pesewa.
     subtotalExTax = subtract(subtotal, add(tax, taxInInvoiceDiscount));
   } else {
-    tax = percentOf(netBeforeTax, taxRateBp);
+    const breakdown = taxOnNet(netBeforeTax, components);
+    taxLines = breakdown.lines;
+    tax = breakdown.total;
     total = add(netBeforeTax, tax);
     subtotalExTax = subtotal;
     invoiceDiscountExTax = invoiceDiscount;
@@ -212,20 +220,13 @@ export function calculateSale(input: SaleTotalsInput): SaleTotals {
     invoiceDiscount,
     totalDiscount,
     netBeforeTax,
+    taxLines,
     tax,
     total,
     subtotalExTax,
     invoiceDiscountExTax,
     totalDiscountExTax,
   };
-}
-
-/**
- * Tax already contained within a tax-inclusive amount.
- * tax = gross x rate / (10000 + rate)
- */
-function percentOfInclusive(amountIncludingTax: Minor, taxRateBp: number): Minor {
-  return mulDiv(amountIncludingTax, taxRateBp, 10_000 + taxRateBp);
 }
 
 // --- tender ---------------------------------------------------------------
