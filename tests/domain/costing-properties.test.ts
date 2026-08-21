@@ -10,6 +10,7 @@ import {
   type ReplayMovement,
   type StockState,
 } from '@/domain/inventory/costing';
+import { InsufficientStockError } from '@/domain/errors';
 import { minor, type Minor } from '@/domain/money';
 import { qty as makeQty, type Qty } from '@/domain/quantity';
 
@@ -86,6 +87,9 @@ interface RunResult {
   applied: number;
 }
 
+/** Sequences that ended with the shelf empty — see the coverage guard below. */
+let emptied = 0;
+
 /** Apply a sequence, skipping steps the engine legitimately refuses. */
 function run(steps: readonly Step[], allowNegative: boolean): RunResult {
   let state: StockState = EMPTY_STOCK;
@@ -110,8 +114,12 @@ function run(steps: readonly Step[], allowNegative: boolean): RunResult {
       } else {
         movement = applyStockOutAtCost(state, stepQty, step.cost, { allowNegative });
       }
-    } catch {
+    } catch (error) {
       // Refusing to sell what is not there is correct behaviour, not a failure.
+      // Anything ELSE is a real defect and must not be swallowed: a bare catch
+      // here would let a future crash pass as a skipped step, and every
+      // property below would go quietly green on a broken engine.
+      if (!(error instanceof InsufficientStockError)) throw error;
       continue;
     }
 
@@ -127,6 +135,8 @@ function run(steps: readonly Step[], allowNegative: boolean): RunResult {
       ledger.push({ qtyIn: 0 as Qty, qtyOut: stepQty, totalCost: movement.totalCost });
     }
   }
+
+  if (state.qty === 0) emptied += 1;
 
   return { state, ledger, totalIn, totalOut, totalResidual, applied };
 }
@@ -193,6 +203,7 @@ describe('whatever the shop does to its stock', () => {
     // always refused, every property above would pass vacuously.
     let applied = 0;
     let residuals = 0;
+    emptied = 0;
     for (const seed of SEEDS) {
       const steps = generateSequence(makeRandom(seed), 30);
       const result = run(steps, true);
@@ -203,5 +214,9 @@ describe('whatever the shop does to its stock', () => {
     expect(applied).toBeGreaterThan(SEEDS.length * 20);
     // And the residual path — the one that used to lose money — is reached.
     expect(residuals).toBeGreaterThan(0);
+    // The empty-shelf property asserts only when the shelf ends up empty, so
+    // it needs the same guard: without this, a generator tweak could stop
+    // reaching zero and that property would pass without checking anything.
+    expect(emptied, 'sequences ending with an empty shelf').toBeGreaterThan(0);
   });
 });

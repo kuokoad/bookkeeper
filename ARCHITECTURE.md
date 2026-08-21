@@ -151,7 +151,9 @@ residual pesewa to COGS, so inventory can never hold value with zero quantity.
 | 1100 | Accounts Receivable | ASSET | Debit |
 | 1200 | Inventory | ASSET | Debit |
 | 2000 | Accounts Payable | LIABILITY | Credit |
-| 2100 | Tax Payable | LIABILITY | Credit |
+| 2100 | VAT Payable | LIABILITY | Credit |
+| 2110 | NHIL Payable | LIABILITY | Credit |
+| 2120 | GETFund Levy Payable | LIABILITY | Credit |
 | 3000 | Owner's Capital | EQUITY | Credit |
 | 3100 | Owner's Drawings | CONTRA_EQUITY | Debit |
 | 3200 | Retained Earnings | EQUITY | Credit |

@@ -213,7 +213,7 @@ export function seedTaxComponents(tx: Tx, now: Date): void {
   if (alreadySetUp) return;
 
   /**
-   * A shop that was ALREADY charging tax keeps charging exactly what it was.
+   * A shop that had ALREADY set a rate keeps that rate.
    *
    * Before this, tax was a single rate on the settings row. Seeding the Ghana
    * defaults over the top of a shop that had, say, 12.5% configured would take
@@ -221,9 +221,14 @@ export function seedTaxComponents(tx: Tx, now: Date): void {
    * having asked for it and nothing on screen to say why. So an existing rate
    * is carried into VAT and the levies arrive switched off, for the owner to
    * turn on when they mean to.
+   *
+   * A configured rate counts whether or not tax is currently switched ON. A
+   * shop that set 12.5% and then turned tax off still means 12.5% when it
+   * turns tax back on, and its Settings screen still says so — taking it to
+   * 20% behind that unchanged number is the same overcharge, only delayed.
    */
   const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
-  const existingRate = settings?.taxEnabled === true ? (settings.taxRateBp ?? 0) : 0;
+  const existingRate = settings?.taxRateBp ?? 0;
   const preserving = existingRate > 0;
 
   const definitions = [

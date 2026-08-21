@@ -106,14 +106,14 @@ describe('a shop that was already charging tax', () => {
    * a single rate on the settings row; seeding Ghana's defaults over a shop
    * already set to 12.5% would take it to 20% the moment it upgraded.
    */
-  function existingShopAt(rateBp: number) {
+  function existingShopAt(rateBp: number, taxEnabled = true) {
     const fresh = createTestDatabase();
     // Wind back to the state before this feature existed: a rate configured,
     // and no components.
     fresh.connection.prepare('DELETE FROM tax_components').run();
     fresh.db
       .update(businessSettings)
-      .set({ taxEnabled: true, taxRateBp: rateBp })
+      .set({ taxEnabled, taxRateBp: rateBp })
       .where(eq(businessSettings.id, 1))
       .run();
     return fresh;
@@ -167,11 +167,45 @@ describe('a shop that was already charging tax', () => {
     }
   });
 
+  it('carries the rate forward even when tax is switched off', () => {
+    /**
+     * The delayed version of the same overcharge. A shop that set 12.5% and
+     * then switched tax off still has 12.5% on its Settings screen, and still
+     * means it. Taking VAT to 15% behind that unchanged number would overcharge
+     * every customer the day the owner switches tax back on.
+     */
+    const shop = existingShopAt(1_250, false);
+    try {
+      shop.db.transaction((tx) => seedTaxComponents(tx as never, new Date()));
+
+      const rows = Object.fromEntries(
+        shop.db
+          .select()
+          .from(taxComponents)
+          .all()
+          .map((row) => [row.code, { rateBp: row.rateBp, active: row.isActive }]),
+      );
+      expect(rows['VAT']).toEqual({ rateBp: 1_250, active: true });
+      expect(rows['NHIL']!.active).toBe(false);
+      expect(rows['GETFUND']!.active).toBe(false);
+
+      // Switching tax on charges what the owner had configured, not 20%.
+      shop.db
+        .update(businessSettings)
+        .set({ taxEnabled: true })
+        .where(eq(businessSettings.id, 1))
+        .run();
+      expect(getTaxProfile(shop.db).totalRateBp).toBe(1_250);
+    } finally {
+      shop.cleanup();
+    }
+  });
+
   it('leaves a shop that charged nothing to take the defaults', () => {
     const shop = createTestDatabase();
     try {
       shop.connection.prepare('DELETE FROM tax_components').run();
-      // Tax was off, so there is no rate to preserve.
+      // No rate was ever configured, so there is nothing to preserve.
       shop.db.transaction((tx) => seedTaxComponents(tx as never, new Date()));
 
       const active = shop.db

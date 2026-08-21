@@ -7,7 +7,7 @@ import {
   totalRateBp,
   type TaxComponent,
 } from '@/domain/tax/components';
-import { minor, sum, type Minor } from '@/domain/money';
+import { minor, mulDiv, sum, type Minor } from '@/domain/money';
 
 const m = (n: number): Minor => minor(n);
 
@@ -53,17 +53,19 @@ describe('extracting tax from a shelf price', () => {
   });
 });
 
-describe('the parts always add back to the whole', () => {
-  /**
-   * The property that matters. Three components rounded independently can miss
-   * the total by a pesewa on an awkward amount, and that pesewa has nowhere to
-   * live — it is either charged to the customer and owed to nobody, or owed to
-   * the authority and collected from nobody.
-   */
-  const awkward = [1, 3, 7, 33, 99, 101, 333, 1_007, 4_999, 12_345, 99_999, 1_234_567];
+/** Amounts that do not divide cleanly by any of the three rates. */
+const AWKWARD = [1, 3, 7, 33, 99, 101, 333, 1_007, 4_999, 12_345, 99_999, 1_234_567];
+const awkwardNegatives = AWKWARD.map((value) => -value);
 
+/**
+ * The property that matters. Three components rounded independently can miss
+ * the total by a pesewa on an awkward amount, and that pesewa has nowhere to
+ * live — it is either charged to the customer and owed to nobody, or owed to
+ * the authority and collected from nobody.
+ */
+describe('the parts always add back to the whole', () => {
   it('when tax is added on', () => {
-    for (const value of awkward) {
+    for (const value of AWKWARD) {
       const result = taxOnNet(m(value), GHANA);
       expect(sum(result.lines.map((line) => line.amount)), `net ${value}`).toBe(result.total);
       expect(result.gross, `net ${value}`).toBe(value + result.total);
@@ -71,7 +73,7 @@ describe('the parts always add back to the whole', () => {
   });
 
   it('when tax is inside the price', () => {
-    for (const value of awkward) {
+    for (const value of AWKWARD) {
       const result = taxWithinGross(m(value), GHANA);
       expect(sum(result.lines.map((line) => line.amount)), `gross ${value}`).toBe(result.total);
       // net + tax must return exactly to the price on the label.
@@ -86,7 +88,7 @@ describe('the parts always add back to the whole', () => {
       { code: 'C', name: 'C', rateBp: 1, isRecoverable: true },
     ];
 
-    for (const value of awkward) {
+    for (const value of AWKWARD) {
       const added = taxOnNet(m(value), odd);
       expect(sum(added.lines.map((l) => l.amount)), `added ${value}`).toBe(added.total);
 
@@ -121,8 +123,10 @@ describe('giving tax back on a return', () => {
     for (const returned of [1, 7, 99, 1_003, 13_337, 39_999]) {
       const share = taxShareOf(charged, m(returned), m(40_000));
       const total = sum(share.map((line) => line.amount));
-      // The parts agree with their own total, and never exceed what was charged.
-      expect(sum(share.map((line) => line.amount)), `returned ${returned}`).toBe(total);
+      // The parts add to the share of the whole that actually went back —
+      // computed here independently of the function under test.
+      const expected = mulDiv(sum(charged.map((line) => line.amount)), returned, 40_000);
+      expect(total, `returned ${returned}`).toBe(expected);
       expect(total, `returned ${returned}`).toBeLessThanOrEqual(2_000 * 4);
       for (const [index, line] of share.entries()) {
         expect(line.amount, `returned ${returned} line ${line.code}`).toBeLessThanOrEqual(
@@ -130,6 +134,58 @@ describe('giving tax back on a return', () => {
         );
       }
     }
+  });
+});
+
+describe('a return, a credit note or a void', () => {
+  /**
+   * These carry a NEGATIVE net, and the tax has to mirror it exactly.
+   *
+   * The shares are worked out from magnitudes and the sign is carried by the
+   * total, because a weight is a proportion of the whole rather than a signed
+   * amount. Before that, every one of these threw on the way into `allocate`
+   * — which would have meant a shop could ring up a taxed sale but never take
+   * it back.
+   */
+  it('charges tax back, mirroring the sale exactly', () => {
+    const sale = taxOnNet(m(10_000), GHANA);
+    const back = taxOnNet(m(-10_000), GHANA);
+
+    expect(back.lines.map((line) => line.amount)).toEqual([-250, -250, -1_500]);
+    expect(back.total).toBe(-2_000);
+    expect(back.gross).toBe(-12_000);
+    // Line for line, the negative of the sale. Nothing is stranded.
+    expect(back.lines.map((line) => -line.amount)).toEqual(
+      sale.lines.map((line) => line.amount),
+    );
+  });
+
+  it('extracts tax from a negative shelf price', () => {
+    const result = taxWithinGross(m(-12_000), GHANA);
+
+    expect(result.net).toBe(-10_000);
+    expect(result.total).toBe(-2_000);
+    expect(result.lines.map((line) => line.amount)).toEqual([-250, -250, -1_500]);
+  });
+
+  it('the parts still add back to the whole on awkward negatives', () => {
+    for (const value of awkwardNegatives) {
+      const added = taxOnNet(m(value), GHANA);
+      expect(sum(added.lines.map((line) => line.amount)), `net ${value}`).toBe(added.total);
+      expect(added.gross, `net ${value}`).toBe(value + added.total);
+
+      const within = taxWithinGross(m(value), GHANA);
+      expect(sum(within.lines.map((line) => line.amount)), `gross ${value}`).toBe(within.total);
+      expect(within.net + within.total, `gross ${value}`).toBe(value);
+    }
+  });
+
+  it('gives back a share of what a negative document charged', () => {
+    const charged = taxOnNet(m(-40_000), GHANA).lines;
+    const share = taxShareOf(charged, m(-10_000), m(-40_000));
+
+    expect(share.map((line) => line.amount)).toEqual([-250, -250, -1_500]);
+    expect(sum(share.map((line) => line.amount))).toBe(-2_000);
   });
 });
 

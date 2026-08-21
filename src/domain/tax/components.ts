@@ -95,9 +95,15 @@ function split(net: Minor, totalTax: Minor, components: readonly TaxComponent[])
 
   // Shared out in proportion to the rates, which is the same proportion each
   // component bears to the whole when all are charged on the same net value.
+  //
+  // The weights are MAGNITUDES. A return, a credit note or a void carries a
+  // negative net, and a weight is a share of the whole rather than a signed
+  // amount — `allocate` refuses negative weights outright. The sign lives on
+  // `totalTax`, which `allocate` carries through to every share, so a return
+  // hands back exactly the mirror of what the sale charged.
   const shares = allocate(
     totalTax,
-    components.map((component) => mulDiv(net, component.rateBp, 10_000)),
+    components.map((component) => Math.abs(mulDiv(net, component.rateBp, 10_000))),
   );
 
   return components.map((component, index) => ({
@@ -162,7 +168,8 @@ export function taxShareOf(
     originalNet,
   );
 
-  const shares = allocate(total, charged.map((line) => line.amount));
+  // Magnitudes again — see the note in `split`. The sign rides on `total`.
+  const shares = allocate(total, charged.map((line) => Math.abs(line.amount)));
 
   return charged.map((line, index) => ({ ...line, amount: shares[index] ?? ZERO }));
 }
