@@ -69,11 +69,23 @@ function load(): Env {
   // that is never valid in production.
   const isTest = process.env['NODE_ENV'] === 'test' || process.env['VITEST'] === 'true';
 
+  // `next build` evaluates this module in its page-data workers. A managed host
+  // injects the application's environment into the *running server*, not into
+  // the build that precedes it, so the real secret is simply not there yet —
+  // and a build never signs a session, so it does not need one. Accept a
+  // clearly-fake stand-in for the build alone. `next start` runs without this
+  // phase set, so a live server still refuses to boot without a real secret.
+  const isBuild = process.env['NEXT_PHASE'] === 'phase-production-build';
+
+  // Held separately from the parsed value so the placeholder check below can
+  // tell "the host gave us a bad secret" from "we supplied the stand-in".
+  const suppliedSecret = process.env['SESSION_SECRET'];
+
   const parsed = schema.safeParse({
     NODE_ENV: process.env['NODE_ENV'],
     DATABASE_PATH: process.env['DATABASE_PATH'],
     SESSION_SECRET:
-      process.env['SESSION_SECRET'] ?? (isTest ? 'test-only-secret-'.padEnd(48, 'x') : undefined),
+      suppliedSecret ?? (isTest || isBuild ? 'test-only-secret-'.padEnd(48, 'x') : undefined),
     SEED_DEMO_DATA: process.env['SEED_DEMO_DATA'],
     COOKIE_SECURE: process.env['COOKIE_SECURE'],
     TRUST_PROXY_HEADERS: process.env['TRUST_PROXY_HEADERS'],
@@ -91,7 +103,9 @@ function load(): Env {
 
   const env = parsed.data;
 
-  if (env.NODE_ENV === 'production') {
+  // Only meaningful for a secret that actually came from the environment. The
+  // build's stand-in is ours, and never serves a request.
+  if (env.NODE_ENV === 'production' && suppliedSecret !== undefined) {
     if (env.SESSION_SECRET.startsWith('replace-me') || env.SESSION_SECRET.includes('test-only')) {
       throw new Error('SESSION_SECRET is still the placeholder value. Run `npm run env:init`.');
     }
