@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import { accounts, journalEntries, journalLines, paymentAccounts } from '@/db/schema';
@@ -66,7 +67,7 @@ export function createPaymentAccount(db: Db, input: PaymentAccountInput, actor: 
   const name = input.name.trim();
   if (name.length === 0) throw new ValidationError('Enter a name for the account.');
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const clash = tx
       .select({ id: paymentAccounts.id })
       .from(paymentAccounts)
@@ -154,7 +155,7 @@ export function updatePaymentAccount(
   const name = input.name.trim();
   if (name.length === 0) throw new ValidationError('Enter a name for the account.');
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(paymentAccounts).where(eq(paymentAccounts.id, id)).get();
     if (!existing) throw new NotFoundError('Payment account', id);
 
@@ -212,12 +213,12 @@ export function setPaymentAccountActive(
   isActive: boolean,
   actor: Actor,
 ): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(paymentAccounts).where(eq(paymentAccounts.id, id)).get();
     if (!existing) throw new NotFoundError('Payment account', id);
 
     if (!isActive) {
-      const balance = getPaymentAccountBalance(tx as unknown as Db, id);
+      const balance = getPaymentAccountBalance(tx, id);
       if (balance !== 0) {
         throw new ConflictError(
           `"${existing.name}" still holds money. Move the balance out before archiving it.`,
@@ -443,7 +444,7 @@ export function createCategory(
   const trimmed = name.trim();
   if (trimmed.length === 0) throw new ValidationError('Enter a category name.');
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const parentCode =
       kind === 'EXPENSE' ? ACCOUNT_CODES.OPERATING_EXPENSES : ACCOUNT_CODES.OTHER_INCOME;
     const parent = tx.select().from(accounts).where(eq(accounts.code, parentCode)).get();

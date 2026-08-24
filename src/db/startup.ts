@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { writeTransaction } from './transaction';
 
 import * as schema from '@/db/schema';
 import { assertDatabaseHealthy, configureConnection } from '@/db/pragmas';
@@ -62,7 +63,7 @@ export async function runStartupMigrations(databasePath?: string): Promise<void>
 
     // The chart of accounts, document numbering and settings row. Without
     // these the application cannot post anything at all.
-    db.transaction((tx) => seedCore(tx));
+    writeTransaction(db, (tx) => seedCore(tx));
 
     if (isNew) {
       console.warn(`Created a new database at ${file}. Open the site to set up the shop owner.`);

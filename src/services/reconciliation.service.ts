@@ -1,4 +1,5 @@
 import { and, desc, eq, lte } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import { accounts, paymentAccounts, reconciliations } from '@/db/schema';
@@ -121,7 +122,7 @@ export function createReconciliation(
   input: CreateReconciliationInput,
   actor: Actor,
 ): CreatedReconciliation {
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const account = tx
@@ -135,7 +136,7 @@ export function createReconciliation(
     }
 
     // Snapshot what the books claimed AT THIS MOMENT. This is the evidence.
-    const expected = getPaymentAccountBalance(tx as unknown as Db, input.paymentAccountId, input.businessDate);
+    const expected = getPaymentAccountBalance(tx, input.paymentAccountId, input.businessDate);
     const difference = subtract(input.actual, expected);
 
     const explanation = input.explanation?.trim() ?? '';
@@ -278,7 +279,7 @@ export function voidReconciliation(
     throw new ValidationError('Give a reason for voiding this count.');
   }
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const record = tx
       .select()
       .from(reconciliations)

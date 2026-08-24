@@ -1,4 +1,5 @@
 import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import { userPermissions, users, type UserRole } from '@/db/schema';
@@ -130,7 +131,7 @@ export function updateUser(db: Db, id: number, input: UpdateUserInput, actor: Ac
     throw new ValidationError('Enter the person’s name.');
   }
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(users).where(eq(users.id, id)).get();
     if (!existing) throw new NotFoundError('User', id);
 
@@ -198,7 +199,7 @@ export function setUserActive(
   isActive: boolean,
   actor: Actor,
 ): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(users).where(eq(users.id, id)).get();
     if (!existing) throw new NotFoundError('User', id);
 
@@ -238,7 +239,7 @@ export function setUserPermissions(
   permissions: PermissionMap,
   actor: Actor,
 ): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     // Rewriting your own row is the shortest route to more rights, and there is
     // no legitimate reason to do it: nobody needs to grant themselves what they
     // already have.
@@ -260,7 +261,7 @@ export function setUserPermissions(
     }
 
     const now = new Date();
-    const before = getUserPermissions(tx as unknown as Db, id);
+    const before = getUserPermissions(tx, id);
 
     tx.delete(userPermissions).where(eq(userPermissions.userId, id)).run();
 
@@ -316,7 +317,7 @@ export async function resetUserPassword(
 ): Promise<void> {
   const passwordHash = await hashPassword(newPassword);
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(users).where(eq(users.id, id)).get();
     if (!existing) throw new NotFoundError('User', id);
 
@@ -369,7 +370,7 @@ export async function changeOwnPassword(
 
   const passwordHash = await hashPassword(newPassword);
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const now = new Date();
     tx.update(users)
       .set({ passwordHash, mustChangePassword: false, updatedAt: now })
@@ -401,7 +402,7 @@ export async function setUserPin(
 ): Promise<void> {
   const pinHash = pin === null ? null : await hashPin(pin);
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(users).where(eq(users.id, id)).get();
     if (!existing) throw new NotFoundError('User', id);
 
@@ -422,7 +423,7 @@ export async function setUserPin(
 
 /** Release a lockout early, when the owner knows the person simply forgot. */
 export function unlockUser(db: Db, id: number, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(users).where(eq(users.id, id)).get();
     if (!existing) throw new NotFoundError('User', id);
 

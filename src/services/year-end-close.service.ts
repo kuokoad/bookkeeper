@@ -1,4 +1,5 @@
 import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import { accounts, businessSettings, journalEntries, yearEndClosings } from '@/db/schema';
 import type { Db, Tx } from '@/db/types';
@@ -145,7 +146,7 @@ export interface CloseResult {
  * final and are not.
  */
 export function closeFinancialYear(db: Db, startYear: number, actor: Actor): CloseResult {
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
     if (!settings) throw new NotFoundError('Business settings', 1);
 
@@ -253,7 +254,7 @@ export function closeFinancialYear(db: Db, startYear: number, actor: Actor): Clo
  * previous closed year, since the year being reopened must accept entries again.
  */
 export function reopenFinancialYear(db: Db, startYear: number, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
     if (!settings) throw new NotFoundError('Business settings', 1);
 

@@ -1,4 +1,5 @@
 import { and, eq, gt, lte, sql } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import { businessSettings, journalEntries } from '@/db/schema';
@@ -60,7 +61,7 @@ export function setBooksLock(
     throw new ValidationError('Enter a valid lock date.');
   }
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const settings = tx
       .select({ lockedBefore: businessSettings.booksLockedBefore })
       .from(businessSettings)

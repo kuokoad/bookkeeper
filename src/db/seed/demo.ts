@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import { businessSettings, users } from '@/db/schema';
@@ -90,7 +91,7 @@ export async function seedDemo(db: Db, now: Date = new Date()): Promise<void> {
     seedDemoCashbook(db, actor, toBusinessDate(now));
   }
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     tx.update(businessSettings)
       .set({
         businessName: 'Adom Provisions',

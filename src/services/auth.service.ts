@@ -1,4 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import { userPermissions, users, type UserRole } from '@/db/schema';
@@ -352,7 +353,7 @@ export async function createUser(
   const passwordHash = await hashPassword(input.password);
   const pinHash = input.pin ? await hashPin(input.pin) : null;
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const inserted = tx
       .insert(users)
       .values({
@@ -416,7 +417,7 @@ export async function changePassword(
 ): Promise<void> {
   const passwordHash = await hashPassword(newPassword);
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const updated = tx
       .update(users)
       .set({ passwordHash, mustChangePassword: false, updatedAt: now })

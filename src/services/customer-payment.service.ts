@@ -1,4 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import {
@@ -66,7 +67,7 @@ export function recordCustomerPayment(
     throw new ValidationError('Enter an amount greater than zero.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const customer = tx.select().from(customers).where(eq(customers.id, input.customerId)).get();
@@ -144,7 +145,7 @@ export function recordCustomerPayment(
         throw new ValidationError('That sale has been voided and cannot be paid.');
       }
 
-      const outstanding = getSaleOutstanding(tx as unknown as Db, allocation.saleId);
+      const outstanding = getSaleOutstanding(tx, allocation.saleId);
       if (allocation.amount > outstanding) {
         throw new ValidationError(
           `Cannot allocate more than is outstanding on ${sale.receiptNo}.`,
@@ -274,7 +275,7 @@ export function voidCustomerPayment(
     throw new ValidationError('Give a reason for voiding this payment.');
   }
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const payment = tx
       .select()
       .from(customerPayments)

@@ -1,4 +1,5 @@
 import { and, asc, eq, or, sql, type SQL } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import { accounts, customers, journalLines } from '@/db/schema';
@@ -91,7 +92,7 @@ export function createCustomer(db: Db, input: CustomerInput, actor: Actor): numb
     throw new ValidationError('A credit limit cannot be negative.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const now = new Date();
     const inserted = tx
       .insert(customers)
@@ -131,7 +132,7 @@ export function updateCustomer(db: Db, id: number, input: CustomerInput, actor: 
   const name = input.name.trim();
   if (name.length === 0) throw new ValidationError('Enter the customer’s name.');
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(customers).where(eq(customers.id, id)).get();
     if (!existing) throw new NotFoundError('Customer', id);
 
@@ -168,7 +169,7 @@ export function updateCustomer(db: Db, id: number, input: CustomerInput, actor: 
  * archived debtor is how a debt gets quietly forgotten.
  */
 export function setCustomerActive(db: Db, id: number, isActive: boolean, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(customers).where(eq(customers.id, id)).get();
     if (!existing) throw new NotFoundError('Customer', id);
 

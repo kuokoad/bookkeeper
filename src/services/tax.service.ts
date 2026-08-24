@@ -1,4 +1,5 @@
 import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -453,7 +454,7 @@ export function listTaxComponents(db: Db | Tx, includeInactive = true) {
 export function createTaxComponent(db: Db, input: TaxComponentInput, actor: Actor): number {
   const clean = cleanInput(input);
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     assertHoldingAccount(tx, clean.glAccountId);
 
     const clash = tx
@@ -504,7 +505,7 @@ export function updateTaxComponent(
 ): void {
   const clean = cleanInput(input);
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(taxComponents).where(eq(taxComponents.id, id)).get();
     if (!existing) throw new NotFoundError('Tax', id);
 
@@ -608,7 +609,7 @@ export function taxComponentUsage(db: Db | Tx, id: number): number {
 
 /** Switch a tax on or off without touching its rate. */
 export function setTaxComponentActive(db: Db, id: number, isActive: boolean, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(taxComponents).where(eq(taxComponents.id, id)).get();
     if (!existing) throw new NotFoundError('Tax', id);
     if (existing.isActive === isActive) return;

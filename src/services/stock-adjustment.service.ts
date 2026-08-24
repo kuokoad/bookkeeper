@@ -1,4 +1,5 @@
 import { desc, eq } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -128,7 +129,7 @@ export function createStockAdjustment(
     throw new ValidationError('Add at least one product to the adjustment.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
     const adjustmentNo = nextDocumentNumber(tx, DOC_TYPES.ADJUSTMENT);
     const allowNegative = allowNegativeStock(tx);
@@ -320,7 +321,7 @@ export function voidStockAdjustment(
   actor: Actor,
   now: Date = new Date(),
 ): CreatedAdjustment {
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const original = tx
       .select()
       .from(stockAdjustments)

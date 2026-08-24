@@ -7,6 +7,7 @@
 import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { writeTransaction } from '@/db/transaction';
 
 import * as schema from '@/db/schema';
 import { assertDatabaseHealthy, configureConnection } from '@/db/pragmas';
@@ -22,7 +23,7 @@ export async function runSeed(databasePath: string = env.DATABASE_PATH): Promise
   try {
     const db = drizzle(connection, { schema }) as Db;
 
-    db.transaction((tx) => {
+    writeTransaction(db, (tx) => {
       seedCore(tx);
     });
     console.log('Baseline seeded: settings, chart of accounts, sequences, payment accounts.');

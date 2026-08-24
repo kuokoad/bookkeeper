@@ -1,4 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import { businessSettings, journalEntries } from '@/db/schema';
 import type { Db, Tx } from '@/db/types';
@@ -126,7 +127,7 @@ export function setLogo(
   image: { data: Uint8Array; mime: string; width: number; height: number },
   actor: Actor,
 ): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const now = new Date();
     tx.update(businessSettings)
       .set({
@@ -153,7 +154,7 @@ export function setLogo(
 }
 
 export function clearLogo(db: Db, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
     if (!existing?.logoData) return;
 
@@ -183,7 +184,7 @@ export function clearLogo(db: Db, actor: Actor): void {
 }
 
 export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const before = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
     if (!before) throw new NotFoundError('Business settings', 1);
 

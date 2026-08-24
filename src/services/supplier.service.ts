@@ -1,4 +1,5 @@
 import { and, asc, eq, or, sql, type SQL } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import { accounts, journalLines, suppliers } from '@/db/schema';
@@ -83,7 +84,7 @@ export function createSupplier(db: Db, input: SupplierInput, actor: Actor): numb
   const name = input.name.trim();
   if (name.length === 0) throw new ValidationError('Enter the supplier’s name.');
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const now = new Date();
     const inserted = tx
       .insert(suppliers)
@@ -122,7 +123,7 @@ export function updateSupplier(db: Db, id: number, input: SupplierInput, actor: 
   const name = input.name.trim();
   if (name.length === 0) throw new ValidationError('Enter the supplier’s name.');
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(suppliers).where(eq(suppliers.id, id)).get();
     if (!existing) throw new NotFoundError('Supplier', id);
 
@@ -155,7 +156,7 @@ export function updateSupplier(db: Db, id: number, input: SupplierInput, actor: 
 
 /** Archiving is refused while money is still owed — an archived creditor is a forgotten debt. */
 export function setSupplierActive(db: Db, id: number, isActive: boolean, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(suppliers).where(eq(suppliers.id, id)).get();
     if (!existing) throw new NotFoundError('Supplier', id);
 

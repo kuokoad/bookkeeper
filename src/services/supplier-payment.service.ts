@@ -1,4 +1,5 @@
 import { desc, eq } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import {
@@ -56,7 +57,7 @@ export function recordSupplierPayment(
     throw new ValidationError('Enter an amount greater than zero.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const supplier = tx.select().from(suppliers).where(eq(suppliers.id, input.supplierId)).get();
@@ -115,7 +116,7 @@ export function recordSupplierPayment(
     if (!payment) throw new ConflictError('Could not record the payment.');
 
     const allocations =
-      input.allocations ?? autoAllocate(tx as unknown as Db, input.supplierId, input.amount);
+      input.allocations ?? autoAllocate(tx, input.supplierId, input.amount);
 
     for (const allocation of allocations) {
       if (allocation.amount <= 0) continue;
@@ -130,7 +131,7 @@ export function recordSupplierPayment(
         throw new ValidationError('That purchase belongs to a different supplier.');
       }
 
-      const outstanding = getPurchaseOutstanding(tx as unknown as Db, allocation.purchaseId);
+      const outstanding = getPurchaseOutstanding(tx, allocation.purchaseId);
       if (allocation.amount > outstanding) {
         throw new ValidationError(
           `Cannot allocate more than is outstanding on ${purchase.purchaseNo}.`,
@@ -148,7 +149,7 @@ export function recordSupplierPayment(
     }
 
     const lines: DraftLine[] = [
-      debit(accountIdByCode(tx as unknown as Db, ACCOUNT_CODES.ACCOUNTS_PAYABLE), input.amount, {
+      debit(accountIdByCode(tx, ACCOUNT_CODES.ACCOUNTS_PAYABLE), input.amount, {
         supplierId: input.supplierId,
         description: `${paymentNo} settles debt`,
       }),
@@ -235,7 +236,7 @@ export function voidSupplierPayment(
     throw new ValidationError('Give a reason for voiding this payment.');
   }
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const payment = tx
       .select()
       .from(supplierPayments)

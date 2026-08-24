@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import { accounts, expenses, incomes, ownerMovements, paymentAccounts } from '@/db/schema';
@@ -89,7 +90,7 @@ function record(
     throw new ValidationError('Enter a short description.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
     const categoryName = assertCategoryUsable(tx, input.categoryAccountId, direction);
 
@@ -237,7 +238,7 @@ function voidRecord(
     throw new ValidationError('Give a reason for voiding this record.');
   }
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const isExpense = direction === 'EXPENSE';
     const row = isExpense
       ? tx.select().from(expenses).where(eq(expenses.id, id)).get()
@@ -336,7 +337,7 @@ function recordOwnerMovement(
     throw new ValidationError('Enter an amount greater than zero.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const paymentAccount = tx

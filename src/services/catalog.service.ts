@@ -1,4 +1,5 @@
 import { and, asc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
 import { businessSettings, categories, products, stockLedger } from '@/db/schema';
@@ -58,7 +59,7 @@ export function createCategory(db: Db, input: CategoryInput, actor: Actor): numb
   const name = input.name.trim();
   if (name.length === 0) throw new ValidationError('Enter a category name.');
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const existing = tx
       .select({ id: categories.id })
       .from(categories)
@@ -99,7 +100,7 @@ export function updateCategory(db: Db, id: number, input: CategoryInput, actor: 
   const name = input.name.trim();
   if (name.length === 0) throw new ValidationError('Enter a category name.');
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(categories).where(eq(categories.id, id)).get();
     if (!existing) throw new NotFoundError('Category', id);
 
@@ -139,7 +140,7 @@ export function updateCategory(db: Db, id: number, input: CategoryInput, actor: 
  * classification and old reports stay readable.
  */
 export function setCategoryActive(db: Db, id: number, isActive: boolean, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(categories).where(eq(categories.id, id)).get();
     if (!existing) throw new NotFoundError('Category', id);
 
@@ -192,7 +193,7 @@ export function createProduct(db: Db, input: ProductInput, actor: Actor): number
   const sku = normaliseCode(input.sku);
   const barcode = normaliseCode(input.barcode);
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     assertCodesAvailable(tx, sku, barcode, null);
 
     const now = new Date();
@@ -243,7 +244,7 @@ export function updateProduct(db: Db, id: number, input: ProductInput, actor: Ac
   const sku = normaliseCode(input.sku);
   const barcode = normaliseCode(input.barcode);
 
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(products).where(eq(products.id, id)).get();
     if (!existing) throw new NotFoundError('Product', id);
 
@@ -337,7 +338,7 @@ function assertCodesAvailable(
  * direct SQL delete cannot destroy the history.
  */
 export function setProductActive(db: Db, id: number, isActive: boolean, actor: Actor): void {
-  db.transaction((tx) => {
+  writeTransaction(db, (tx) => {
     const existing = tx.select().from(products).where(eq(products.id, id)).get();
     if (!existing) throw new NotFoundError('Product', id);
 

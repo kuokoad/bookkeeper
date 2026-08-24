@@ -1,4 +1,5 @@
 import { asc, eq, sql } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -78,7 +79,7 @@ export function createCustomerReturn(
     throw new ValidationError('Choose at least one item to return.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const original = tx.select().from(sales).where(eq(sales.id, originalSaleId)).get();
@@ -327,7 +328,7 @@ export function createCustomerReturn(
       });
     }
 
-    const outstandingOnOriginal = getSaleOutstanding(tx as unknown as Db, originalSaleId);
+    const outstandingOnOriginal = getSaleOutstanding(tx, originalSaleId);
     const creditApplied = subtract(returnedValue, refundTotal);
 
     if (creditApplied > outstandingOnOriginal && original.customerId === null) {
@@ -472,7 +473,7 @@ export function createSupplierReturn(
     throw new ValidationError('Choose at least one item to return.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const original = tx

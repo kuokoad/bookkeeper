@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 
 import * as schema from './schema';
 import { configureConnection } from './pragmas';
+import { writeTransaction } from './transaction';
 import type { Db } from './types';
 import { env } from '@/lib/env';
 
@@ -53,5 +54,5 @@ if (env.NODE_ENV !== 'production') {
  * half-applied sale can exist. Throwing anywhere inside rolls back everything.
  */
 export function transaction<T>(work: (tx: Db) => T): T {
-  return db.transaction(work);
+  return writeTransaction(db, work);
 }

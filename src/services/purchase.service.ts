@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -103,7 +104,7 @@ export function createPurchase(
     throw new ValidationError('Add at least one product to the purchase.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
@@ -419,7 +420,7 @@ export function voidPurchase(
     throw new ValidationError('Give a reason for voiding this purchase.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const original = tx.select().from(purchases).where(eq(purchases.id, purchaseId)).get();
     if (!original) throw new NotFoundError('Purchase', purchaseId);
     if (original.status === 'VOIDED') {

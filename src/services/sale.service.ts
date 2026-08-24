@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -95,7 +96,7 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
     throw new ValidationError('Add at least one item to the sale.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
 
     const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
@@ -454,7 +455,7 @@ export function voidSale(
     throw new ValidationError('Give a reason for voiding this sale.');
   }
 
-  return db.transaction((tx) => {
+  return writeTransaction(db, (tx) => {
     const original = tx.select().from(sales).where(eq(sales.id, saleId)).get();
     if (!original) throw new NotFoundError('Sale', saleId);
     if (original.status === 'VOIDED') throw new ConflictError('That sale has already been voided.');
@@ -848,7 +849,7 @@ export function getSale(db: Db, saleId: number) {
     // What each tax charged ON THE DAY, for the receipt and the invoice. A
     // reprint after the budget moves a rate must show what the customer paid,
     // which is why these are read back rather than recomputed.
-    taxes: readSaleTaxes(db as unknown as Tx, saleId),
+    taxes: readSaleTaxes(db, saleId),
     outstandingMinor: getSaleOutstanding(db, saleId),
   };
 }
