@@ -525,28 +525,45 @@ export function Pos({
                         />
                       </div>
                       <div>
-                        <label
-                          htmlFor={`price-${line.key}`}
-                          className="mb-1 block text-xs text-content-muted"
-                        >
-                          Price
-                        </label>
-                        <AmountInput
-                          id={`price-${line.key}`}
-                          value={line.unitPrice}
-                          onChange={(event) =>
-                            updateLine(line.key, { unitPrice: event.target.value })
-                          }
-                          invalid={Number.isNaN(price)}
-                          readOnly={!mayOverridePrice}
-                          {...(mayOverridePrice
-                            ? {}
-                            : { title: 'The shop sets this price.' })}
-                          className={cn(
-                            'h-10',
-                            mayOverridePrice ? '' : 'text-content-muted',
-                          )}
-                        />
+                        {/*
+                          Somebody who may not change the price is shown the
+                          price, not a box that refuses to take one. A read-only
+                          input still accepts focus, so it gave a cursor and a
+                          focus ring and then silently ignored what was typed —
+                          which reads as a broken till rather than a locked one,
+                          and the only explanation was a tooltip no touch screen
+                          ever shows. There is nothing to interact with here, so
+                          nothing here is a control.
+
+                          The submitted value comes from `lines` either way; the
+                          input was never what carried it.
+                        */}
+                        {mayOverridePrice ? (
+                          <>
+                            <label
+                              htmlFor={`price-${line.key}`}
+                              className="mb-1 block text-xs text-content-muted"
+                            >
+                              Price
+                            </label>
+                            <AmountInput
+                              id={`price-${line.key}`}
+                              value={line.unitPrice}
+                              onChange={(event) =>
+                                updateLine(line.key, { unitPrice: event.target.value })
+                              }
+                              invalid={Number.isNaN(price)}
+                              className="h-10"
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <p className="mb-1 text-xs text-content-muted">Price</p>
+                            <p className="tabular flex h-10 items-center justify-end rounded-lg bg-surface-sunken px-3 text-content-muted">
+                              {line.unitPrice}
+                            </p>
+                          </>
+                        )}
                       </div>
                       {mayOverridePrice && (
                         <div>
