@@ -390,6 +390,9 @@ and stay well under a second at a year's volume.
 - Every server action re-checks the session **and** the permission on the server.
   Hidden buttons are a courtesy, not the protection.
 - Failed logins lock an account for 15 minutes, with a separate per-IP throttle.
+  Both counters live in the database, so neither is cleared by a restart, a
+  redeploy or a power cut — a throttle that forgets is one an attacker resets
+  by waiting for the server to bounce.
 - Cookies are `httpOnly` + `SameSite=Lax`. They are **not** `Secure` by default
   because the shop runs over plain HTTP on its own LAN. Set `COOKIE_SECURE=true`
   if you put it behind HTTPS; `npm run preflight` reminds you.

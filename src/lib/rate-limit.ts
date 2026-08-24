@@ -1,30 +1,30 @@
+import { eq, lte, sql } from 'drizzle-orm';
+
+import type { Db } from '@/db/types';
+import { rateLimits } from '@/db/schema';
+
 /**
- * In-memory fixed-window rate limiter.
+ * Fixed-window rate limiter, kept in the database.
  *
- * Sufficient for a local-first single-process deployment, which is what this
- * app is. It is a second line of defence in front of per-account lockout: the
- * account lock stops guessing at one user, this stops a script working through
- * many usernames from one machine.
+ * ---------------------------------------------------------------------------
+ * It used to be a `Map` in process memory, and that was wrong in two ways that
+ * only show up in the deployment this application is actually for.
  *
- * If the app is ever moved behind multiple processes this must become shared
- * state — noted here so the limitation is not discovered by surprise.
+ * Memory empties on every restart and every redeploy, so the counter an
+ * attacker had run up was cleared by any of the things that restart a small
+ * shop's server: a deploy, a power cut, a crash, the nightly reboot somebody
+ * set up. And it is invisible to a second process, so the moment the app runs
+ * under anything that forks workers, each worker hands out its own allowance.
+ *
+ * The per-account lockout in `users` is the primary defence and always was.
+ * This is the layer in front of it, which stops one machine working through
+ * MANY usernames — a thing per-account lockout cannot see.
+ * ---------------------------------------------------------------------------
+ *
+ * The window is fixed rather than sliding: a bucket counts attempts until
+ * `resetAt`, then starts again. Being blocked does not extend the window, so a
+ * caller who keeps trying is not punished with an ever-receding deadline.
  */
-
-interface Window {
-  count: number;
-  resetAt: number;
-}
-
-const buckets = new Map<string, Window>();
-
-/** Stop the map growing without bound on a long-running server. */
-const MAX_TRACKED_KEYS = 10_000;
-
-function sweep(now: number): void {
-  for (const [key, window] of buckets) {
-    if (window.resetAt <= now) buckets.delete(key);
-  }
-}
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -33,34 +33,56 @@ export interface RateLimitResult {
 }
 
 export function rateLimit(
+  db: Db,
   key: string,
   limit: number,
   windowMs: number,
   now: number = Date.now(),
 ): RateLimitResult {
-  if (buckets.size > MAX_TRACKED_KEYS) sweep(now);
+  // Sign-in is not a hot path — a shop's till is opened a handful of times a
+  // day — so the tidy-up rides along with the check rather than needing a
+  // scheduler this deployment does not have.
+  db.delete(rateLimits).where(lte(rateLimits.resetAt, new Date(now))).run();
 
-  const existing = buckets.get(key);
+  /**
+   * One statement, so the read and the write cannot be separated.
+   *
+   * `attempts` climbs past the limit rather than stopping at it. That is
+   * deliberate: it keeps this a single statement, and the answer is the same
+   * either way, because `resetAt` is left alone once the window is running.
+   */
+  const row = db.get<{ attempts: number; reset_at: number }>(sql`
+    INSERT INTO rate_limits (key, attempts, reset_at)
+    VALUES (${key}, 1, ${now + windowMs})
+    ON CONFLICT(key) DO UPDATE SET
+      attempts = CASE WHEN reset_at <= ${now} THEN 1 ELSE attempts + 1 END,
+      reset_at = CASE WHEN reset_at <= ${now} THEN ${now + windowMs} ELSE reset_at END
+    RETURNING attempts, reset_at
+  `);
 
-  if (!existing || existing.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, remaining: limit - 1, retryAfterMs: 0 };
-  }
+  const attempts = row?.attempts ?? 1;
+  const resetAt = row?.reset_at ?? now + windowMs;
+  const allowed = attempts <= limit;
 
-  if (existing.count >= limit) {
-    return { allowed: false, remaining: 0, retryAfterMs: existing.resetAt - now };
-  }
-
-  existing.count += 1;
-  return { allowed: true, remaining: limit - existing.count, retryAfterMs: 0 };
+  return {
+    allowed,
+    remaining: Math.max(0, limit - attempts),
+    retryAfterMs: allowed ? 0 : Math.max(0, resetAt - now),
+  };
 }
 
-/** Clear a bucket after a successful attempt. */
-export function resetRateLimit(key: string): void {
-  buckets.delete(key);
+/**
+ * Clear a bucket after a successful attempt.
+ *
+ * Someone who signs in correctly has proved they are not the thing this is
+ * defending against, and must not carry a near-full counter into their next
+ * session — a mistyped password an hour later should not lock the till.
+ */
+export function resetRateLimit(db: Db, key: string): void {
+  db.delete(rateLimits).where(eq(rateLimits.key, key)).run();
 }
 
-/** Test-only: wipe all state. */
-export function __resetAllRateLimits(): void {
-  buckets.clear();
+/** Housekeeping, exposed for tests and any future scheduled tidy-up. */
+export function purgeExpiredRateLimits(db: Db, now: number = Date.now()): number {
+  return db.delete(rateLimits).where(lte(rateLimits.resetAt, new Date(now))).run().changes;
 }

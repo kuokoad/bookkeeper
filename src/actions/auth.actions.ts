@@ -94,7 +94,7 @@ export async function loginAction(_previous: FormState, formData: FormData): Pro
 
   const metadata = await getRequestMetadata();
   const throttleKey = await clientThrottleKey('login');
-  const throttle = rateLimit(throttleKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
+  const throttle = rateLimit(db, throttleKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
 
   if (!throttle.allowed) {
     const minutes = Math.ceil(throttle.retryAfterMs / 60_000);
@@ -118,7 +118,7 @@ export async function loginAction(_previous: FormState, formData: FormData): Pro
     return { error: 'Incorrect username or password.' };
   }
 
-  resetRateLimit(throttleKey);
+  resetRateLimit(db, throttleKey);
 
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, result.token, sessionCookieOptions());
@@ -165,7 +165,7 @@ export async function pinLoginAction(
   // The SAME throttle key as password sign-in, deliberately: two doors into one
   // account must not mean twice the attempts.
   const throttleKey = await clientThrottleKey('login');
-  const throttle = rateLimit(throttleKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
+  const throttle = rateLimit(db, throttleKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
 
   if (!throttle.allowed) {
     const minutes = Math.ceil(throttle.retryAfterMs / 60_000);
@@ -189,7 +189,7 @@ export async function pinLoginAction(
     return { error: 'Incorrect username or PIN.' };
   }
 
-  resetRateLimit(throttleKey);
+  resetRateLimit(db, throttleKey);
 
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, result.token, sessionCookieOptions());

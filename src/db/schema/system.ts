@@ -122,6 +122,37 @@ export const sequences = sqliteTable(
   ],
 );
 
+/**
+ * Fixed-window throttle counters, for sign-in attempts.
+ *
+ * Kept in the database rather than in process memory, because memory is emptied
+ * by every restart and every redeploy — and a throttle that forgets is one an
+ * attacker resets by waiting for a deploy, or by whatever made the app restart.
+ * It is also invisible to a second process, so under any deployment that forks
+ * workers each one would hand out its own fresh allowance.
+ *
+ * The per-account lockout in `users` is the primary defence and always was; this
+ * is the layer that stops one machine working through many usernames, and it is
+ * worth no less than the accounts it protects.
+ *
+ * Rows are disposable: losing them costs an attacker's counter, not a shop's
+ * records, so nothing here is referenced by anything else.
+ */
+export const rateLimits = sqliteTable(
+  'rate_limits',
+  {
+    /** Opaque bucket name, e.g. `login:shared`. Built by `clientThrottleKey`. */
+    key: text('key').primaryKey(),
+    attempts: integer('attempts').notNull().default(0),
+    /** Unix ms at which this window ends and the count starts again. */
+    resetAt: timestampMs('reset_at').notNull(),
+  },
+  (t) => [
+    index('idx_rate_limits_reset').on(t.resetAt),
+    check('ck_rate_limits_attempts', sql`${t.attempts} >= 0`),
+  ],
+);
+
 export const AUDIT_ACTIONS = [
   'LOGIN_SUCCESS',
   'LOGIN_FAILED',
