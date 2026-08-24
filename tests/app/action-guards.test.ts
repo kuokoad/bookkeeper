@@ -191,6 +191,26 @@ describe('selling below the shop price is its own right', () => {
   });
 });
 
+describe('a sale carries a name for the cart it came from', () => {
+  /**
+   * A sale posted twice is the duplicate no integrity check can find: each copy
+   * balances on its own. The till names the cart so the server can tell a retry
+   * from a second sale, and the name is REQUIRED — accepting a sale without one
+   * would quietly reopen the hole for any client that stopped sending it.
+   */
+  const source = readFileSync(join(ACTIONS_DIR, 'sale.actions.ts'), 'utf8');
+
+  it('requires the cart reference rather than treating it as optional', () => {
+    const field = source.slice(source.indexOf('clientRef:'), source.indexOf('businessDate:'));
+    expect(field).toContain('.min(8');
+    expect(field).not.toContain('.optional()');
+  });
+
+  it('passes it through to the service', () => {
+    expect(source).toMatch(/clientRef,/);
+  });
+});
+
 describe('secrets never leave the server', () => {
   it('no client component imports the database, or anything that reads it', () => {
     const clientFiles: string[] = [];

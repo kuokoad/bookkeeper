@@ -31,6 +31,16 @@ export interface SaleFormState extends FormState {
 
 /** The cart, posted as one JSON field. Validated field by field below. */
 const cartSchema = z.object({
+  /**
+   * REQUIRED, so a sale can never arrive without a way to recognise a retry of
+   * it. The till mints one per cart; the only clients are tills. A request
+   * without one is a stale page rather than something to accept and hope about.
+   */
+  clientRef: z
+    .string()
+    .trim()
+    .min(8, 'This sale could not be identified. Please reload the page and try again.')
+    .max(64),
   businessDate: z.string().refine(isValidBusinessDate, 'Enter a valid date.'),
   customerId: z.number().int().positive().nullable(),
   note: z.string().trim().max(300).optional(),
@@ -81,7 +91,8 @@ export async function createSaleAction(
     return { error: parsed.error.issues[0]?.message ?? 'The sale is incomplete.' };
   }
 
-  const { businessDate, customerId, note, items, tenders, invoiceDiscount } = parsed.data;
+  const { businessDate, customerId, note, items, tenders, invoiceDiscount, clientRef } =
+    parsed.data;
 
   // Parse money and quantities with the strict domain parsers. Anything
   // ambiguous is rejected rather than coerced.
@@ -135,6 +146,7 @@ export async function createSaleAction(
         invoiceDiscount: discount,
         tenders: saleTenders,
         note,
+        clientRef,
         allowPriceOverride: mayOverridePrice,
       },
       { id: actor.id, username: actor.username },

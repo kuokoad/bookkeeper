@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { eq } from 'drizzle-orm';
@@ -86,6 +88,7 @@ export default async function NewSalePage() {
           taxComponents={getTaxProfile(db).components}
           taxInclusive={settings?.taxInclusive ?? false}
           mayOverridePrice={can(user, 'sales', 'edit')}
+          cartSeed={randomUUID()}
         />
       )}
     </div>

@@ -105,6 +105,7 @@ export function Pos({
   taxComponents,
   taxInclusive,
   mayOverridePrice,
+  cartSeed,
 }: {
   products: PosProduct[];
   customers: PosCustomer[];
@@ -119,6 +120,12 @@ export function Pos({
    * refused — `createSale` makes the actual decision, from the same right.
    */
   mayOverridePrice: boolean;
+  /**
+   * Random, generated once per page load ON THE SERVER. Two tills opening this
+   * screen must never arrive at the same cart name, or one would be handed the
+   * other's receipt instead of making its own sale.
+   */
+  cartSeed: string;
 }) {
   const [state, formAction, pending] = useActionState<SaleFormState, FormData>(
     createSaleAction,
@@ -140,6 +147,20 @@ export function Pos({
 
   const searchRef = useRef<HTMLInputElement>(null);
   const nextKey = useRef(1);
+
+  /**
+   * How many sales this page has completed. With `cartSeed` it names the cart,
+   * so the server can tell a retry from a second sale.
+   *
+   * The random half comes from the server, once per page load, for two reasons.
+   * Inventing it here would differ between the server render and the browser's,
+   * which is a hydration mismatch; and `crypto.randomUUID` is unavailable
+   * outside a secure context anyway — which is exactly how this app is meant to
+   * run, on plain HTTP over a shop's own network. The counter is what makes the
+   * next sale a new cart rather than a retry of the last one.
+   */
+  const [salesCompleted, setSalesCompleted] = useState(0);
+  const cartRef = `${cartSeed}-${salesCompleted}`;
 
   // --- search ------------------------------------------------------------
   const matches = useMemo(() => {
@@ -304,9 +325,13 @@ export function Pos({
     setReference('');
     setCustomerId('');
     setSearch('');
+    // A new cart needs a new name, or the next sale would be read as a retry of
+    // this one and quietly hand back this receipt again.
+    setSalesCompleted((completed) => completed + 1);
   }
 
   const cartPayload = JSON.stringify({
+    clientRef: cartRef,
     businessDate: today,
     customerId: customerId === '' ? null : Number(customerId),
     note: note.trim() || undefined,

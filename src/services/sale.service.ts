@@ -78,6 +78,17 @@ export interface CreateSaleInput {
   occurredAt?: Date;
   isDemo?: boolean;
   /**
+   * The till's own name for this cart, making the sale safe to submit twice.
+   *
+   * Send the SAME value if a request is retried and exactly one sale results:
+   * the second call returns the first one's figures rather than ringing the
+   * goods up again. Omit it and every call creates a new sale, which is what
+   * seeds, imports and tests want.
+   *
+   * See `sales.clientRef` for why nothing else can catch this duplicate.
+   */
+  clientRef?: string | undefined;
+  /**
    * Whether this sale may depart from the shop's own prices.
    *
    * DEFAULTS TO FALSE, and deliberately so. Selling below list is how stock
@@ -105,6 +116,40 @@ export interface CreatedSale {
   journalEntryId: number;
 }
 
+/**
+ * The answer to a sale that was already recorded.
+ *
+ * Everything comes from the stored document rather than being recomputed, with
+ * one exception: change. It is not a fact of the sale — the shop kept nothing
+ * and owes nothing for it — so it is not a column, and the honest way to report
+ * it on a replay is from the same tender the caller has just sent us.
+ */
+function replayOf(
+  tx: Tx,
+  existing: typeof sales.$inferSelect,
+  input: CreateSaleInput,
+): CreatedSale {
+  const total = minor(existing.totalMinor);
+  const tendered = tx
+    .select({ total: sql<number>`COALESCE(SUM(${salePayments.amountMinor}), 0)` })
+    .from(salePayments)
+    .where(eq(salePayments.saleId, existing.id))
+    .get();
+
+  const outstanding =
+    existing.status === 'VOIDED' ? ZERO : subtract(total, minor(tendered?.total ?? 0));
+
+  return {
+    saleId: existing.id,
+    receiptNo: existing.receiptNo,
+    total,
+    cogs: minor(existing.cogsMinor),
+    change: calculateTender(total, input.tenders).change,
+    outstanding,
+    journalEntryId: existing.journalEntryId ?? 0,
+  };
+}
+
 function accountIdByCode(tx: Tx, code: string): number {
   const account = tx.select({ id: accounts.id }).from(accounts).where(eq(accounts.code, code)).get();
   if (!account) throw new NotFoundError('Account', code);
@@ -118,6 +163,19 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
 
   return writeTransaction(db, (tx) => {
     const occurredAt = input.occurredAt ?? new Date();
+
+    // --- has this cart already been rung up? ------------------------------
+    //
+    // Checked before anything is read or written, so a retry costs one indexed
+    // lookup and changes nothing. The unique index on the column is the actual
+    // guarantee; this is what turns the second submission into a helpful answer
+    // instead of a constraint error the cashier cannot act on.
+    if (input.clientRef !== undefined) {
+      const existing = tx.select().from(sales).where(eq(sales.clientRef, input.clientRef)).get();
+      if (existing) {
+        return replayOf(tx, existing, input);
+      }
+    }
 
     const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
     if (!settings) throw new NotFoundError('Business settings', 1);
@@ -261,6 +319,7 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
         taxInclusive: settings.taxInclusive,
         cogsMinor: 0,
         status: 'POSTED',
+        clientRef: input.clientRef ?? null,
         note: input.note ?? null,
         createdBy: actor.id,
         isDemo: input.isDemo ?? false,

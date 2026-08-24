@@ -108,6 +108,22 @@ export const sales = sqliteTable(
     voidedAt: timestampMs('voided_at'),
     voidReason: text('void_reason'),
 
+    /**
+     * The till's own name for the cart this sale came from.
+     *
+     * A sale posted twice is the one duplicate nothing else can catch: each copy
+     * is internally perfect — its own receipt number, its own stock movement,
+     * its own balanced entry — so every integrity check in the application
+     * passes while the shop's books say it sold twice as much as it did. Only
+     * the till knows the two requests were the same cart, so the till says so,
+     * and the unique index below makes that the database's rule rather than a
+     * check some future code path can forget.
+     *
+     * NULL for sales that have no till behind them — seeds, imports, the tests —
+     * and SQLite permits many NULLs in a unique index, so those never collide.
+     */
+    clientRef: text('client_ref'),
+
     note: text('note'),
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     isDemo: isDemo(),
@@ -118,6 +134,8 @@ export const sales = sqliteTable(
     uniqueIndex('uq_sales_receipt_no').on(t.receiptNo),
     // SQLite permits many NULLs in a unique index, so cash sales do not collide.
     uniqueIndex('uq_sales_invoice_no').on(t.invoiceNo),
+    // The same NULL rule is what lets seeds and tests post without a till.
+    uniqueIndex('uq_sales_client_ref').on(t.clientRef),
     index('idx_sales_due_date').on(t.dueDate),
     index('idx_sales_date').on(t.businessDate),
     index('idx_sales_customer').on(t.customerId),

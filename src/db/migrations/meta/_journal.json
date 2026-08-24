@@ -120,6 +120,13 @@
       "when": 1787336140865,
       "tag": "0016_redundant_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1787602341041,
+      "tag": "0017_nifty_thaddeus_ross",
+      "breakpoints": true
     }
   ]
 }
