@@ -100,6 +100,17 @@ describe('a shop that backed up and then traded', () => {
     expect(status.entriesSince).toBe(1);
   });
 
+  it('agrees its verb with the count', () => {
+    // "1 entry have been posted" is what happens when only the noun is
+    // pluralised. Found by reading the actual screen, not the code.
+    recordBackup(2);
+    postEntry(1, 'JE-1');
+    expect(describeBackupStatus(getBackupStatus(context.db, NOW))).toContain('1 entry has been');
+
+    postEntry(1, 'JE-2');
+    expect(describeBackupStatus(getBackupStatus(context.db, NOW))).toContain('2 entries have been');
+  });
+
   it('is overdue after a week of it', () => {
     recordBackup(9);
     postEntry(3, 'JE-1');

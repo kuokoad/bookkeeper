@@ -89,7 +89,11 @@ export function getBackupStatus(db: Db, now: Date = new Date()): BackupStatus {
 
 /** One line a person can act on, for the dashboard and the Health screen. */
 export function describeBackupStatus(status: BackupStatus): string {
-  const entries = `${status.entriesSince} entr${status.entriesSince === 1 ? 'y' : 'ies'}`;
+  const one = status.entriesSince === 1;
+  const entries = `${status.entriesSince} entr${one ? 'y' : 'ies'}`;
+  // The verb has to agree with the count too. "1 entry have been posted" is
+  // what happens when only the noun is pluralised.
+  const haveBeen = one ? 'has been' : 'have been';
 
   switch (status.state) {
     case 'never':
@@ -106,7 +110,7 @@ export function describeBackupStatus(status: BackupStatus): string {
             : `${status.daysSince} days ago`;
       return status.entriesSince === 0
         ? `Last backup was ${when}, and nothing has been posted since.`
-        : `Last backup was ${when}. ${entries} have been posted since.`;
+        : `Last backup was ${when}. ${entries} ${haveBeen} posted since.`;
     }
     case 'current':
       return status.lastTakenAt === null

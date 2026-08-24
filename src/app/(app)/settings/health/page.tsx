@@ -66,24 +66,27 @@ export default async function HealthPage() {
           copy that lives beside the original does not survive the original being lost.
         </p>
 
-        <div
-          className={
-            backup.state === 'current'
-              ? 'mt-4 border-l-2 border-line bg-surface-sunken p-3'
-              : backup.state === 'due'
-                ? 'mt-4 border-l-2 border-warning bg-surface-sunken p-3'
-                : 'mt-4 border-l-2 border-danger bg-surface-sunken p-3'
-          }
-        >
-          <p className="text-sm font-medium text-content">
-            {backup.state === 'current' ? 'Up to date' : 'Backup needed'}
-          </p>
-          <p className="mt-1 text-sm text-content-muted">{describeBackupStatus(backup)}</p>
-          {backup.lastTakenAt && (
-            <p className="mt-1 text-xs text-content-subtle">
-              Last taken {formatDateTime(backup.lastTakenAt)}.
-            </p>
-          )}
+        {/*
+          Uses `Alert` rather than a hand-rolled bordered box. The app's semantic
+          colour reaches the eye through the BACKGROUND — `border-warning` and
+          friends resolve to the same neutral as every other border — so a panel
+          that carried its state in a border alone looked identical whether the
+          shop was up to date or a month behind.
+        */}
+        <div className="mt-4">
+          <Alert
+            tone={
+              backup.state === 'current' ? 'info' : backup.state === 'due' ? 'warning' : 'danger'
+            }
+            title={backup.state === 'current' ? 'Up to date' : 'Backup needed'}
+          >
+            {describeBackupStatus(backup)}
+            {backup.lastTakenAt && (
+              <span className="mt-1 block text-xs text-content-subtle">
+                Last taken {formatDateTime(backup.lastTakenAt)}.
+              </span>
+            )}
+          </Alert>
         </div>
 
         {/* A plain link, not a form: the browser downloads the response. */}
