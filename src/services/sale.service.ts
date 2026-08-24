@@ -18,9 +18,9 @@ import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { dueDateFor } from '@/domain/business-date';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
 import { calculateSale, calculateTender, exceedsCreditLimit } from '@/domain/sales/calculate';
-import { isZero, minor, subtract, sum, ZERO, type Minor } from '@/domain/money';
+import { formatMoney, isZero, minor, subtract, sum, ZERO, type Minor } from '@/domain/money';
 import { qty as makeQty, type Qty } from '@/domain/quantity';
-import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { recordStockMovement } from './inventory.service';
@@ -51,8 +51,12 @@ import {
 export interface SaleLineRequest {
   productId: number;
   qty: Qty;
-  /** Overrides the product's list price when the owner negotiates. */
+  /**
+   * Departs from the product's list price when the shop negotiates. Permitted
+   * only when the caller sets `allowPriceOverride` — see below.
+   */
   unitPrice?: Minor;
+  /** Money off this line. Also gated by `allowPriceOverride`. */
   discount?: Minor;
 }
 
@@ -73,6 +77,22 @@ export interface CreateSaleInput {
   note?: string | undefined;
   occurredAt?: Date;
   isDemo?: boolean;
+  /**
+   * Whether this sale may depart from the shop's own prices.
+   *
+   * DEFAULTS TO FALSE, and deliberately so. Selling below list is how stock
+   * leaves a shop cheaply, and it leaves the books in perfect order — the sale
+   * genuinely happened at the price charged, so no balance check anywhere will
+   * ever notice. Nothing else in this file can catch it either, which is why
+   * the decision is made here rather than trusted to each caller.
+   *
+   * A price and a discount are the same lever: list price with the line
+   * discounted in full comes to the same nothing. Both are gated together, or
+   * gating either is theatre.
+   *
+   * Set from the caller's `sales:edit` permission. Owners always hold it.
+   */
+  allowPriceOverride?: boolean;
 }
 
 export interface CreatedSale {
@@ -115,6 +135,40 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
         unitPrice: item.unitPrice ?? minor(product.sellingPriceMinor),
       };
     });
+
+    // --- may this sale depart from the shop's prices? --------------------
+    //
+    // Checked against the price read from the database a moment ago, not
+    // against anything the caller sent alongside it: the till posts a price
+    // for every line, so "did they change it?" can only be answered here.
+    if (input.allowPriceOverride !== true) {
+      for (const [index, entry] of resolved.entries()) {
+        const listPrice = minor(entry.product.sellingPriceMinor);
+
+        if (entry.unitPrice !== listPrice) {
+          throw new ForbiddenError(
+            `change the price of "${entry.product.name}"`,
+            `Only a supervisor can change a price. "${entry.product.name}" sells for ` +
+              `${formatMoney(listPrice, settings.currencyCode)}. Sell it at that, or ask someone who can approve the change.`,
+          );
+        }
+
+        const lineDiscount = entry.request.discount;
+        if (lineDiscount !== undefined && !isZero(lineDiscount)) {
+          throw new ForbiddenError(
+            `discount line ${index + 1}`,
+            'Only a supervisor can give a discount. Remove it, or ask someone who can approve it.',
+          );
+        }
+      }
+
+      if (input.invoiceDiscount !== undefined && !isZero(input.invoiceDiscount)) {
+        throw new ForbiddenError(
+          'discount the whole sale',
+          'Only a supervisor can give a discount. Remove it, or ask someone who can approve it.',
+        );
+      }
+    }
 
     // What the shop charges, and how. Read once inside the transaction so a
     // rate changed mid-sale cannot apply to half of it.

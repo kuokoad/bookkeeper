@@ -106,10 +106,20 @@ export class ConflictError extends DomainError {
 }
 
 export class ForbiddenError extends DomainError {
-  constructor(action: string) {
-    super('FORBIDDEN', `Not permitted: ${action}`, 'You do not have permission to do that.', {
-      action,
-    });
+  /**
+   * `userMessage` is optional because most refusals are best left vague: telling
+   * someone precisely which door is locked is a courtesy to the wrong person.
+   * Supply one where the refusal is an ordinary part of somebody's day and the
+   * generic line would just be baffling — a cashier told "you do not have
+   * permission to do that" after typing a discount has no idea what to do next.
+   */
+  constructor(action: string, userMessage?: string) {
+    super(
+      'FORBIDDEN',
+      `Not permitted: ${action}`,
+      userMessage ?? 'You do not have permission to do that.',
+      { action },
+    );
   }
 }
 

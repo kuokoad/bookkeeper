@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { businessSettings, paymentAccounts } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
+import { can } from '@/lib/auth/permissions';
 import { listProducts } from '@/services/catalog.service';
 import { listCustomers } from '@/services/customer.service';
 import { toBusinessDate } from '@/lib/format';
@@ -17,7 +18,7 @@ export const metadata: Metadata = { title: 'New sale' };
 export const dynamic = 'force-dynamic';
 
 export default async function NewSalePage() {
-  await requirePageAccess('sales', 'create');
+  const user = await requirePageAccess('sales', 'create');
 
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
 
@@ -84,6 +85,7 @@ export default async function NewSalePage() {
           currencyCode={settings?.currencyCode ?? 'GHS'}
           taxComponents={getTaxProfile(db).components}
           taxInclusive={settings?.taxInclusive ?? false}
+          mayOverridePrice={can(user, 'sales', 'edit')}
         />
       )}
     </div>

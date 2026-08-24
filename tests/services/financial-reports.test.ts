@@ -148,6 +148,8 @@ describe('profit and loss', () => {
         items: [{ productId: id, qty: u(10) }],
         invoiceDiscount: m(1_000),
         tenders: [{ paymentAccountId: CASH, amount: m(9_000) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -195,6 +197,8 @@ describe('profit and loss', () => {
         items: [{ productId: id, qty: u(10) }],
         invoiceDiscount: m(1_000),
         tenders: [{ paymentAccountId: CASH, amount: m(9_000) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );

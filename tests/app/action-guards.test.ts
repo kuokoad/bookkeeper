@@ -169,6 +169,28 @@ describe('server action authorisation', () => {
   });
 });
 
+describe('selling below the shop price is its own right', () => {
+  /**
+   * `createSale` refuses a price change or a discount unless the caller passes
+   * `allowPriceOverride`. That default is only worth anything if the action
+   * derives the flag from the signed-in user's actual permission — hardcoding
+   * it true would reopen the hole while every test above still passed.
+   *
+   * Read from the source, like the rest of this file, so a refactor cannot
+   * quietly drop the wiring.
+   */
+  const source = readFileSync(join(ACTIONS_DIR, 'sale.actions.ts'), 'utf8');
+
+  it('derives the right from the caller, not from a constant', () => {
+    expect(source).toMatch(/const mayOverridePrice = can\(actor, 'sales', 'edit'\)/);
+    expect(source).toContain('allowPriceOverride: mayOverridePrice');
+  });
+
+  it('never passes a literal true', () => {
+    expect(source).not.toMatch(/allowPriceOverride:\s*true/);
+  });
+});
+
 describe('secrets never leave the server', () => {
   it('no client component imports the database, or anything that reads it', () => {
     const clientFiles: string[] = [];

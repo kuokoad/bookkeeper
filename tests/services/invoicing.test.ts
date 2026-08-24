@@ -54,6 +54,8 @@ function sell(date: string, paid: number, customerId?: number, termsDays?: numbe
       ...(termsDays !== undefined ? { termsDays } : {}),
       items: [{ productId, unitPrice: m(50_000), qty: u(1) }],
       tenders: paid > 0 ? [{ paymentAccountId: CASH, amount: m(paid) }] : [],
+      // ACTOR is an owner, who may depart from the shop's prices.
+      allowPriceOverride: true,
     },
     ACTOR,
   );

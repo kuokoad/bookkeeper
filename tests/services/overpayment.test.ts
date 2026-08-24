@@ -81,6 +81,8 @@ function sellOnCredit(customerId: number): void {
       customerId,
       items: [{ productId, unitPrice: m(50_000), qty: u(1) }],
       tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(20_000) }],
+      // ACTOR is an owner, who may depart from the shop's prices.
+      allowPriceOverride: true,
     },
     ACTOR,
   );

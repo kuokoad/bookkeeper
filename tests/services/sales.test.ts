@@ -233,6 +233,8 @@ describe('discounts', () => {
         items: [{ productId: id, qty: u(5) }], // 50.00
         invoiceDiscount: m(500), // 5.00 off
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(4_500) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -259,6 +261,8 @@ describe('credit sales', () => {
         customerId,
         items: [{ productId: id, qty: u(1), unitPrice: m(50_000) }], // GHS 500
         tenders: [{ paymentAccountId: MOMO_ACCOUNT, amount: m(20_000) }], // GHS 200
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -320,6 +324,8 @@ describe('credit sales', () => {
           customerId,
           items: [{ productId: id, qty: u(1), unitPrice: m(15_000) }],
           tenders: [],
+          // ACTOR is an owner, who may depart from the shop's prices.
+          allowPriceOverride: true,
         },
         ACTOR,
       ),

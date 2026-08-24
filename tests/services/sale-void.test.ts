@@ -67,6 +67,8 @@ describe('voiding', () => {
         items: [{ productId: product, qty: u(2) }],
         invoiceDiscount: m(2_000),
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(18_000) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -104,6 +106,8 @@ describe('voiding', () => {
         items: [{ productId: product, qty: u(2) }],
         invoiceDiscount: m(2_250),
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(20_250) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );

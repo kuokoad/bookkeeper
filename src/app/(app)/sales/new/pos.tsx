@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/cn';
 import { minor } from '@/domain/money';
 import {
   taxOnNet,
@@ -103,6 +104,7 @@ export function Pos({
   currencyCode,
   taxComponents,
   taxInclusive,
+  mayOverridePrice,
 }: {
   products: PosProduct[];
   customers: PosCustomer[];
@@ -111,6 +113,12 @@ export function Pos({
   currencyCode: string;
   taxComponents: TaxComponent[];
   taxInclusive: boolean;
+  /**
+   * Whether this person may sell at anything other than the shop's own price.
+   * Hiding the fields is a courtesy so nobody types a discount that is then
+   * refused — `createSale` makes the actual decision, from the same right.
+   */
+  mayOverridePrice: boolean;
 }) {
   const [state, formAction, pending] = useActionState<SaleFormState, FormData>(
     createSaleAction,
@@ -449,7 +457,12 @@ export function Pos({
                       </div>
                     </div>
 
-                    <div className="mt-2 grid grid-cols-3 gap-2">
+                    <div
+                      className={cn(
+                        'mt-2 grid gap-2',
+                        mayOverridePrice ? 'grid-cols-3' : 'grid-cols-2',
+                      )}
+                    >
                       <div>
                         <label
                           htmlFor={`qty-${line.key}`}
@@ -479,26 +492,35 @@ export function Pos({
                             updateLine(line.key, { unitPrice: event.target.value })
                           }
                           invalid={Number.isNaN(price)}
-                          className="h-10"
+                          readOnly={!mayOverridePrice}
+                          {...(mayOverridePrice
+                            ? {}
+                            : { title: 'The shop sets this price.' })}
+                          className={cn(
+                            'h-10',
+                            mayOverridePrice ? '' : 'text-content-muted',
+                          )}
                         />
                       </div>
-                      <div>
-                        <label
-                          htmlFor={`disc-${line.key}`}
-                          className="mb-1 block text-xs text-content-muted"
-                        >
-                          Discount
-                        </label>
-                        <AmountInput
-                          id={`disc-${line.key}`}
-                          value={line.discount}
-                          onChange={(event) =>
-                            updateLine(line.key, { discount: event.target.value })
-                          }
-                          placeholder="0.00"
-                          className="h-10"
-                        />
-                      </div>
+                      {mayOverridePrice && (
+                        <div>
+                          <label
+                            htmlFor={`disc-${line.key}`}
+                            className="mb-1 block text-xs text-content-muted"
+                          >
+                            Discount
+                          </label>
+                          <AmountInput
+                            id={`disc-${line.key}`}
+                            value={line.discount}
+                            onChange={(event) =>
+                              updateLine(line.key, { discount: event.target.value })
+                            }
+                            placeholder="0.00"
+                            className="h-10"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {short && (
@@ -552,18 +574,20 @@ export function Pos({
               </div>
             </dl>
 
-            <div className="mt-3">
-              <label htmlFor="invoice-discount" className="mb-1 block text-xs text-content-muted">
-                Discount on the whole sale
-              </label>
-              <AmountInput
-                id="invoice-discount"
-                value={invoiceDiscount}
-                onChange={(event) => setInvoiceDiscount(event.target.value)}
-                placeholder="0.00"
-                className="h-10"
-              />
-            </div>
+            {mayOverridePrice && (
+              <div className="mt-3">
+                <label htmlFor="invoice-discount" className="mb-1 block text-xs text-content-muted">
+                  Discount on the whole sale
+                </label>
+                <AmountInput
+                  id="invoice-discount"
+                  value={invoiceDiscount}
+                  onChange={(event) => setInvoiceDiscount(event.target.value)}
+                  placeholder="0.00"
+                  className="h-10"
+                />
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border border-line bg-surface-raised p-4">

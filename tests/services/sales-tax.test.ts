@@ -91,6 +91,8 @@ describe('a sale at tax-inclusive prices', () => {
         businessDate: TODAY,
         items: [{ productId: product, qty: u(1), unitPrice: m(11_250) }],
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(11_250) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -112,6 +114,8 @@ describe('a sale at tax-inclusive prices', () => {
         items: [{ productId: product, qty: u(2), unitPrice: m(11_250) }],
         invoiceDiscount: m(2_250),
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(20_250) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -132,6 +136,8 @@ describe('a sale at tax-inclusive prices', () => {
         businessDate: TODAY,
         items: [{ productId: product, qty: u(1), unitPrice: m(11_250) }],
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(11_250) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -153,6 +159,8 @@ describe('a sale at tax-inclusive prices', () => {
         items: [{ productId: product, qty: u(3), unitPrice: m(11_250), discount: m(1_000) }],
         invoiceDiscount: m(1_337),
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(31_413) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -172,6 +180,8 @@ describe('a sale at tax-inclusive prices', () => {
         // GHS 22.50 off, so GHS 90.00 taken, containing GHS 10.00 of VAT.
         invoiceDiscount: m(2_250),
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(9_000) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );
@@ -194,6 +204,8 @@ describe('a sale at tax-exclusive prices, unchanged', () => {
         businessDate: TODAY,
         items: [{ productId: product, qty: u(1), unitPrice: m(10_000) }],
         tenders: [{ paymentAccountId: CASH_ACCOUNT, amount: m(11_250) }],
+        // ACTOR is an owner, who may depart from the shop's prices.
+        allowPriceOverride: true,
       },
       ACTOR,
     );

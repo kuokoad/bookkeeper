@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { db } from '@/db/client';
 import { requirePermission } from '@/lib/auth/current-user';
+import { can } from '@/lib/auth/permissions';
 import { createSale, voidSale, type SaleLineRequest, type TenderRequest } from '@/services/sale.service';
 import { recordCustomerPayment, voidCustomerPayment } from '@/services/customer-payment.service';
 import { parseMoney, ZERO, type Minor } from '@/domain/money';
@@ -60,6 +61,13 @@ export async function createSaleAction(
   formData: FormData,
 ): Promise<SaleFormState> {
   const actor = await requirePermission('sales', 'create');
+
+  // Selling below the shop's own prices is a separate right from ringing a sale
+  // up. `requirePermission` has already re-read this principal's rights from the
+  // database for this request, so it is current rather than whatever was true
+  // when they signed in. The service refuses the sale if this is false — the
+  // check is not left to this layer.
+  const mayOverridePrice = can(actor, 'sales', 'edit');
 
   let payload: unknown;
   try {
@@ -127,6 +135,7 @@ export async function createSaleAction(
         invoiceDiscount: discount,
         tenders: saleTenders,
         note,
+        allowPriceOverride: mayOverridePrice,
       },
       { id: actor.id, username: actor.username },
     );
