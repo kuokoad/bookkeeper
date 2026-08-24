@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
-import { getStockLedger, verifyAllStock, getInventoryValue } from '@/services/inventory.service';
+import {
+  getStockLedger,
+  verifyStockAgainstLedger,
+  getInventoryValue,
+} from '@/services/inventory.service';
 import { getStockSummary, listProducts } from '@/services/catalog.service';
 import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
@@ -49,8 +53,12 @@ export default async function InventoryPage({
   const summary = getStockSummary(db);
   const lowStock = listProducts(db, { lowStockOnly: true });
 
-  // The headline integrity check, computed live rather than assumed.
-  const verifications = verifyAllStock(db);
+  // The headline integrity check, computed live rather than assumed — but from
+  // the ledger's last recorded balance, not by replaying every movement the shop
+  // has ever made. This page is visited constantly; a full replay reads the
+  // whole history of every product each time and gets slower for ever.
+  // `npm run preflight` does the replay, where waiting for it is the point.
+  const verifications = verifyStockAgainstLedger(db);
   const drifted = verifications.filter((verification) => !verification.ok);
   const inventoryCache = getInventoryValue(db);
   const inventoryGl = getAccountBalanceByCode(db, ACCOUNT_CODES.INVENTORY);
@@ -89,9 +97,11 @@ export default async function InventoryPage({
 
       {drifted.length > 0 && (
         <Alert tone="danger" title="Stock records disagree with the ledger" className="mb-4">
-          {drifted.length} product(s) have a cached stock figure that does not match their movement
-          history. This should never happen. Affected:{' '}
-          {drifted.map((item) => item.productName).join(', ')}.
+          {drifted.length} product(s) have a cached stock figure that does not match the last
+          balance recorded in the ledger. This should never happen. Affected:{' '}
+          {drifted.map((item) => item.productName).join(', ')}. Run{' '}
+          <code>npm run preflight</code> to replay the full movement history and see where the two
+          parted company.
         </Alert>
       )}
 

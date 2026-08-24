@@ -249,7 +249,96 @@ export function verifyProductStock(db: Db, productId: number): StockVerification
   };
 }
 
-/** Verify every stock-tracked product. Used by the integrity report. */
+/**
+ * The cheap integrity check: does the cache agree with the LAST balance the
+ * ledger recorded?
+ *
+ * One query that seeks straight to each product's newest movement, rather than
+ * reading every movement ever made — which is what `verifyAllStock` does, and
+ * why it grows without bound as the shop trades. That one proves the whole
+ * chain and belongs somewhere a person has chosen to wait; this one is cheap
+ * enough for a page that renders on every visit.
+ *
+ * The cost is one index seek per PRODUCT. It is not free — a shop with more
+ * products pays more — but it no longer climbs with the number of movements,
+ * which is the thing that grows for ever. Measured by `npm run benchmark`.
+ *
+ * It catches what actually goes wrong: the cached columns on `products` drifting
+ * away from the ledger, because they were written by something other than
+ * `recordStockMovement`. Both are written from the same computed state inside one
+ * transaction, so any disagreement means a write got in from outside.
+ *
+ * What it does NOT catch is a ledger that is internally inconsistent — a row
+ * removed from the middle of a chain, leaving the running balances describing a
+ * history that no longer exists. Only a replay finds that, which is why
+ * `npm run preflight` still does one.
+ */
+export type StockCacheCheck = Omit<StockVerification, 'movementCount'>;
+
+export function verifyStockAgainstLedger(db: Db): StockCacheCheck[] {
+  /**
+   * `MAX(id)` correlated to one product is an index SEEK on
+   * `idx_stock_ledger_product (product_id, id)` — straight to the end of that
+   * product's range. Written as `... GROUP BY product_id` instead it becomes a
+   * scan of the whole index, one entry per movement, and the cost of the check
+   * climbs with the shop's history again. Same answer, and the difference is
+   * measurable: see `npm run benchmark`.
+   */
+  const rows = db.all<{
+    productId: number;
+    productName: string;
+    cachedQty: number;
+    cachedValue: number;
+    ledgerQty: number;
+    ledgerValue: number;
+  }>(sql`
+    SELECT
+      p.id                                AS productId,
+      p.name                              AS productName,
+      p.qty_on_hand_milli                 AS cachedQty,
+      p.stock_value_minor                 AS cachedValue,
+      COALESCE(l.balance_qty_milli, 0)    AS ledgerQty,
+      COALESCE(l.balance_value_minor, 0)  AS ledgerValue
+    FROM products p
+    LEFT JOIN stock_ledger l
+      ON l.id = (SELECT MAX(id) FROM stock_ledger WHERE product_id = p.id)
+    WHERE p.track_inventory = 1
+  `);
+
+  return rows.map((product) => {
+    // A product that has never moved has no ledger row, so COALESCE reads zero.
+    // Holding nothing is the right answer for it, and it is CHECKED rather than
+    // skipped — stock on a product that never received any is exactly the sort
+    // of thing this is looking for.
+    const cachedQty = makeQty(product.cachedQty);
+    const cachedValue = minor(product.cachedValue);
+    const ledgerQty = makeQty(product.ledgerQty);
+    const ledgerValue = minor(product.ledgerValue);
+    const qtyDrift = cachedQty - ledgerQty;
+    const valueDrift = subtract(cachedValue, ledgerValue);
+
+    return {
+      productId: product.productId,
+      productName: product.productName,
+      cachedQty,
+      cachedValue,
+      ledgerQty,
+      ledgerValue,
+      qtyDrift,
+      valueDrift,
+      ok: qtyDrift === 0 && valueDrift === 0,
+    };
+  });
+}
+
+/**
+ * Verify every stock-tracked product by REPLAYING its whole movement history.
+ *
+ * Thorough and slow: one query per product, each reading that product's entire
+ * ledger. Use it where somebody has asked for a deep check and can wait — never
+ * on a page that renders on every visit. For that, use
+ * `verifyStockAgainstLedger` above.
+ */
 export function verifyAllStock(db: Db): StockVerification[] {
   return db
     .select({ id: products.id })

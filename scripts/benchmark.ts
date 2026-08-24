@@ -7,7 +7,7 @@
  * assumed. It also prints each query plan: a SCAN over a large table is the
  * thing that turns a fast report into a slow one as the years accumulate.
  *
- * Usage: npm run benchmark [-- --days=365 --sales=200]
+ * Usage: npm run benchmark [-- --days=365 --sales=200 --products=200 --movements=250]
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,6 +20,7 @@ import * as schema from '@/db/schema';
 import { configureConnection } from '@/db/pragmas';
 import type { Db } from '@/db/types';
 import { seedCore } from '@/db/seed/core';
+import { verifyAllStock, verifyStockAgainstLedger } from '@/services/inventory.service';
 
 const arg = (name: string, fallback: number): number => {
   const found = process.argv.find((value) => value.startsWith(`--${name}=`));
@@ -29,6 +30,8 @@ const arg = (name: string, fallback: number): number => {
 
 const DAYS = arg('days', 365);
 const SALES_PER_DAY = arg('sales', 200);
+const PRODUCTS = arg('products', 200);
+const MOVEMENTS_PER_PRODUCT = arg('movements', 250);
 
 const directory = mkdtempSync(join(tmpdir(), 'bookkeeper-bench-'));
 const file = join(directory, 'bench.db');
@@ -104,6 +107,79 @@ build();
 const lineCount = (connection.prepare('SELECT COUNT(*) AS c FROM journal_lines').get() as { c: number }).c;
 console.log(
   `Built ${entryNo.toLocaleString()} entries / ${lineCount.toLocaleString()} lines in ${((performance.now() - buildStart) / 1000).toFixed(1)}s\n`,
+);
+
+// --- stock fixture ---------------------------------------------------------
+//
+// The inventory screen carries an integrity check, and its cost depends on how
+// many MOVEMENTS a shop has made rather than how many products it sells. Left
+// unmeasured, the difference between reading the last balance and replaying the
+// whole history does not show up until a shop has been trading for a year.
+
+console.log(`Building ${PRODUCTS} products x ${MOVEMENTS_PER_PRODUCT} movements…`);
+const stockStart = performance.now();
+
+const insertProduct = connection.prepare(
+  `INSERT INTO products (name, unit, cost_price_minor, selling_price_minor, track_inventory,
+                         qty_on_hand_milli, stock_value_minor, created_at, updated_at)
+   VALUES (?, 'pcs', 500, 800, 1, ?, ?, ?, ?)`,
+);
+const insertMovement = connection.prepare(
+  `INSERT INTO stock_ledger (product_id, business_date, occurred_at, movement_type, source_type,
+                             qty_in_milli, qty_out_milli, unit_cost_minor, total_cost_minor,
+                             balance_qty_milli, balance_value_minor, created_at)
+   VALUES (?, ?, ?, ?, 'STOCK_ADJUSTMENT', ?, ?, 500, ?, ?, ?, ?)`,
+);
+
+const buildStock = connection.transaction(() => {
+  const at = new Date(2025, 0, 1).getTime();
+  for (let product = 0; product < PRODUCTS; product++) {
+    // Start with a large receipt, then sell one unit at a time, so the running
+    // balance never reaches zero and every movement stays on the chain.
+    let qty = 0;
+    let value = 0;
+    const productId = Number(insertProduct.run(`Bench product ${product}`, 0, 0, at, at).lastInsertRowid);
+
+    for (let movement = 0; movement < MOVEMENTS_PER_PRODUCT; movement++) {
+      const isIn = movement === 0;
+      const moveQty = isIn ? MOVEMENTS_PER_PRODUCT * 1000 : 1000;
+      const cost = isIn ? MOVEMENTS_PER_PRODUCT * 500 : 500;
+
+      if (isIn) {
+        qty += moveQty;
+        value += cost;
+      } else {
+        qty -= moveQty;
+        value -= cost;
+      }
+
+      insertMovement.run(
+        productId,
+        '2025-01-01',
+        at,
+        isIn ? 'PURCHASE' : 'SALE',
+        isIn ? moveQty : 0,
+        isIn ? 0 : moveQty,
+        cost,
+        qty,
+        value,
+        at,
+      );
+    }
+
+    connection
+      .prepare('UPDATE products SET qty_on_hand_milli = ?, stock_value_minor = ? WHERE id = ?')
+      .run(qty, value, productId);
+  }
+});
+buildStock();
+
+const movementCount = (
+  connection.prepare('SELECT COUNT(*) AS c FROM stock_ledger').get() as { c: number }
+).c;
+console.log(
+  `Built ${movementCount.toLocaleString()} stock movements in ${((performance.now() - stockStart) / 1000).toFixed(1)}s
+`,
 );
 
 interface Benchmark {
@@ -209,6 +285,29 @@ console.log(
     ? `Slowest report: ${slowest.toFixed(0)} ms at ${(lineCount / 1000).toFixed(0)}k ledger lines.`
     : `SLOW: ${slowest.toFixed(0)} ms. Investigate before shipping.`,
 );
+
+// --- the stock integrity checks, timed as the app actually calls them -------
+//
+// These are functions rather than single queries, so they are timed here rather
+// than in the table above. The point of the comparison is which one a PAGE can
+// afford: the cheap check reads one row per product whatever the history, while
+// the replay reads every movement ever recorded and so climbs for ever.
+
+console.log('\nStock integrity checks (median of 5):\n');
+
+const cheapMs = time(() => void verifyStockAgainstLedger(db));
+const deepMs = time(() => void verifyAllStock(db), 3);
+
+console.log(`  ${cheapMs.toFixed(1).padStart(8)} ms  Cache vs last ledger balance  (inventory page)`);
+console.log(`  ${deepMs.toFixed(1).padStart(8)} ms  Full replay of every movement (npm run preflight)`);
+console.log(
+  `\n  ${(deepMs / Math.max(cheapMs, 0.001)).toFixed(0)}x apart at ${PRODUCTS} products / ` +
+    `${movementCount.toLocaleString()} movements — and the gap widens with every sale.`,
+);
+
+if (cheapMs > 250) {
+  console.log('  SLOW: the page-level check should not be this expensive. Investigate.');
+}
 
 connection.close();
 rmSync(directory, { recursive: true, force: true });

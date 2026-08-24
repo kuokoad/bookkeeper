@@ -134,6 +134,76 @@ export function runPreflight(databasePath: string = env.DATABASE_PATH): Check[] 
         : `debits ${totals.debits} vs credits ${totals.credits} — do NOT trade on these books`,
     );
 
+    // Stock: replay EVERY movement and compare with the cached figures.
+    //
+    // The inventory page shows a cheaper version of this check — cache against
+    // the last balance the ledger recorded — because it renders on every visit
+    // and a full replay grows with the shop's whole history. The replay lives
+    // here, where somebody has asked for a thorough answer and can wait for it,
+    // and it catches something the cheap check cannot: a ledger that is
+    // internally inconsistent, where a row has gone from the middle of a chain
+    // and the running balances now describe a history that never happened.
+    const stockTable = connection
+      .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='stock_ledger'")
+      .get() as { count: number };
+
+    if (stockTable.count > 0) {
+      const movements = connection
+        .prepare(
+          'SELECT product_id, qty_in_milli, qty_out_milli, total_cost_minor FROM stock_ledger ORDER BY product_id, id',
+        )
+        .all() as {
+        product_id: number;
+        qty_in_milli: number;
+        qty_out_milli: number;
+        total_cost_minor: number;
+      }[];
+
+      // Same arithmetic as `replayChain`, including the rule that matters most:
+      // an empty shelf is worth nothing, so value is cleared whenever the
+      // quantity reaches zero rather than being carried forward.
+      const replayed = new Map<number, { qty: number; value: number }>();
+      for (const row of movements) {
+        const state = replayed.get(row.product_id) ?? { qty: 0, value: 0 };
+        if (row.qty_in_milli > 0) {
+          state.qty += row.qty_in_milli;
+          state.value += row.total_cost_minor;
+        } else if (row.qty_out_milli > 0) {
+          state.qty -= row.qty_out_milli;
+          state.value -= row.total_cost_minor;
+        }
+        if (state.qty === 0) state.value = 0;
+        replayed.set(row.product_id, state);
+      }
+
+      const tracked = connection
+        .prepare(
+          'SELECT id, name, qty_on_hand_milli, stock_value_minor FROM products WHERE track_inventory = 1',
+        )
+        .all() as {
+        id: number;
+        name: string;
+        qty_on_hand_milli: number;
+        stock_value_minor: number;
+      }[];
+
+      const drifted = tracked.filter((product) => {
+        const state = replayed.get(product.id) ?? { qty: 0, value: 0 };
+        return (
+          state.qty !== product.qty_on_hand_milli || state.value !== product.stock_value_minor
+        );
+      });
+
+      add(
+        'Stock matches its movement history',
+        drifted.length === 0 ? 'pass' : 'fail',
+        drifted.length === 0
+          ? `${tracked.length} product(s) replayed from ${movements.length} movement(s)`
+          : `${drifted.length} product(s) disagree with their own ledger: ` +
+            `${drifted.map((product) => product.name).join(', ')}. Do NOT trust the stock valuation.`,
+      );
+    }
+
     // Demo data must not be sitting in a real shop's records.
     const demoTables = ['products', 'sales', 'purchases', 'customers', 'suppliers'];
     let demoRows = 0;
