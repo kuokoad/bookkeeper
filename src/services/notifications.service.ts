@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { auditLogs, businessSettings } from '@/db/schema';
 import type { Db } from '@/db/types';
@@ -6,6 +6,7 @@ import { can, type Principal } from '@/lib/auth/permissions';
 import { toBusinessDate } from '@/lib/format';
 import { financialYearFor } from '@/domain/financial-year';
 import { getStockSummary } from '@/services/catalog.service';
+import { describeBackupStatus, getBackupStatus } from './backup.service';
 import { getTrialBalance } from '@/services/reporting/balances.service';
 import { getReceivablesAgeing } from '@/services/reporting/ledger.service';
 import { isYearClosed } from '@/services/year-end-close.service';
@@ -28,20 +29,6 @@ export interface Notice {
   title: string;
   detail: string;
   href: string;
-}
-
-/** Backups are not tracked in a table; the audit log records each download. */
-function daysSinceLastBackup(db: Db): number | null {
-  const last = db
-    .select({ at: auditLogs.createdAt })
-    .from(auditLogs)
-    .where(and(eq(auditLogs.entityType, 'backup'), eq(auditLogs.action, 'CREATE')))
-    .orderBy(desc(auditLogs.createdAt))
-    .limit(1)
-    .get();
-
-  if (!last?.at) return null;
-  return Math.floor((Date.now() - last.at.getTime()) / 86_400_000);
 }
 
 export function getNotices(db: Db, user: Principal): Notice[] {
@@ -118,21 +105,21 @@ export function getNotices(db: Db, user: Principal): Notice[] {
       }
     }
 
-    const sinceBackup = daysSinceLastBackup(db);
-    if (sinceBackup === null) {
+    // Measured against trading rather than the calendar: a shop shut for a
+    // fortnight has nothing new to lose, and a warning that fires anyway is one
+    // people learn to click past. See `getBackupStatus`.
+    const backup = getBackupStatus(db);
+    if (backup.state !== 'current') {
       notices.push({
-        id: 'never-backed-up',
-        tone: 'warning',
-        title: 'No backup has ever been taken',
-        detail: 'Everything is in one file on this computer.',
-        href: '/settings/health',
-      });
-    } else if (sinceBackup >= 7) {
-      notices.push({
-        id: 'stale-backup',
-        tone: 'warning',
-        title: `Last backup was ${sinceBackup} days ago`,
-        detail: 'Take one and keep it off this computer.',
+        id: backup.state === 'never' ? 'never-backed-up' : 'stale-backup',
+        tone: backup.state === 'due' ? 'warning' : 'danger',
+        title:
+          backup.state === 'never'
+            ? 'No backup has ever been taken'
+            : backup.entriesSince > 0
+              ? `${backup.entriesSince} entr${backup.entriesSince === 1 ? 'y' : 'ies'} not yet backed up`
+              : `Last backup was ${backup.daysSince} days ago`,
+        detail: describeBackupStatus(backup),
         href: '/settings/health',
       });
     }

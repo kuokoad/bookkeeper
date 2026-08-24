@@ -175,6 +175,40 @@ export async function createBackup(
   return { path: target, bytes: statSync(target).size, entries, removed };
 }
 
+/**
+ * Record that a backup was taken, so the shop's own screens can say so.
+ *
+ * The download route writes this row itself, with the person who clicked. A
+ * backup taken from the command line had nobody attached and wrote nothing at
+ * all — so the dashboard went on saying the shop was overdue after it had just
+ * been backed up, which is the fastest way to teach somebody to ignore a
+ * warning. Written here rather than inside `createBackup` so the route does not
+ * record the same backup twice.
+ *
+ * A failure to record must not fail the backup: the copy on disk is the thing
+ * that matters, and it is already written and verified by this point.
+ */
+function recordBackupTaken(sourcePath: string, entries: number): void {
+  try {
+    const connection = new Database(resolve(process.cwd(), sourcePath));
+    try {
+      configureConnection(connection);
+      connection
+        .prepare(
+          `INSERT INTO audit_logs (user_id, username, action, entity_type, summary, created_at)
+           VALUES (NULL, NULL, 'CREATE', 'backup', ?, ?)`,
+        )
+        .run(`Backup taken from the command line (${entries} journal entries, verified)`, Date.now());
+    } finally {
+      connection.close();
+    }
+  } catch (error) {
+    console.warn(
+      `  (could not record the backup in the audit log: ${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+}
+
 if (isDirectRun(import.meta.url)) {
   const keepArg = process.argv.find((arg) => arg.startsWith('--keep='));
   const dirArg = process.argv.find((arg) => arg.startsWith('--dir='));
@@ -190,6 +224,8 @@ if (isDirectRun(import.meta.url)) {
       keep,
       ...(dirArg ? { directory: dirArg.slice('--dir='.length) } : {}),
     });
+
+    recordBackupTaken(env.DATABASE_PATH, result.entries);
 
     const mb = (result.bytes / 1_000_000).toFixed(2);
     console.log(`Backup written and verified: ${result.path}`);

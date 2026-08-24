@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { runPreflight } from '@/db/preflight';
+import { db } from '@/db/client';
+import { describeBackupStatus, getBackupStatus } from '@/services/backup.service';
+import { formatDateTime } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
@@ -28,6 +31,11 @@ export default async function HealthPage() {
   // Showing the button to someone the server would refuse is a button that
   // does nothing.
   const canBackUp = can(user, 'settings', 'edit');
+
+  // The dashboard sends people here when a backup is overdue, so this is the
+  // page that has to answer "am I up to date?" — a download button on its own
+  // cannot.
+  const backup = getBackupStatus(db);
   const checks = runPreflight();
 
   const failures = checks.filter((check) => check.status === 'fail');
@@ -57,6 +65,26 @@ export default async function HealthPage() {
           Do this at the end of each day, and keep the file somewhere other than this computer — a
           copy that lives beside the original does not survive the original being lost.
         </p>
+
+        <div
+          className={
+            backup.state === 'current'
+              ? 'mt-4 border-l-2 border-line bg-surface-sunken p-3'
+              : backup.state === 'due'
+                ? 'mt-4 border-l-2 border-warning bg-surface-sunken p-3'
+                : 'mt-4 border-l-2 border-danger bg-surface-sunken p-3'
+          }
+        >
+          <p className="text-sm font-medium text-content">
+            {backup.state === 'current' ? 'Up to date' : 'Backup needed'}
+          </p>
+          <p className="mt-1 text-sm text-content-muted">{describeBackupStatus(backup)}</p>
+          {backup.lastTakenAt && (
+            <p className="mt-1 text-xs text-content-subtle">
+              Last taken {formatDateTime(backup.lastTakenAt)}.
+            </p>
+          )}
+        </div>
 
         {/* A plain link, not a form: the browser downloads the response. */}
         {canBackUp ? (
