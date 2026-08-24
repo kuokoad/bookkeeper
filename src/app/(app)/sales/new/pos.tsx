@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useMemo, useRef, useState } from 'react';
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 
 import { createSaleAction, type SaleFormState } from '@/actions/sale.actions';
 import { Button } from '@/components/ui/button';
@@ -329,6 +329,27 @@ export function Pos({
     // this one and quietly hand back this receipt again.
     setSalesCompleted((completed) => completed + 1);
   }
+
+  /**
+   * Put the cursor back in the search box once a sale has been saved.
+   *
+   * A barcode scanner is a keyboard. With focus left on the document body its
+   * keystrokes go nowhere, so serving the next customer began with a mouse
+   * click into the search box — on every sale, all day. `Clear` already put it
+   * back; finishing a sale, which happens far more often, did not.
+   *
+   * It has to be an effect rather than part of the block above: the cart is
+   * cleared DURING render, and the input cannot be focused until React has
+   * committed that. Focusing a DOM node is synchronising with something outside
+   * React, which is what an effect is for.
+   *
+   * Guarded on a sale having happened, so it never fights the `autoFocus` on
+   * the input itself, and never steals the cursor from somebody who has clicked
+   * elsewhere before ringing anything up.
+   */
+  useEffect(() => {
+    if (handledReceipt !== undefined) searchRef.current?.focus();
+  }, [handledReceipt]);
 
   const cartPayload = JSON.stringify({
     clientRef: cartRef,
