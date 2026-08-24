@@ -64,8 +64,9 @@ export default async function InventoryPage({
   const inventoryGl = getAccountBalanceByCode(db, ACCOUNT_CODES.INVENTORY);
   const ledgerMatchesGl = inventoryCache === inventoryGl;
 
+  // One product by id, not the whole catalogue filtered in JavaScript.
   const focusProduct = filterProductId
-    ? listProducts(db, { includeInactive: true }).find((item) => item.id === filterProductId)
+    ? listProducts(db, { includeInactive: true, id: filterProductId, limit: 1 })[0]
     : undefined;
 
   return (

@@ -391,6 +391,12 @@ export interface ProductListItem {
 }
 
 export interface ProductQuery {
+  /**
+   * One product by id. Present so a single product can be fetched as an INDEXED
+   * lookup — see `getProduct`, which used to page through the list and find it
+   * in JavaScript, and so could not see past the page limit at all.
+   */
+  id?: number;
   search?: string;
   categoryId?: number;
   includeInactive?: boolean;
@@ -412,6 +418,7 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
   const fallbackMin = getLowStockThreshold(db);
   const conditions: SQL[] = [];
 
+  if (query.id !== undefined) conditions.push(eq(products.id, query.id));
   if (!query.includeInactive) conditions.push(eq(products.isActive, true));
   if (query.categoryId !== undefined) conditions.push(eq(products.categoryId, query.categoryId));
 
@@ -480,10 +487,18 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
   return query.lowStockOnly ? items.filter((item) => item.lowStock) : items;
 }
 
+/**
+ * One product, by id.
+ *
+ * This used to ask for the first 500 products by NAME and look through them in
+ * JavaScript, which had two faults. It read the whole catalogue to answer a
+ * question about one row; and, worse, a shop with more than 500 products simply
+ * could not fetch the ones sorted after the five hundredth — `getProduct` threw
+ * NotFoundError for a product that plainly existed. That reached the till,
+ * because scanning a barcode resolves an id and then comes through here.
+ */
 export function getProduct(db: Db, id: number): ProductListItem {
-  const found = listProducts(db, { includeInactive: true, limit: 500 }).find(
-    (item) => item.id === id,
-  );
+  const found = listProducts(db, { includeInactive: true, id, limit: 1 })[0];
   if (!found) throw new NotFoundError('Product', id);
   return found;
 }
