@@ -75,6 +75,33 @@ Under the application's **Environment variables**:
 | `NODE_ENV` | `production` | Keeps developer error detail off the screen |
 | `SEED_DEMO_DATA` | `false` | Demo records must never enter real books |
 | `COOKIE_SECURE` | `true` | Hostinger serves over HTTPS, so the session cookie should be HTTPS-only |
+| `NPM_CONFIG_INCLUDE` | `dev` | Keeps `npm install` installing the packages the build needs. **Easy to miss, and the build fails without it** — see below |
+
+#### `NPM_CONFIG_INCLUDE=dev` is not optional
+
+npm's `omit` setting defaults to `dev` whenever `NODE_ENV` is `production`. So
+the moment you set `NODE_ENV` above, `npm install` stops installing
+`devDependencies` — and the build needs seven of them: `@tailwindcss/postcss`,
+`tailwindcss`, `typescript`, and the four `@types/*` packages. The deploy then
+fails with a module-not-found error naming whichever one the build reached
+first, usually `@tailwindcss/postcss`.
+
+Nothing is broken when this happens. npm did exactly what it was told.
+
+`include` beats `omit` whatever order they arrive in, so this one variable
+settles it. Check it on your own machine:
+
+```bash
+NODE_ENV=production npm config get omit                        # dev
+NODE_ENV=production NPM_CONFIG_INCLUDE=dev npm config get omit # (empty)
+```
+
+It reads like a flaky install, and the usual advice for that — delete
+`node_modules` and `package-lock.json` and install again — is wrong here twice
+over. There is no terminal on this plan to run it in, and deleting the lockfile
+would discard the pin holding `better-sqlite3` at a version with a prebuilt
+binary for Node 22 and 24, turning one clear failure into a compile error that
+looks unrelated.
 
 Generate the secret on your own machine:
 
@@ -134,6 +161,7 @@ sites against one database file is not supported.
 
 | Symptom | Cause |
 | --- | --- |
+| Build fails on `@tailwindcss/postcss`, `tailwindcss`, `typescript` or an `@types/*` package | `NODE_ENV=production` made npm skip `devDependencies`. Add `NPM_CONFIG_INCLUDE=dev` and redeploy |
 | Build fails on `better-sqlite3` | The Node version is below 22, or no prebuilt binary matched. Set Node to 22 or 24 and redeploy |
 | Site loads but every page errors | The database could not be prepared. Read the deployment log — the reason is printed with the path it tried |
 | Records vanish after a deploy | `DATABASE_PATH` is inside the deploy folder. Move it to the home directory. **Restore from a backup before trading again** |
