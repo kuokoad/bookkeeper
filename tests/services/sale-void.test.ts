@@ -6,6 +6,7 @@ import { createProduct } from '@/services/catalog.service';
 import { createStockAdjustment } from '@/services/stock-adjustment.service';
 import { createSale, voidSale } from '@/services/sale.service';
 import { getTrialBalance } from '@/services/reporting/balances.service';
+import { verifyBatchCoverage } from '@/services/inventory.service';
 import { minor, type Minor } from '@/domain/money';
 import { fromUnits, type Qty } from '@/domain/quantity';
 import { setSingleTax } from '../helpers/tax';
@@ -55,7 +56,21 @@ beforeEach(() => {
   CASH_ACCOUNT = context.db.select().from(paymentAccounts).all().find((a) => a.kind === 'CASH')!.id;
 });
 
-afterEach(() => context.cleanup());
+afterEach(() => {
+  /**
+   * Whatever the test above did, every unit of stock still belongs to a batch.
+   *
+   * Here rather than inside each test because these files exercise the paths
+   * most likely to drift — voids and returns, where stock goes back and the
+   * question of WHICH crate it goes back to has a wrong answer that nothing
+   * else would notice. A test added later is covered without anybody
+   * remembering to add the line.
+   */
+  for (const row of verifyBatchCoverage(context.db)) {
+    expect(row.ok, `coverage for product ${row.productId}`).toBe(true);
+  }
+  context.cleanup();
+});
 
 describe('voiding', () => {
   it('works on a sale that was given a discount', () => {

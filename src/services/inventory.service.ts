@@ -135,6 +135,16 @@ export interface StockMovementResult {
    * multiplied by anything — see `src/domain/inventory/batches.ts`.
    */
   batchAllocations: Allocation[];
+
+  /**
+   * Batches past their date that this movement actually drew from.
+   *
+   * Empty on every ordinary movement, INCLUDING one made while expired stock
+   * sat on the shelf untouched. Non-empty only when somebody was asked and
+   * said yes, which makes it the fact an audit row should be written from —
+   * recorded here because this is the only place that knows it.
+   */
+  expiredTaken: string[];
 }
 
 export function getStockState(tx: Tx, productId: number): StockState {
@@ -244,6 +254,7 @@ export function recordStockMovement(tx: Tx, input: StockMovementInput): StockMov
     state: movement.state,
     residual: movement.residual,
     batchAllocations,
+    expiredTaken: expiredRefsAmong(tx, input, batchAllocations),
   };
 }
 
@@ -482,6 +493,41 @@ function allocateOutToSource(
   );
 }
 
+/**
+ * Which of these batches had passed their date on the day of the movement.
+ *
+ * Read back from the batches themselves rather than threaded out of the
+ * allocator, because the allocator answers a different question — what it would
+ * need — and this one asks what was actually taken.
+ */
+function expiredRefsAmong(
+  tx: Tx,
+  input: StockMovementInput,
+  allocations: readonly Allocation[],
+): string[] {
+  // Only a movement that was GIVEN the right can have used it. Every sale at
+  // every till passes through here, so this returns before touching the
+  // database on all of them but the handful somebody had to approve.
+  const approved = input.batch?.kind === 'PICK' && input.batch.allowExpired === true;
+  if (!approved || allocations.length === 0) return [];
+
+  const dates = new Map(
+    tx
+      .select({ id: productBatches.id, expiryDate: productBatches.expiryDate })
+      .from(productBatches)
+      .where(eq(productBatches.productId, input.productId))
+      .all()
+      .map((row) => [row.id, row.expiryDate]),
+  );
+
+  return allocations
+    .filter((allocation) => {
+      const expiryDate = dates.get(allocation.batchId);
+      return expiryDate !== undefined && expiryDate !== null && expiryDate < input.businessDate;
+    })
+    .map((allocation) => allocation.batchRef);
+}
+
 /** Shop policy: is expired stock refused at the till? */
 function expiryBlocksSales(tx: Tx): boolean {
   const settings = tx
@@ -649,6 +695,12 @@ export interface BatchCoverageCheck {
  * The batch split of each stock movement a document made for one product,
  * oldest movement first.
  *
+ * Direction-agnostic on purpose. A movement goes one way or the other — the
+ * ledger enforces it — so the quantity that touched a batch is simply whichever
+ * of the two columns is filled. That lets one function answer both questions a
+ * reversal asks: which crates a delivery filled, and which crates a sale
+ * emptied.
+ *
  * One array per ledger row, because the same product can appear on two lines of
  * one invoice and each line moved its own goods. Callers walk the lines in
  * order and take the head, exactly as the void path already does with the
@@ -670,6 +722,7 @@ export function readBatchSplits(
       batchId: stockLedgerBatches.batchId,
       batchRef: productBatches.batchRef,
       qtyInMilli: stockLedgerBatches.qtyInMilli,
+      qtyOutMilli: stockLedgerBatches.qtyOutMilli,
     })
     .from(stockLedgerBatches)
     .innerJoin(stockLedger, eq(stockLedger.id, stockLedgerBatches.ledgerId))
@@ -686,13 +739,62 @@ export function readBatchSplits(
 
   const byMovement = new Map<number, Allocation[]>();
   for (const row of rows) {
-    if (row.qtyInMilli <= 0) continue;
+    const moved = row.qtyInMilli + row.qtyOutMilli;
+    if (moved <= 0) continue;
     const split = byMovement.get(row.ledgerId) ?? [];
-    split.push({ batchId: row.batchId, batchRef: row.batchRef, qtyMilli: row.qtyInMilli });
+    split.push({ batchId: row.batchId, batchRef: row.batchRef, qtyMilli: moved });
     byMovement.set(row.ledgerId, split);
   }
 
   return [...byMovement.values()];
+}
+
+export interface ExpiryOutlook {
+  /**
+   * Stock that has NOT passed its date, in milli-units.
+   *
+   * The number that decides whether a sale goes through untroubled. Anything
+   * above this is heading for a question.
+   */
+  goodQtyMilli: number;
+  /**
+   * The soonest date among that good stock, or null when none of it is dated.
+   * This is the crate first-expiry-first-out will reach for next.
+   */
+  soonestExpiry: string | null;
+}
+
+/**
+ * What each product's dates look like, as at a business day, in one pass.
+ *
+ * For the till, which needs this for every product on screen and cannot afford
+ * a query per line. Undated stock counts as good, because it is: nothing about
+ * it has run out.
+ */
+export function getExpiryOutlook(db: Db, businessDate: string): Map<number, ExpiryOutlook> {
+  const rows = db
+    .select({
+      productId: productBatches.productId,
+      goodQtyMilli: sql<number>`COALESCE(SUM(${productBatches.qtyMilli}), 0)`,
+      soonestExpiry: sql<string | null>`MIN(${productBatches.expiryDate})`,
+    })
+    .from(productBatches)
+    .where(
+      and(
+        eq(productBatches.isClosed, false),
+        sql`${productBatches.qtyMilli} > 0`,
+        sql`(${productBatches.expiryDate} IS NULL OR ${productBatches.expiryDate} >= ${businessDate})`,
+      ),
+    )
+    .groupBy(productBatches.productId)
+    .all();
+
+  return new Map(
+    rows.map((row) => [
+      row.productId,
+      { goodQtyMilli: row.goodQtyMilli, soonestExpiry: row.soonestExpiry },
+    ]),
+  );
 }
 
 export function verifyProductBatches(db: Db, productId: number): BatchVerification[] {

@@ -9,6 +9,7 @@ import { businessSettings, paymentAccounts } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { listProducts } from '@/services/catalog.service';
+import { getExpiryOutlook } from '@/services/inventory.service';
 import { listCustomers } from '@/services/customer.service';
 import { toBusinessDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -24,16 +25,26 @@ export default async function NewSalePage() {
 
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
 
-  const products = listProducts(db, { limit: 500 }).map((product) => ({
-    id: product.id,
-    name: product.name,
-    sku: product.sku,
-    barcode: product.barcode,
-    unit: product.unit,
-    sellingPrice: product.sellingPrice as number,
-    qtyOnHandMilli: product.qtyOnHand as number,
-    trackInventory: product.trackInventory,
-  }));
+  // One aggregate for the whole catalogue rather than a query per line: the
+  // till renders every product and cannot afford the second shape.
+  const today = toBusinessDate(new Date());
+  const outlook = getExpiryOutlook(db, today);
+
+  const products = listProducts(db, { limit: 500 }).map((product) => {
+    const dates = outlook.get(product.id);
+    return {
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      barcode: product.barcode,
+      unit: product.unit,
+      sellingPrice: product.sellingPrice as number,
+      qtyOnHandMilli: product.qtyOnHand as number,
+      trackInventory: product.trackInventory,
+      goodQtyMilli: dates?.goodQtyMilli ?? 0,
+      soonestExpiry: dates?.soonestExpiry ?? null,
+    };
+  });
 
   const customers = listCustomers(db).map((customer) => ({
     id: customer.id,
@@ -88,6 +99,9 @@ export default async function NewSalePage() {
           taxComponents={getTaxProfile(db).components}
           taxInclusive={settings?.taxInclusive ?? false}
           mayOverridePrice={can(user, 'sales', 'edit')}
+          maySellExpired={can(user, 'inventory', 'void')}
+          expiryWarningDays={settings?.expiryWarningDays ?? 30}
+          expiryBlocksSales={settings?.expiryBlocksSales ?? true}
           cartSeed={randomUUID()}
         />
       )}

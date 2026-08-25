@@ -23,7 +23,7 @@ import { writeAudit } from './audit.service';
 import { postJournalEntry, type Actor } from './journal.service';
 import { recordStockMovement } from './inventory.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
-import { getSaleOutstanding } from './sale.service';
+import { batchSplitBySaleItem, getSaleOutstanding } from './sale.service';
 import { batchSplitByPurchaseItem } from './purchase.service';
 import { readSaleTaxes, taxAccountFor, writeSaleTaxes } from './tax.service';
 import { taxShareOf } from '@/domain/tax/components';
@@ -265,6 +265,9 @@ export function createCustomerReturn(
     );
 
     // --- stock back in, at the original cost -----------------------------
+    /** Which crates each line of the original receipt was picked from. */
+    const soldFrom = batchSplitBySaleItem(tx, originalSaleId);
+
     resolved.forEach((line, index) => {
       const product = tx
         .select()
@@ -273,11 +276,21 @@ export function createCustomerReturn(
         .get();
 
       if (product?.trackInventory && !isZero(line.costShare)) {
+        // Goods go back into the crates they were picked from. A partial return
+        // is split across them in proportion — see `allocateProportional` —
+        // because there is no other defensible answer: put four tins of a line
+        // that drew from two crates back into whichever one is handy and the
+        // dates on that shelf stop describing the stock.
+        const cameFrom = soldFrom.get(line.item.id);
+
         recordStockMovement(tx, {
           productId: line.item.productId,
           direction: 'IN',
           qty: line.request.qty,
           totalCost: line.costShare,
+          ...(cameFrom === undefined
+            ? {}
+            : { batch: { kind: 'SOURCE' as const, allocations: cameFrom } }),
           movementType: 'SALE_RETURN',
           sourceType: 'SALE_RETURN',
           sourceId: returnSale.id,

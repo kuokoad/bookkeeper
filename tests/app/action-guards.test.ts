@@ -191,6 +191,38 @@ describe('selling below the shop price is its own right', () => {
   });
 });
 
+describe('selling stock that has passed its date is a separate right', () => {
+  /**
+   * The mirror of the price gate above, and it matters for the same reason:
+   * `allowExpiredStock` defaults to false in the service, and that default is
+   * only worth something if the action derives the flag from the signed-in
+   * user rather than from what the till happened to post.
+   *
+   * The second half is the subtler one. The approval is read from the name of
+   * the SUBMIT BUTTON, which the browser sends only when that button is the one
+   * pressed. Move it into the cart JSON and it would survive in the payload
+   * after the cashier edited the cart and pressed the ordinary button — an
+   * override nobody granted, on a sale nobody was asked about.
+   */
+  const source = readFileSync(join(ACTIONS_DIR, 'sale.actions.ts'), 'utf8');
+
+  it('derives the right from the caller, not from a constant', () => {
+    expect(source).toMatch(/const maySellExpired = can\(actor, 'inventory', 'void'\)/);
+    expect(source).toContain('allowExpiredStock: sellExpired === true && maySellExpired');
+  });
+
+  it('never passes a literal true', () => {
+    expect(source).not.toMatch(/allowExpiredStock:\s*true/);
+  });
+
+  it('reads the approval from the pressed button, not from the cart', () => {
+    expect(source).toContain("formData.get('sellExpired')");
+
+    const cart = source.slice(source.indexOf('const cartSchema'), source.indexOf('export async'));
+    expect(cart, 'the cart must not be able to carry an override').not.toContain('sellExpired');
+  });
+});
+
 describe('a sale carries a name for the cart it came from', () => {
   /**
    * A sale posted twice is the duplicate no integrity check can find: each copy

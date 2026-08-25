@@ -11,7 +11,7 @@ import { createSale, voidSale, type SaleLineRequest, type TenderRequest } from '
 import { recordCustomerPayment, voidCustomerPayment } from '@/services/customer-payment.service';
 import { parseMoney, ZERO, type Minor } from '@/domain/money';
 import { parsePositiveQty } from '@/domain/quantity';
-import { isDomainError } from '@/domain/errors';
+import { ExpiredStockError, isDomainError } from '@/domain/errors';
 import { isValidBusinessDate } from '@/lib/format';
 import type { FormState } from './auth.actions';
 
@@ -27,6 +27,20 @@ export interface SaleFormState extends FormState {
   receiptNo?: string;
   saleId?: number;
   changeMinor?: number;
+  /**
+   * The sale was stopped because the only stock left has passed its date.
+   *
+   * Distinct from `error` on purpose: this is not a mistake the cashier made
+   * and not something retrying will fix. It is a question for somebody, and the
+   * till has to be able to tell the difference to ask it.
+   */
+  expired?: {
+    productName: string;
+    qtyExpired: string;
+    batchRefs: string[];
+    /** Whether the person at the till may answer the question themselves. */
+    mayOverride: boolean;
+  };
 }
 
 /** The cart, posted as one JSON field. Validated field by field below. */
@@ -79,6 +93,12 @@ export async function createSaleAction(
   // check is not left to this layer.
   const mayOverridePrice = can(actor, 'sales', 'edit');
 
+  // And selling stock that has passed its date is a third right again. Mapped
+  // to `inventory:void` — the right to write stock off — because selling goods
+  // that are past their date and writing them off are the same level of trust
+  // over the same goods. Owners hold it automatically.
+  const maySellExpired = can(actor, 'inventory', 'void');
+
   let payload: unknown;
   try {
     payload = JSON.parse(String(formData.get('cart') ?? '{}'));
@@ -93,6 +113,23 @@ export async function createSaleAction(
 
   const { businessDate, customerId, note, items, tenders, invoiceDiscount, clientRef } =
     parsed.data;
+
+  /**
+   * A deliberate second attempt at a sale that was stopped on a date.
+   *
+   * Read from the FORM, not from the cart, and specifically from the name of
+   * the button that submitted it — a submit button's name/value reaches the
+   * server only when that button is the one pressed. So approving expired
+   * stock is tied to the act of pressing "Sell it anyway", and cannot survive
+   * into a later ordinary submission of an edited cart.
+   *
+   * It grants nothing by itself: the right is re-read from the database above,
+   * and the service refuses regardless if this person does not hold it.
+   */
+  const sellExpired = formData.get('sellExpired') === 'yes';
+  const overrideReason = String(formData.get('overrideReason') ?? '')
+    .trim()
+    .slice(0, 200);
 
   // Parse money and quantities with the strict domain parsers. Anything
   // ambiguous is rejected rather than coerced.
@@ -148,6 +185,10 @@ export async function createSaleAction(
         note,
         clientRef,
         allowPriceOverride: mayOverridePrice,
+        allowExpiredStock: sellExpired === true && maySellExpired,
+        ...(overrideReason && overrideReason.length > 0
+          ? { overrideReason }
+          : {}),
       },
       { id: actor.id, username: actor.username },
     );
@@ -164,6 +205,25 @@ export async function createSaleAction(
       changeMinor: result.change,
     };
   } catch (error) {
+    if (error instanceof ExpiredStockError) {
+      // Handed to the till as its own thing, with what it needs to ask: which
+      // goods, how much of them, which crates, and whether this person can
+      // answer. `mayOverride` only decides what the till SHOWS — the service
+      // has already refused, and will refuse again to anyone without the right.
+      const details = error.details as {
+        productName?: string;
+        qtyExpired?: string;
+        batchRefs?: string[];
+      };
+      return {
+        expired: {
+          productName: details.productName ?? 'this product',
+          qtyExpired: details.qtyExpired ?? '',
+          batchRefs: details.batchRefs ?? [],
+          mayOverride: maySellExpired,
+        },
+      };
+    }
     if (isDomainError(error)) return { error: error.userMessage };
     throw error;
   }

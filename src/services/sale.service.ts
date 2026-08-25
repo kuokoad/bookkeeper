@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
@@ -23,7 +23,8 @@ import { qty as makeQty, type Qty } from '@/domain/quantity';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
-import { recordStockMovement } from './inventory.service';
+import { readBatchSplits, recordStockMovement } from './inventory.service';
+import type { Allocation } from '@/domain/inventory/batches';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { getCustomerBalance } from './customer.service';
 import {
@@ -104,6 +105,27 @@ export interface CreateSaleInput {
    * Set from the caller's `sales:edit` permission. Owners always hold it.
    */
   allowPriceOverride?: boolean;
+  /**
+   * Whether this sale may reach into stock that has passed its date.
+   *
+   * DEFAULTS TO FALSE, for the same reason as the price gate above: the
+   * decision is made here, once, rather than trusted to each caller. Selling
+   * expired goods leaves the books in perfect order — the sale happened, the
+   * money came in, and no balance check anywhere will ever notice.
+   *
+   * Note what this flag is NOT. It is not "prefer expired stock", and it does
+   * not change which batch an ordinary sale draws from. Expired stock is
+   * skipped in silence whenever good stock covers the quantity, whoever is at
+   * the till. This only decides what happens when there is nothing else left:
+   * refuse the sale, or let this person take it and record that they did.
+   *
+   * Set from the caller's `inventory:void` permission — the right to write
+   * stock off. Selling goods that are past their date and writing them off are
+   * the same level of trust over the same goods. Owners always hold it.
+   */
+  allowExpiredStock?: boolean;
+  /** What the person approving it said, if anything. Recorded in the audit. */
+  overrideReason?: string | undefined;
 }
 
 export interface CreatedSale {
@@ -339,6 +361,8 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
     // --- lines, stock and COGS -------------------------------------------
     const allowNegative = settings.allowNegativeStock;
     const cogsParts: Minor[] = [];
+    /** Batch refs of expired stock this sale was approved to take. */
+    const expiredSold: string[] = [];
 
     resolved.forEach((entry, index) => {
       const line = totals.lines[index];
@@ -361,9 +385,14 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
           userId: actor.id,
           allowNegative,
           isDemo: input.isDemo ?? false,
+          // First-expiry-first-out. Without the flag this throws
+          // `ExpiredStockError` rather than quietly selling stock that has
+          // passed its date — and only when there is no good stock left.
+          batch: { kind: 'PICK', allowExpired: input.allowExpiredStock === true },
         });
         unitCost = movement.unitCost;
         totalCost = movement.totalCost;
+        expiredSold.push(...movement.expiredTaken);
       }
 
       cogsParts.push(totalCost);
@@ -538,6 +567,36 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
       at: occurredAt,
     });
 
+    /**
+     * A separate row when somebody sold stock that had passed its date.
+     *
+     * Its own record rather than a field on the sale's, because this is the
+     * question an owner comes back to ask months later — who let that go out,
+     * and which crate was it — and it should be findable by looking for the
+     * action rather than by reading every sale.
+     */
+    if (expiredSold.length > 0) {
+      writeAudit(tx, {
+        // 'CREATE' of an `expiry_override`, rather than a new audit action.
+        // `AUDIT_ACTIONS` is a CHECK constraint on an append-only table, so a
+        // sixteenth value would cost a rebuild of the whole audit log for one
+        // word — and `entityType` is already how this codebase distinguishes a
+        // record that is not about a row somewhere, as `backup` does.
+        action: 'CREATE',
+        entityType: 'expiry_override',
+        entityId: sale.id,
+        userId: actor.id,
+        username: actor.username,
+        summary: `${receiptNo}: sold expired stock from ${expiredSold.join(', ')}`,
+        metadata: {
+          batchRefs: expiredSold,
+          businessDate: input.businessDate,
+          ...(input.overrideReason === undefined ? {} : { reason: input.overrideReason }),
+        },
+        at: occurredAt,
+      });
+    }
+
     return {
       saleId: sale.id,
       receiptNo,
@@ -658,10 +717,32 @@ export function voidSale(
       now,
     );
 
+    /**
+     * Which crates the sale emptied, so the void can refill those and no others.
+     *
+     * Put the units back anywhere else and the dates on the shelf become
+     * fiction: a tin sold from a batch that runs out in March comes back into
+     * one that runs out next year, and nothing will ever notice. Consumed per
+     * line, because the same product can appear on two lines of one receipt.
+     *
+     * Empty for a sale made before batches existed, which is not a failure —
+     * that sale never named a crate, so its void does not either.
+     */
+    const soldFrom = new Map<number, Allocation[][]>();
+    for (const item of items) {
+      if (soldFrom.has(item.productId)) continue;
+      soldFrom.set(
+        item.productId,
+        readBatchSplits(tx, { sourceType: 'SALE', sourceId: saleId }, item.productId),
+      );
+    }
+
     items.forEach((item, index) => {
       const product = tx.select().from(products).where(eq(products.id, item.productId)).get();
 
       if (product?.trackInventory) {
+        const cameFrom = soldFrom.get(item.productId)?.shift();
+
         // Back at the ORIGINAL cost, from the line snapshot.
         recordStockMovement(tx, {
           productId: item.productId,
@@ -677,6 +758,9 @@ export function voidSale(
           userId: actor.id,
           note: `Void of ${original.receiptNo}`,
           isDemo: original.isDemo,
+          ...(cameFrom === undefined || cameFrom.length === 0
+            ? {}
+            : { batch: { kind: 'SOURCE' as const, allocations: cameFrom } }),
         });
       }
 
@@ -1002,4 +1086,47 @@ export function getSalesSummary(db: Db, from: string, to: string) {
     cogs,
     grossProfit: subtract(total, cogs),
   };
+}
+
+/**
+ * Map each line of a receipt to the batch split it was picked from.
+ *
+ * The mirror of `batchSplitByPurchaseItem`, and it works the same way:
+ * `readBatchSplits` returns one split per movement in the order the movements
+ * were made, which is the order the lines were written, so the lines are walked
+ * the same way and each takes the head of its product's queue.
+ *
+ * Lines whose product does not track stock moved nothing and take nothing, or
+ * every line after them would be paired with the wrong crate.
+ */
+export function batchSplitBySaleItem(tx: Tx, saleId: number): Map<number, Allocation[]> {
+  const lines = tx
+    .select({
+      id: saleItems.id,
+      productId: saleItems.productId,
+      trackInventory: products.trackInventory,
+    })
+    .from(saleItems)
+    .innerJoin(products, eq(products.id, saleItems.productId))
+    .where(eq(saleItems.saleId, saleId))
+    .orderBy(asc(saleItems.lineNo))
+    .all();
+
+  const queues = new Map<number, Allocation[][]>();
+  const byLine = new Map<number, Allocation[]>();
+
+  for (const line of lines) {
+    if (!line.trackInventory) continue;
+
+    let queue = queues.get(line.productId);
+    if (queue === undefined) {
+      queue = readBatchSplits(tx, { sourceType: 'SALE', sourceId: saleId }, line.productId);
+      queues.set(line.productId, queue);
+    }
+
+    const split = queue.shift();
+    if (split !== undefined && split.length > 0) byLine.set(line.id, split);
+  }
+
+  return byLine;
 }

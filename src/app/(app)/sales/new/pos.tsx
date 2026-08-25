@@ -9,6 +9,8 @@ import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
+import { formatDate } from '@/lib/format';
+import { daysBetween } from '@/domain/business-date';
 import { minor } from '@/domain/money';
 import {
   taxOnNet,
@@ -27,6 +29,10 @@ export interface PosProduct {
   sellingPrice: number;
   qtyOnHandMilli: number;
   trackInventory: boolean;
+  /** Stock that has not passed its date. Everything undated counts. */
+  goodQtyMilli: number;
+  /** Soonest date among that good stock — the crate picking reaches for next. */
+  soonestExpiry: string | null;
 }
 
 export interface PosCustomer {
@@ -52,6 +58,8 @@ interface CartLine {
   discount: string;
   qtyOnHandMilli: number;
   trackInventory: boolean;
+  goodQtyMilli: number;
+  soonestExpiry: string | null;
 }
 
 // --- money helpers (display only; the server recomputes everything) --------
@@ -105,6 +113,9 @@ export function Pos({
   taxComponents,
   taxInclusive,
   mayOverridePrice,
+  maySellExpired,
+  expiryWarningDays,
+  expiryBlocksSales,
   cartSeed,
 }: {
   products: PosProduct[];
@@ -120,6 +131,18 @@ export function Pos({
    * refused — `createSale` makes the actual decision, from the same right.
    */
   mayOverridePrice: boolean;
+  /**
+   * Whether this person may sell stock that has passed its date.
+   *
+   * Decides only what this screen OFFERS when a sale is stopped — the
+   * confirmation, or the message to go and find somebody. `createSale` makes
+   * the actual decision, from the same right, and refuses either way.
+   */
+  maySellExpired: boolean;
+  /** How many days ahead the shop wants to be told about. */
+  expiryWarningDays: number;
+  /** Whether this shop stops a sale on a date at all. */
+  expiryBlocksSales: boolean;
   /**
    * Random, generated once per page load ON THE SERVER. Two tills opening this
    * screen must never arrive at the same cart name, or one would be handed the
@@ -199,6 +222,8 @@ export function Pos({
           discount: '',
           qtyOnHandMilli: product.qtyOnHandMilli,
           trackInventory: product.trackInventory,
+          goodQtyMilli: product.goodQtyMilli,
+          soonestExpiry: product.soonestExpiry,
         },
       ];
     });
@@ -480,6 +505,28 @@ export function Pos({
                 const lineTotal = bad ? 0 : Math.round((price * qtyMilli) / 1000) - discount;
                 const short = line.trackInventory && qtyMilli > line.qtyOnHandMilli;
 
+                /**
+                 * The date situation for this line, in the SAME place the stock
+                 * warning already lives. Two stock-status paths on one line is
+                 * how a busy screen starts contradicting itself.
+                 *
+                 * `needsApproval` is not "there is expired stock" — an old
+                 * crate at the back is nobody's problem while good stock covers
+                 * the sale, and saying so would be noise the cashier learns to
+                 * scroll past. It is specifically: this quantity cannot be met
+                 * without reaching into it.
+                 */
+                const needsApproval =
+                  line.trackInventory &&
+                  expiryBlocksSales &&
+                  !short &&
+                  qtyMilli > line.goodQtyMilli;
+
+                const expiringSoon =
+                  line.soonestExpiry !== null &&
+                  !needsApproval &&
+                  daysBetween(today, line.soonestExpiry) <= expiryWarningDays;
+
                 return (
                   <li key={line.key} className="px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
@@ -589,6 +636,33 @@ export function Pos({
                     {short && (
                       <p className="mt-1.5 text-xs font-medium text-warning">
                         Only {fmtQty(line.qtyOnHandMilli)} {line.unit} in stock.
+                      </p>
+                    )}
+
+                    {needsApproval && (
+                      <p className="mt-1.5 text-xs font-medium text-warning">
+                        {/*
+                          Two sentences, because "Only 0 pc still in date. The
+                          rest needs approval" is not English — and none of the
+                          stock being in date is the commonest case of all, not
+                          an edge one.
+                        */}
+                        {line.goodQtyMilli > 0
+                          ? `Only ${fmtQty(line.goodQtyMilli)} ${line.unit} still in date.`
+                          : 'None of this is still in date.'}
+                        {maySellExpired
+                          ? line.goodQtyMilli > 0
+                            ? ' You will be asked to approve the rest.'
+                            : ' You will be asked to approve it.'
+                          : line.goodQtyMilli > 0
+                            ? ' The rest needs approval from someone senior.'
+                            : ' Selling it needs approval from someone senior.'}
+                      </p>
+                    )}
+
+                    {expiringSoon && (
+                      <p className="mt-1.5 text-xs text-content-muted">
+                        Expires {formatDate(line.soonestExpiry!)}
                       </p>
                     )}
                   </li>
@@ -825,6 +899,65 @@ export function Pos({
             <Alert tone="warning">
               Some items are more than you have in stock. The sale will be refused unless negative
               stock is switched on in Settings.
+            </Alert>
+          )}
+
+          {/*
+            The block, and the one way past it.
+
+            Deliberately below the totals and above the button: it is the last
+            thing between this person and the sale, and it appears exactly where
+            they were already looking. It is NOT phrased as an error, because
+            the cashier did nothing wrong — the goods on the shelf are old.
+          */}
+          {state.expired && (
+            <Alert
+              tone={state.expired.mayOverride ? 'warning' : 'danger'}
+              title={`${state.expired.productName} has passed its date`}
+            >
+              <p>
+                {state.expired.qtyExpired} {state.expired.qtyExpired === '1' ? 'unit' : 'units'} of
+                this sale can only come from {state.expired.batchRefs.join(', ')}, which is out of
+                date. Nothing has been saved.
+              </p>
+
+              {state.expired.mayOverride ? (
+                <div className="mt-3 space-y-2">
+                  <label
+                    htmlFor="override-reason"
+                    className="block text-xs font-medium text-content-muted"
+                  >
+                    Why (optional)
+                  </label>
+                  <TextInput
+                    id="override-reason"
+                    name="overrideReason"
+                    placeholder="Customer was told"
+                    className="h-10"
+                  />
+                  {/*
+                    `name` and `value` on a SUBMIT button reach the server only
+                    when that button is the one pressed. So the approval is tied
+                    to this click and cannot leak into an ordinary "Complete
+                    sale" afterwards — including on a cart edited in between.
+                  */}
+                  <Button
+                    type="submit"
+                    name="sellExpired"
+                    value="yes"
+                    variant="secondary"
+                    fullWidth
+                    disabled={pending}
+                  >
+                    {pending ? 'Saving…' : 'Sell it anyway'}
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-2">
+                  Someone who can approve it has to allow this sale, or the goods should be written
+                  off.
+                </p>
+              )}
             </Alert>
           )}
 

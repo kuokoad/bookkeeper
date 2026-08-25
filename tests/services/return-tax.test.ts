@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
+import { verifyBatchCoverage } from '@/services/inventory.service';
 import { saleItems } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { createProduct } from '@/services/catalog.service';
@@ -69,7 +70,21 @@ beforeEach(() => {
   CUSTOMER = createCustomer(context.db, { name: 'Mensah Provisions' }, ACTOR);
 });
 
-afterEach(() => context.cleanup());
+afterEach(() => {
+  /**
+   * Whatever the test above did, every unit of stock still belongs to a batch.
+   *
+   * Here rather than inside each test because these files exercise the paths
+   * most likely to drift — voids and returns, where stock goes back and the
+   * question of WHICH crate it goes back to has a wrong answer that nothing
+   * else would notice. A test added later is covered without anybody
+   * remembering to add the line.
+   */
+  for (const row of verifyBatchCoverage(context.db)) {
+    expect(row.ok, `coverage for product ${row.productId}`).toBe(true);
+  }
+  context.cleanup();
+});
 
 describe('returning goods that carried tax', () => {
   it('gives the tax back to the taxman as well as the goods to the shelf', () => {
