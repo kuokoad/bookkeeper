@@ -1,159 +1,175 @@
-# Deploying to Hostinger from GitHub
+# Running it in the shop
 
-For Hostinger **Business** web hosting or **Cloud** (Node.js is not available on
-the Single or Premium shared plans). Everything below also applies to any host
-that builds from git and gives you no terminal.
+This application is local-first, and the shop's own computer is the server.
+There is no hosting company in this picture, no deploy step, and nothing that
+rewrites your folder while you are trading.
 
----
+That is not a compromise. It is what the code already assumes: the session
+cookie is not marked `Secure` by default because the shop runs over plain HTTP
+on its own network, SQLite is set to `synchronous = FULL` so a committed sale
+survives the power going out mid-request, and the whole of the shop's records
+live in one file you can copy.
 
-## The one thing that decides whether this works
-
-**`DATABASE_PATH` must point outside the application folder.**
-
-Hostinger deploys into `/home/{username}/domains/{domain}/nodejs`. Every deploy
-rewrites that folder. If the database sits inside it, **a redeploy destroys the
-shop's accounts** — every sale, every payment, gone, with no error to warn you.
-
-So put it in the home directory, beside the app rather than inside it:
-
-```
-DATABASE_PATH=/home/YOUR_USERNAME/bookkeeper-data/bookkeeper.db
-```
-
-The application creates that directory on first start if it does not exist.
-
-> **Verify this before you trade on it.** Deploy, sign in, record one sale, then
-> press Deploy again. If the sale is still there, you are safe. If it is gone,
-> stop — the plan cannot hold your records, and you need a VPS with a persistent
-> disk instead. Test this while the only thing you can lose is a fake sale.
+> **Hostinger and other managed Node hosts are not supported.** `better-sqlite3`
+> is a native module and needs to be compiled or matched to a prebuilt binary on
+> the machine that runs it, which those plans do not reliably allow. A VPS works
+> — you control the runtime there — but everything below is the simpler answer.
 
 ---
 
-## There is no terminal, and the app is built for that
+## What you need
 
-Hostinger runs `npm install` and the build for you, but you cannot run commands.
-`npm run db:migrate`, `db:seed`, `backup` and `preflight` are all unavailable —
-so the app does those itself:
+- A Windows PC that stays switched on while the shop trades. It does not need to
+  be fast; it needs to be reliable and backed up.
+- **Node 22 or newer.** The application refuses to start on anything older.
+- Somewhere off this machine to keep backups. A phone, a USB stick, an email to
+  yourself — anywhere that does not share a fate with the computer.
 
-| Normally a command | On a managed host |
-| --- | --- |
-| `npm run db:migrate` | Runs at server start ([src/instrumentation.ts](src/instrumentation.ts)) |
-| `npm run db:seed` | The chart of accounts is seeded at start too. **Demo data is never seeded** |
-| `npm run backup` | **Settings → Health & backup → Download a backup** |
-| `npm run preflight` | **Settings → Health & backup** |
+---
 
-Startup is safe to repeat: migrations are versioned, and the seed checks for
-each row before inserting. A restart never resets your shop.
+## First install
+
+Run these in the project folder, in this order.
+
+```bash
+npm ci                 # exactly the dependency versions this app was tested with
+npm run env:init       # writes .env with a fresh random SESSION_SECRET
+```
+
+`env:init` never overwrites an existing `.env`, so it is safe to run twice.
+
+Now open `.env` and set three values for a real shop:
+
+```
+NODE_ENV=production
+SEED_DEMO_DATA=false
+COOKIE_SECURE=false
+```
+
+`SEED_DEMO_DATA=false` matters more than it looks: **there is no way to remove
+demo records once they are in.** They are tagged, and `npm run preflight` will
+refuse to pass while any exist, but nothing deletes them — the only route back
+is `npm run db:reset -- --force`, which deletes the whole database file and
+refuses to run at all once `NODE_ENV=production`. A shop machine should simply
+never seed them.
+
+Then build it and start it:
+
+```bash
+npm run db:migrate     # also runs at startup; this just gets errors out early
+npm run build
+npm start -- -p 5177
+```
+
+Open <http://localhost:5177>. The first visit shows the setup screen, where you
+create the shop and its owner account. That screen closes for good once an owner
+exists.
+
+---
+
+## Reaching it from the counter, the office, a phone
+
+`next start` already listens on every network interface, so nothing needs
+changing in the app. Other devices reach it at the PC's own address:
+
+```
+http://<this-pc-on-the-network>:5177
+```
+
+Two things to sort out once:
+
+**Let it through the Windows firewall.** In an Administrator terminal:
+
+```
+netsh advfirewall firewall add rule name="Shop Bookkeeper" dir=in action=allow protocol=TCP localport=5177
+```
+
+**Pin the address.** Most routers hand out addresses that can change after a
+reboot, which would quietly break every bookmark in the shop. Reserve a fixed
+address for this PC in the router's settings, or set a static one on the machine.
+
+### Do not put this on the internet
+
+No port forwarding, no exposing 5177 through the router. Over plain HTTP,
+anybody between the browser and the PC can read the session cookie and every
+figure that passes. On the shop's own network that is an acceptable, deliberate
+trade; across the internet it is not.
+
+If you ever do need access from outside, that is a different setup: a VPN back
+into the shop, or a reverse proxy terminating HTTPS in front of the app with
+`COOKIE_SECURE=true` and `TRUST_PROXY_HEADERS=true`. Both of those settings are
+documented in `env.example` and neither should be changed speculatively.
+
+---
+
+## Keeping it running
+
+Starting it by hand works, but the shop should not depend on somebody
+remembering. Use **Task Scheduler**:
+
+- Trigger: *At log on*
+- Action: start a program — `npm`, arguments `start -- -p 5177`, "Start in" set
+  to the project folder
+- Tick *Run whether user is logged on or not* if the PC is left at a lock screen
+
+Restarting is harmless. Migrations are versioned and skip what is already
+applied, the chart of accounts is checked rather than rewritten, and a sale that
+was committed is on disk. Nothing resets your shop.
 
 If the database cannot be prepared, the server **refuses to start** rather than
-serving pages against a half-built schema. Check the deployment log.
+serving pages against a half-built schema. Read the terminal output; the reason
+is printed with the path it tried.
 
 ---
 
-## Steps
+## Backups
 
-### 1. Connect the repository
+**Settings → Health & backup → Download a backup**, and keep the file somewhere
+other than this computer.
 
-In hPanel: **Websites → your domain → Node.js → Create application**, choose
-**GitHub**, and select `kuokoad/bookkeeper` and the `main` branch. The repo is
-private, so authorise Hostinger's GitHub access when prompted.
+The backup is verified before you get it: it must open, its foreign keys must be
+intact, and the books inside it must balance. A copy that fails any of those is
+discarded rather than handed to you looking like a safety net.
 
-Next.js is detected automatically. Build and start commands are the defaults:
+The app now tells you when you are behind. The Health screen shows when the last
+backup was taken and how many entries have been posted since, and the dashboard
+raises it once there is a day of unsaved trading, or after a week regardless.
+`npm run backup` from the command line counts too — it records itself, so taking
+one that way clears the warning.
 
-- Build: `npm run build`
-- Start: `npm start`
-- Node version: **22 or 24** (the app requires 22 or newer; CI tests both)
-
-### 2. Set the environment variables
-
-Under the application's **Environment variables**:
-
-| Variable | Value | Why |
-| --- | --- | --- |
-| `SESSION_SECRET` | 64 random hex characters | Signs sessions. **Generate a fresh one** — never reuse the one from your PC |
-| `DATABASE_PATH` | `/home/YOUR_USERNAME/bookkeeper-data/bookkeeper.db` | Outside the deploy folder. See above |
-| `NODE_ENV` | `production` | Keeps developer error detail off the screen |
-| `SEED_DEMO_DATA` | `false` | Demo records must never enter real books |
-| `COOKIE_SECURE` | `true` | Hostinger serves over HTTPS, so the session cookie should be HTTPS-only |
-| `NPM_CONFIG_INCLUDE` | `dev` | Keeps `npm install` installing the packages the build needs. **Easy to miss, and the build fails without it** — see below |
-
-#### `NPM_CONFIG_INCLUDE=dev` is not optional
-
-npm's `omit` setting defaults to `dev` whenever `NODE_ENV` is `production`. So
-the moment you set `NODE_ENV` above, `npm install` stops installing
-`devDependencies` — and the build needs seven of them: `@tailwindcss/postcss`,
-`tailwindcss`, `typescript`, and the four `@types/*` packages. The deploy then
-fails with a module-not-found error naming whichever one the build reached
-first, usually `@tailwindcss/postcss`.
-
-Nothing is broken when this happens. npm did exactly what it was told.
-
-`include` beats `omit` whatever order they arrive in, so this one variable
-settles it. Check it on your own machine:
-
-```bash
-NODE_ENV=production npm config get omit                        # dev
-NODE_ENV=production NPM_CONFIG_INCLUDE=dev npm config get omit # (empty)
-```
-
-It reads like a flaky install, and the usual advice for that — delete
-`node_modules` and `package-lock.json` and install again — is wrong here twice
-over. There is no terminal on this plan to run it in, and deleting the lockfile
-would discard the pin holding `better-sqlite3` at a version with a prebuilt
-binary for Node 22 and 24, turning one clear failure into a compile error that
-looks unrelated.
-
-Generate the secret on your own machine:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-`.env` is git-ignored and is never deployed. These values live only in hPanel.
-
-### 3. Deploy, then set up the shop
-
-Press Deploy. On first visit the site opens the **setup screen** to create your
-shop and its owner account. That screen closes permanently once an owner exists.
-
-### 4. Check it before trusting it
-
-Go to **Settings → Health & backup**. Every check should read OK. Then do the
-redeploy test described at the top of this page.
-
-### 5. Take a backup, and keep taking them
-
-**Settings → Health & backup → Download a backup.** The file is verified before
-you get it: it must open, its foreign keys must be intact, and the books inside
-it must balance. A copy that fails is discarded rather than handed over.
-
-Do this at the end of each trading day and keep the files somewhere other than
-the server. There is no cron on this plan, so nothing will do it for you.
-
-To restore, put the downloaded file back at `DATABASE_PATH` with the app
-stopped. Each backup is one self-contained file — no companions to remember.
+Nothing takes a backup for you. Do it at the end of each trading day.
 
 ---
 
-## Notes
+## Before you trade on it
 
-**`output: 'standalone'` is deliberately not used.** It is for shipping a
-prebuilt folder without `npm install`, which is not how a git deploy works. It
-also copies the project root when it cannot trace paths built from
-`process.cwd()` — locally that put `.env` and `data/bookkeeper.db` inside
-`.next/standalone`, i.e. the session secret and the entire set of accounts in a
-folder someone might reasonably zip and upload. If you ever do use standalone,
-delete `.env`, `data/` and `backups/` from the output first.
+```bash
+npm run preflight
+```
 
-**Do not use hPanel's "upload a compressed project" option** for the same
-reason: it would upload your local `.env` and `data/` folder. Deploy from git,
-where both are ignored.
+It answers, one by one: is the session secret real, is demo seeding off, are
+migrations applied, is the database uncorrupted, **do the books balance**, does
+the stock match its own movement history, is there an active owner, and are
+there demo records or published demo credentials still present.
 
-**Restarts are harmless.** SQLite is configured with `synchronous = FULL`, so a
-committed sale survives the process being killed mid-request.
+Anything that would misstate money or let the wrong person in is a failure, not
+a warning. Do not start trading with failures on that list.
 
-**One shop per deployment.** The application holds one set of books; running two
-sites against one database file is not supported.
+---
+
+## Updating
+
+```bash
+git pull
+npm ci
+npm run build
+```
+
+Then restart it. Migrations apply themselves at startup.
+
+Your data is never touched by an update: `data/` is git-ignored, so it is not
+part of what `git pull` replaces, and it does not live inside anything that gets
+rebuilt.
 
 ---
 
@@ -161,9 +177,9 @@ sites against one database file is not supported.
 
 | Symptom | Cause |
 | --- | --- |
-| Build fails on `@tailwindcss/postcss`, `tailwindcss`, `typescript` or an `@types/*` package | `NODE_ENV=production` made npm skip `devDependencies`. Add `NPM_CONFIG_INCLUDE=dev` and redeploy |
-| Build fails on `better-sqlite3` | The Node version is below 22, or no prebuilt binary matched. Set Node to 22 or 24 and redeploy |
-| Site loads but every page errors | The database could not be prepared. Read the deployment log — the reason is printed with the path it tried |
-| Records vanish after a deploy | `DATABASE_PATH` is inside the deploy folder. Move it to the home directory. **Restore from a backup before trading again** |
-| "Please sign in" loops forever | `COOKIE_SECURE=true` while the site is served over plain HTTP. Either enable HTTPS or set it to `false` |
-| Setup screen appears again | The app is pointing at a new, empty database. Check `DATABASE_PATH` |
+| `npm ci` fails on `better-sqlite3` | Node is older than 22, or no prebuilt binary matched your machine. Check `node -v` first |
+| The build fails on `@tailwindcss/postcss` or `typescript` | `NODE_ENV=production` was set in your terminal, so npm skipped `devDependencies`. Install and build first, and let `.env` carry the production setting |
+| Other devices cannot reach it | The firewall rule is missing, or the PC's address changed. Confirm the address on the PC itself first |
+| "Please sign in" loops for ever | `COOKIE_SECURE=true` while served over plain HTTP. Set it back to false |
+| The setup screen appears again | The app is pointing at a new, empty database. Check `DATABASE_PATH` in `.env` |
+| Preflight says demo records are present | Nothing removes them. Start from a clean database before the shop trades |

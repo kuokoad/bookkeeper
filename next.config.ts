@@ -7,8 +7,8 @@ const nextConfig: NextConfig = {
   // NOT `output: 'standalone'`, deliberately.
   //
   // Standalone is for deployments that ship a prebuilt folder without running
-  // `npm install`. Hostinger (and every host that builds from git) installs and
-  // builds on its own machine, so it buys nothing here — and it costs
+  // `npm install`. This app is installed and built on the machine that runs it —
+  // the shop's own PC — so it buys nothing here, and it costs
   // something: this project reads the migrations folder and the database path
   // through `process.cwd()`, which file tracing cannot follow, so it copies the
   // project root wholesale. Locally that put `.env` and `data/bookkeeper.db`
