@@ -140,6 +140,11 @@ export function seedDemoSales(db: Db, actor: Actor, today: string): void {
         { productId: need('Tea Bread'), qty: u(1) },
       ],
       invoiceDiscount: m(2),
+      // The seed acts as the demo OWNER, who may depart from the shop's prices.
+      // Without this the whole demo seed fails on this one line — `createSale`
+      // refuses a discount unless the caller says it holds the right, and it
+      // defaults to refusing precisely so a path that forgets is caught.
+      allowPriceOverride: true,
       tenders: [{ paymentAccountId: cash.id, amount: m(34) }],
       isDemo: true,
     },
