@@ -5,8 +5,8 @@ import { getTheme } from '@/lib/theme.server';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Shop Bookkeeper',
-    template: '%s · Shop Bookkeeper',
+    default: 'NunaBooks',
+    template: '%s · NunaBooks',
   },
   description: 'Bookkeeping, inventory, sales and accounts for a small retail shop.',
   robots: { index: false, follow: false },

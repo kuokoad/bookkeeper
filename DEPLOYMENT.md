@@ -81,7 +81,7 @@ Two things to sort out once:
 **Let it through the Windows firewall.** In an Administrator terminal:
 
 ```
-netsh advfirewall firewall add rule name="Shop Bookkeeper" dir=in action=allow protocol=TCP localport=5177
+netsh advfirewall firewall add rule name="NunaBooks" dir=in action=allow protocol=TCP localport=5177
 ```
 
 **Pin the address.** Most routers hand out addresses that can change after a

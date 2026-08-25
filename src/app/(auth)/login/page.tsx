@@ -36,7 +36,7 @@ export default async function LoginPage({
     <div className="rounded-2xl border border-line bg-surface-raised p-8 shadow-sm">
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-semibold text-content">
-          {settings?.businessName ?? 'Shop Bookkeeper'}
+          {settings?.businessName ?? 'NunaBooks'}
         </h1>
         <p className="mt-1 text-sm text-content-muted">Sign in to continue</p>
       </div>

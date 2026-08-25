@@ -1,4 +1,4 @@
-# Shop Bookkeeper
+# NunaBooks
 
 Bookkeeping, inventory, sales and accounts for a small retail shop — built to run
 on the shop's own computer, with no internet required to record a sale.

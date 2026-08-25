@@ -76,7 +76,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             />
           )}
           <h1 className="text-lg font-semibold text-content">
-            {settings?.businessName ?? 'Shop Bookkeeper'}
+            {settings?.businessName ?? 'NunaBooks'}
           </h1>
           {settings?.tagline && (
             <p className="text-xs text-content-muted">{settings.tagline}</p>

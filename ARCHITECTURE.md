@@ -1,4 +1,4 @@
-# Shop Bookkeeper — Architecture
+# NunaBooks — Architecture
 
 > Status: **Stage 1 design, approved**. This document is the contract the
 > implementation follows. Change it deliberately, not silently.

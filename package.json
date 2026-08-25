@@ -1,8 +1,8 @@
 {
-  "name": "bookkeeper",
+  "name": "nunabooks",
   "version": "0.1.0",
   "private": true,
-  "description": "Bookkeeping, inventory, sales and accounts for a small retail shop",
+  "description": "NunaBooks - bookkeeping, inventory, sales and accounts for a small retail shop",
   "type": "module",
   "engines": {
     "node": ">=22.0.0"

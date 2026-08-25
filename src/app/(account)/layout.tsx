@@ -19,7 +19,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
   return (
     <div className="flex min-h-dvh flex-col bg-surface-sunken">
       <header className="flex items-center justify-between gap-3 border-b border-line bg-surface-raised px-4 py-3">
-        <p className="truncate font-semibold text-content">Shop Bookkeeper</p>
+        <p className="truncate font-semibold text-content">NunaBooks</p>
         <form action={logoutAction}>
           <Button type="submit" variant="ghost" size="sm">
             Sign out
