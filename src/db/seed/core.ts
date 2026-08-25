@@ -238,11 +238,19 @@ export function seedTaxComponents(tx: Tx, now: Date): void {
   const preserving = existingRate > 0;
 
   const definitions = [
+    // Recoverable since the Value Added Tax Act, 2025 (Act 1151), in force
+    // 1 January 2026, which made the invoice amount the tax base for the levies
+    // as well as for VAT and allowed both levies as input tax on qualifying
+    // DOMESTIC supplies. Before that they were a cost of the goods.
+    //
+    // Imports may be another matter — the deduction at the ports is not clearly
+    // granted — so a shop that imports should check its own position and can
+    // switch either of these off in Settings.
     {
       code: 'NHIL',
       name: 'NHIL',
       rateBp: 250,
-      isRecoverable: false,
+      isRecoverable: true,
       accountCode: ACCOUNT_CODES.NHIL_PAYABLE,
       sortOrder: 10,
     },
@@ -250,12 +258,11 @@ export function seedTaxComponents(tx: Tx, now: Date): void {
       code: 'GETFUND',
       name: 'GETFund',
       rateBp: 250,
-      isRecoverable: false,
+      isRecoverable: true,
       accountCode: ACCOUNT_CODES.GETFUND_PAYABLE,
       sortOrder: 20,
     },
     {
-      // Reclaimable, unlike the levies above — see the note on the column.
       code: 'VAT',
       name: 'VAT',
       rateBp: 1_500,

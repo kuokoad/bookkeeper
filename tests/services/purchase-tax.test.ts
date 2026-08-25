@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, ne } from 'drizzle-orm';
 
 import { createTestDatabase, accountIdFor, type TestDatabase } from '../helpers/test-db';
 import { setGhanaTaxes, setSingleTax } from '../helpers/tax';
-import { paymentAccounts, products, purchaseTaxes } from '@/db/schema';
+import { paymentAccounts, products, purchaseTaxes, taxComponents } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { createProduct } from '@/services/catalog.service';
 import { createSupplier } from '@/services/supplier.service';
@@ -67,9 +67,25 @@ function riceDelivery(unitCost: number, qty: number, paid: number): number {
   return rice;
 }
 
-describe('a delivery carrying Ghana’s three taxes', () => {
-  it('puts the levies into what the goods cost, and reclaims only the VAT', () => {
+/**
+ * Make the levies NON-recoverable, as they were before Act 1151.
+ *
+ * The tests below are about the MECHANISM — tax that cannot be reclaimed is
+ * part of what the goods cost — not about what Ghana charges this year. Ghana's
+ * own defaults moved on 1 January 2026; the mechanism did not, and still has to
+ * work for an importer, or for any shop whose position differs.
+ */
+function levyIsACost(db: TestDatabase['db']): void {
+  db.update(taxComponents)
+    .set({ isRecoverable: false })
+    .where(ne(taxComponents.code, 'VAT'))
+    .run();
+}
+
+describe('tax on a delivery that cannot be reclaimed', () => {
+  it('puts it into what the goods cost, and reclaims only what it may', () => {
     setGhanaTaxes(context.db);
+    levyIsACost(context.db);
 
     // 10 bags at GHS 65.00 = GHS 650.00 net.
     // NHIL 16.25, GETFund 16.25, VAT 97.50. Total paid: GHS 780.00.
@@ -97,8 +113,9 @@ describe('a delivery carrying Ghana’s three taxes', () => {
     expect(getAccountBalanceByCode(context.db, ACCOUNT_CODES.GETFUND_PAYABLE)).toBe(0);
   });
 
-  it('carries the levies into the unit cost, so margin is not overstated', () => {
+  it('carries it into the unit cost, so margin is not overstated', () => {
     setGhanaTaxes(context.db);
+    levyIsACost(context.db);
     const rice = riceDelivery(6_500, 10, 78_000);
 
     const product = context.db.select().from(products).where(eq(products.id, rice)).get()!;
@@ -110,7 +127,8 @@ describe('a delivery carrying Ghana’s three taxes', () => {
   });
 
   it('reclaims the whole tax when every component is reclaimable', () => {
-    // A shop under a single reclaimable VAT: nothing lands in stock cost.
+    // Which, since Act 1151, is Ghana's own position on domestic supplies —
+    // see the dedicated case below.
     setSingleTax(context.db, { rateBp: 1_250 });
     riceDelivery(6_500, 10, 73_125);
 
@@ -127,8 +145,62 @@ describe('a delivery carrying Ghana’s three taxes', () => {
   });
 });
 
+describe('Ghana from 1 January 2026, as the shop is seeded', () => {
+  /**
+   * The Value Added Tax Act, 2025 (Act 1151) made the invoice amount the tax
+   * base for the levies as well as for VAT, and allowed NHIL and GETFund as
+   * input tax on qualifying domestic supplies. Before it, they were a cost of
+   * the goods and only VAT could be reclaimed.
+   *
+   * The change is one column on three seeded rows, which is the point: the shop
+   * did not wait for a release, and neither did anybody who had already edited
+   * their own rates.
+   */
+  it('reclaims all three, so nothing lands in the cost of the goods', () => {
+    setGhanaTaxes(context.db);
+
+    // 10 bags at GHS 65.00 = GHS 650.00 net.
+    // NHIL 16.25 + GETFund 16.25 + VAT 97.50 = GHS 130.00, all reclaimable.
+    riceDelivery(6_500, 10, 78_000);
+
+    expect(
+      context.db.select().from(purchaseTaxes).all().map((row) => [row.code, row.isRecoverable]),
+    ).toEqual([
+      ['NHIL', true],
+      ['GETFUND', true],
+      ['VAT', true],
+    ]);
+
+    // The shelf is worth the goods and nothing else.
+    expect(getInventoryValue(context.db), 'stock is the goods alone').toBe(65_000);
+    expect(getAccountBalanceByCode(context.db, ACCOUNT_CODES.INVENTORY)).toBe(65_000);
+
+    // Each levy is an asset against the authority, in its OWN account — which
+    // is why they were never netted into one.
+    expect(getAccountBalanceByCode(context.db, ACCOUNT_CODES.NHIL_PAYABLE)).toBe(-1_625);
+    expect(getAccountBalanceByCode(context.db, ACCOUNT_CODES.GETFUND_PAYABLE)).toBe(-1_625);
+    expect(getAccountBalanceByCode(context.db, ACCOUNT_CODES.TAX_PAYABLE)).toBe(-9_750);
+  });
+
+  it('charges 20 per cent on the net, not 20.75 on a cascade', () => {
+    // Act 1151 removed the tax-on-tax: all three sit on the invoice amount.
+    // The old treatment charged VAT on net + levies and came to 20.75%.
+    setGhanaTaxes(context.db);
+    riceDelivery(6_500, 10, 78_000);
+
+    const total = context.db
+      .select()
+      .from(purchaseTaxes)
+      .all()
+      .reduce((sum, row) => sum + row.amountMinor, 0);
+
+    expect(total, 'GHS 130.00 on GHS 650.00').toBe(13_000);
+  });
+});
+
 describe('voiding a delivery that carried tax', () => {
   it('stops reclaiming the VAT, and takes the levies back out of stock', () => {
+    levyIsACost(context.db);
     setGhanaTaxes(context.db);
     riceDelivery(6_500, 10, 78_000);
 

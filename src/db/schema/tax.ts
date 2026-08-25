@@ -58,10 +58,17 @@ export const taxComponents = sqliteTable(
     /**
      * Whether tax paid on a PURCHASE can be reclaimed.
      *
-     * In Ghana, VAT is recoverable and the levies are not: NHIL and GETFund
-     * paid to a supplier are part of what the goods cost. Pricing stock
-     * without them understates the cost of every sale made from it, which
-     * quietly overstates profit on every one.
+     * When it cannot, the tax is part of what the goods COST: it is spread
+     * across the lines and carried into stock value, and from there into cost
+     * of goods sold. Pricing stock without it understates the cost of every
+     * sale made from that delivery, which quietly overstates profit on each one.
+     *
+     * This is shop policy rather than a fixed fact, which is why it is a column.
+     * In Ghana it changed underneath everybody: NHIL and GETFund were not
+     * deductible until the Value Added Tax Act, 2025 (Act 1151) made them so on
+     * domestic supplies from 1 January 2026. The seed now ships them
+     * recoverable; a shop whose position differs — an importer, most likely —
+     * changes it in Settings without waiting for a release.
      */
     isRecoverable: boolean('is_recoverable').notNull().default(false),
 

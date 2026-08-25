@@ -80,12 +80,24 @@ describe('a shop setting up for the first time', () => {
         .map((row) => [row.code, row.glAccountId]),
     );
 
-    // Three distinct accounts — netting them into one would hide that only VAT
-    // can be set against what was paid on purchases.
+    // Three distinct accounts. Netting them into one would leave the shop
+    // unable to say what it owes under each — and unable to represent the law
+    // changing under one of them, as Act 1151 did.
     expect(new Set(byCode.values()).size).toBe(3);
   });
 
-  it('marks only VAT as reclaimable on purchases', () => {
+  it('marks all three reclaimable on purchases, as Act 1151 requires', () => {
+    /**
+     * Until the Value Added Tax Act, 2025 (Act 1151), only VAT could be set
+     * against what a supplier charged; NHIL and GETFund were a cost of the
+     * goods. From 1 January 2026 both levies are input tax on qualifying
+     * domestic supplies, so a shop seeded today reclaims all three.
+     *
+     * A shop whose position differs — an importer, where the deduction at the
+     * ports is not clearly granted — switches either levy off in Settings. The
+     * mechanism for tax that CANNOT be reclaimed is exercised in
+     * `purchase-tax.test.ts`, and is unchanged.
+     */
     context.db
       .update(businessSettings)
       .set({ taxEnabled: true })
@@ -96,7 +108,7 @@ describe('a shop setting up for the first time', () => {
       .components.filter((component) => component.isRecoverable)
       .map((component) => component.code);
 
-    expect(recoverable).toEqual(['VAT']);
+    expect(recoverable).toEqual(['NHIL', 'GETFUND', 'VAT']);
   });
 });
 

@@ -397,11 +397,19 @@ describe('a messy but ordinary week', () => {
     expectReportsAgree('taxed: after the whole week');
 
     /**
-     * Each tax in its own account, and the levies untouched by the purchase.
+     * Each tax nets in its OWN account: collected on sales, less reclaimed on
+     * purchases, per component.
      *
-     * Netted into one figure the shop could not file: only VAT can be set
-     * against what was paid to a supplier, and a single "tax payable" balance
-     * hides which part of it that is.
+     * Netted into one figure the shop could not file. Each of the three is a
+     * separate obligation with its own balance, and they do not move together —
+     * below, VAT lands in debit because the delivery reclaimed more than the
+     * week's sales collected, while the levies stay in credit. One blended
+     * "tax payable" would show a single number that is true of none of them.
+     *
+     * Until Act 1151 the levies could not be reclaimed at all, so their
+     * accounts held exactly what the sales charged. That the same assertion now
+     * has a second term, and only for the levies, is the law changing — not the
+     * bookkeeping.
      */
     const nhil = getAccountBalanceByCode(context.db, ACCOUNT_CODES.NHIL_PAYABLE);
     const getfund = getAccountBalanceByCode(context.db, ACCOUNT_CODES.GETFUND_PAYABLE);
@@ -415,14 +423,26 @@ describe('a messy but ordinary week', () => {
           .get(code) as { total: number }
       ).total;
 
-    // The levies are collected and never reclaimed, so their accounts hold
-    // exactly what the sales charged — the delivery must not have touched
-    // them. If a purchase had booked its levies as reclaimable, these would be
-    // short by that amount and the shop would under-remit on every return.
-    expect(nhil, 'NHIL account vs what sales charged').toBe(chargedOnSales('NHIL'));
-    expect(getfund, 'GETFund account vs what sales charged').toBe(chargedOnSales('GETFUND'));
-    expect(nhil, 'NHIL actually collected').toBeGreaterThan(0);
-    expect(getfund, 'the two levies are the same rate on the same sales').toBe(nhil);
+    /** What the deliveries reclaimed under that component. */
+    const reclaimed = (code: string): number =>
+      (
+        context.connection
+          .prepare(
+            'SELECT COALESCE(SUM(amount_minor), 0) AS total FROM purchase_taxes WHERE code = ? AND is_recoverable = 1',
+          )
+          .get(code) as { total: number }
+      ).total;
+
+    // Every component obeys the same rule, and each is answerable on its own.
+    expect(nhil, 'NHIL: collected less reclaimed').toBe(
+      chargedOnSales('NHIL') - reclaimed('NHIL'),
+    );
+    expect(getfund, 'GETFund: collected less reclaimed').toBe(
+      chargedOnSales('GETFUND') - reclaimed('GETFUND'),
+    );
+    expect(chargedOnSales('NHIL'), 'NHIL actually collected').toBeGreaterThan(0);
+    expect(reclaimed('NHIL'), 'and actually reclaimed on the delivery').toBeGreaterThan(0);
+    expect(getfund, 'the two levies are the same rate on the same movements').toBe(nhil);
 
     /**
      * VAT is the only one that nets, and here it nets NEGATIVE.
@@ -433,28 +453,16 @@ describe('a messy but ordinary week', () => {
      * sells in a period is owed the difference. The levy accounts opposite
      * cannot do this, which is exactly why they are kept apart.
      */
-    const reclaimedOnPurchases = (
-      context.connection
-        .prepare(
-          'SELECT COALESCE(SUM(amount_minor), 0) AS total FROM purchase_taxes WHERE code = ? AND is_recoverable = 1',
-        )
-        .get('VAT') as { total: number }
-    ).total;
-
     expect(vat, 'VAT collected less VAT reclaimed').toBe(
-      chargedOnSales('VAT') - reclaimedOnPurchases,
+      chargedOnSales('VAT') - reclaimed('VAT'),
     );
-    expect(reclaimedOnPurchases, 'VAT was reclaimed on the delivery').toBeGreaterThan(0);
+    expect(reclaimed('VAT'), 'VAT was reclaimed on the delivery').toBeGreaterThan(0);
+    expect(vat, 'and the authority owes this shop').toBeLessThan(0);
 
-    // And nothing reclaimable was recorded against the levies at all.
-    const reclaimedLevies = (
-      context.connection
-        .prepare(
-          "SELECT COALESCE(SUM(amount_minor), 0) AS total FROM purchase_taxes WHERE code <> 'VAT' AND is_recoverable = 1",
-        )
-        .get() as { total: number }
-    ).total;
-    expect(reclaimedLevies, 'levies are never reclaimable').toBe(0);
+    // Every component nets on its own terms. In this particular week all three
+    // happen to land in debit, because one large delivery outweighed the sales
+    // — but nothing here assumes they move together, and the assertions above
+    // would still hold if they parted company.
   });
 
   it('holds when stock is allowed to go negative', () => {

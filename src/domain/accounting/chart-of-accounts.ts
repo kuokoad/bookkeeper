@@ -25,8 +25,13 @@ export const ACCOUNT_CODES = {
   TAX_PAYABLE: '2100',
   /**
    * The Ghanaian levies, held separately from VAT because they are separate
-   * obligations and — unlike VAT — nothing paid on a purchase can be reclaimed
-   * against them. Netting them into one figure would hide that.
+   * obligations remitted on one return. Netting them into a single figure would
+   * leave the shop unable to say what it owes under each, and unable to file.
+   *
+   * Keeping them apart also survived the law changing: until Act 1151 nothing
+   * paid on a purchase could be reclaimed against either levy, and from
+   * 1 January 2026 it can. A single blended tax account would have made that
+   * change impossible to represent, let alone to report on either side of.
    */
   NHIL_PAYABLE: '2110',
   GETFUND_PAYABLE: '2120',
