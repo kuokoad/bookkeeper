@@ -8,8 +8,10 @@ import {
   getStockValuation,
 } from '@/services/reporting/operations.service';
 import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
+import { getExpiryAgeing } from '@/services/inventory.service';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { money, quantity, toBusinessDate } from '@/lib/format';
+import { qty as makeQty } from '@/domain/quantity';
 import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
 import { PageHeader, Stat } from '@/components/ui/page';
@@ -31,6 +33,7 @@ export default async function InventoryReportPage({
   const { period, preset } = resolvePeriod(params.period, params.from, params.to, toBusinessDate());
 
   const valuation = getStockValuation(db);
+  const ageing = getExpiryAgeing(db, toBusinessDate());
   const movement = getStockMovementSummary(db, period);
   const inventoryGl = getAccountBalanceByCode(db, ACCOUNT_CODES.INVENTORY);
   const matchesLedger = valuation.totalCostValue === inventoryGl;
@@ -75,6 +78,55 @@ export default async function InventoryReportPage({
           hint={`${valuation.lowStockCount} low, ${valuation.outOfStockCount} out`}
         />
       </div>
+
+      {/*
+        Dates, and only if the shop keeps any. QUANTITY, never value: a batch
+        has never carried a cost — value is weighted-average and pooled per
+        product — so "the value of stock expiring within 7 days" is a figure
+        this application cannot honestly produce.
+      */}
+      {ageing.some((row) => row.batchCount > 0) && (
+        <>
+          <h2 className="mb-3 text-sm font-semibold text-content">How long the stock has left</h2>
+          <TableWrap className="mb-8">
+            <THead>
+              <TH>When it runs out</TH>
+              <TH numeric>Batches</TH>
+              <TH numeric>Quantity</TH>
+            </THead>
+            <tbody>
+              {ageing.map((row) => (
+                <TR key={row.bucket}>
+                  <TD>
+                    {row.bucket === 'expired' && row.qtyMilli > 0 ? (
+                      <span className="font-medium text-danger">{row.label}</span>
+                    ) : row.bucket === 'within7' && row.qtyMilli > 0 ? (
+                      <span className="font-medium text-warning">{row.label}</span>
+                    ) : (
+                      <span className="text-content">{row.label}</span>
+                    )}
+                  </TD>
+                  <TD numeric>{row.batchCount === 0 ? '—' : row.batchCount}</TD>
+                  <TD numeric>
+                    {row.qtyMilli === 0 ? '—' : quantity(makeQty(row.qtyMilli), '')}
+                  </TD>
+                </TR>
+              ))}
+            </tbody>
+          </TableWrap>
+          <p className="-mt-6 mb-8 text-xs text-content-muted">
+            Quantities across every product, so units are mixed. Stock with no date recorded is
+            listed separately rather than as distant: unknown is not the same as far away.{' '}
+            <a
+              href={`/api/reports/expiry?to=${toBusinessDate()}`}
+              className="font-medium text-accent hover:underline"
+            >
+              Download every batch
+            </a>{' '}
+            to see which ones.
+          </p>
+        </>
+      )}
 
       <h2 className="mb-3 text-sm font-semibold text-content">Stock valuation</h2>
       <TableWrap className="mb-8">

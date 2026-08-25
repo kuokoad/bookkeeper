@@ -11,6 +11,7 @@ import {
   voidStockAdjustment,
   type AdjustmentItemInput,
 } from '@/services/stock-adjustment.service';
+import { setBatchExpiry } from '@/services/inventory.service';
 import { ADJUSTMENT_REASONS } from '@/db/schema/inventory';
 import { parseMoney } from '@/domain/money';
 import { parsePositiveQty } from '@/domain/quantity';
@@ -170,4 +171,40 @@ export async function voidAdjustmentAction(
   revalidatePath('/products');
   revalidatePath('/dashboard');
   redirect('/inventory/adjustments?voided=1');
+}
+
+/**
+ * Correct the date on a crate.
+ *
+ * `inventory:edit`, not `inventory:view`: this decides which stock the till
+ * refuses, so it is a change to what the shop may sell rather than a note about
+ * it. The service audits both the old date and the new.
+ */
+export async function setBatchExpiryAction(
+  batchId: number,
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await requirePermission('inventory', 'edit');
+
+  const raw = String(formData.get('expiryDate') ?? '').trim();
+  if (raw !== '' && !isValidBusinessDate(raw)) {
+    return { fieldErrors: { expiryDate: 'Enter a valid date, or leave it blank for no date.' } };
+  }
+
+  try {
+    setBatchExpiry(db, batchId, raw === '' ? null : raw, {
+      id: actor.id,
+      username: actor.username,
+    });
+  } catch (error) {
+    if (isDomainError(error)) return { error: error.userMessage };
+    throw error;
+  }
+
+  revalidatePath('/inventory');
+  revalidatePath(`/inventory/batches/${batchId}`);
+  revalidatePath('/products');
+  revalidatePath('/dashboard');
+  return { success: 'Date updated.' };
 }

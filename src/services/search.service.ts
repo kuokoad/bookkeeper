@@ -1,8 +1,9 @@
-import { and, desc, eq, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 
 import {
   customers,
   journalEntries,
+  productBatches,
   products,
   purchases,
   sales,
@@ -11,6 +12,8 @@ import {
 import type { Db } from '@/db/types';
 import { can, type Principal } from '@/lib/auth/permissions';
 import { minor, type Minor } from '@/domain/money';
+import { qty as makeQty } from '@/domain/quantity';
+import { formatDate, quantity } from '@/lib/format';
 
 /**
  * Searching across the shop's records.
@@ -27,7 +30,7 @@ import { minor, type Minor } from '@/domain/money';
  */
 
 export interface SearchHit {
-  kind: 'product' | 'customer' | 'supplier' | 'sale' | 'purchase' | 'journal';
+  kind: 'product' | 'batch' | 'customer' | 'supplier' | 'sale' | 'purchase' | 'journal';
   id: number;
   title: string;
   detail: string;
@@ -102,6 +105,50 @@ export function search(db: Db, rawQuery: string, user: Principal): SearchResults
           title: row.name,
           detail: [row.sku, row.unit].filter(Boolean).join(' · '),
           href: `/products/${row.id}/edit`,
+        })),
+    );
+  }
+
+  if (can(user, 'products', 'view')) {
+    /**
+     * Batches, found by their own reference or by the product's name.
+     *
+     * The reference is what somebody is holding when a supplier telephones
+     * about a bad lot, so an EXACT match is offered whatever state the crate is
+     * in — a recall is precisely about stock that has already gone. Searching
+     * the product name only offers crates still holding something, or every
+     * product with a long history would bury its own row under dead batches.
+     */
+    const exactRef = matches(productBatches.batchRef, term);
+    const byName = and(matches(products.name, term), sql`${productBatches.qtyMilli} <> 0`);
+
+    add(
+      'Batches',
+      db
+        .select({
+          id: productBatches.id,
+          batchRef: productBatches.batchRef,
+          expiryDate: productBatches.expiryDate,
+          qtyMilli: productBatches.qtyMilli,
+          productName: products.name,
+          unit: products.unit,
+        })
+        .from(productBatches)
+        .innerJoin(products, eq(products.id, productBatches.productId))
+        .where(or(exactRef, byName))
+        .orderBy(asc(productBatches.expiryDate), asc(productBatches.id))
+        .limit(PER_GROUP + 1)
+        .all()
+        .map((row) => ({
+          kind: 'batch' as const,
+          id: row.id,
+          title: row.batchRef,
+          detail: [
+            row.productName,
+            `${quantity(makeQty(row.qtyMilli), row.unit)} left`,
+            row.expiryDate === null ? 'no date' : `expires ${formatDate(row.expiryDate)}`,
+          ].join(' · '),
+          href: `/inventory/batches/${row.id}`,
         })),
     );
   }

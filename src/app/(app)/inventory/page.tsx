@@ -6,13 +6,14 @@ import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import {
   getStockLedger,
+  listProductBatches,
   verifyStockAgainstLedger,
   getInventoryValue,
 } from '@/services/inventory.service';
 import { getStockSummary, listProducts } from '@/services/catalog.service';
 import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
-import { formatDateTime, money, quantity } from '@/lib/format';
+import { formatDate, formatDateTime, money, quantity, toBusinessDate } from '@/lib/format';
 import { qty as makeQty } from '@/domain/quantity';
 import { minor } from '@/domain/money';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,14 @@ export default async function InventoryPage({
 
   const summary = getStockSummary(db);
   const lowStock = listProducts(db, { lowStockOnly: true });
+
+  // The crates behind the running balance, when the page is showing one product.
+  const batches =
+    filterProductId === undefined ? [] : listProductBatches(db, filterProductId, toBusinessDate());
+  const batchUnit =
+    filterProductId === undefined
+      ? ''
+      : (listProducts(db, { id: filterProductId })[0]?.unit ?? '');
 
   // The headline integrity check, computed live rather than assumed — but from
   // the ledger's last recorded balance, not by replaying every movement the shop
@@ -127,6 +136,64 @@ export default async function InventoryPage({
           tone={summary.outOfStockCount > 0 ? 'danger' : 'default'}
         />
       </div>
+
+      {/*
+        The batches of ONE product, and only when the page is showing one.
+        Listed in the order stock will be taken from them, so the shelf reads
+        the same way the till draws — see `listProductBatches`.
+      */}
+      {filterProductId !== undefined && batches.length > 0 && (
+        <section className="mb-6" aria-labelledby="batches-heading">
+          <h2 id="batches-heading" className="mb-3 text-sm font-semibold text-content">
+            Batches on the shelf
+          </h2>
+          <TableWrap>
+            <THead>
+              <TH>Batch</TH>
+              <TH>Expires</TH>
+              <TH>From</TH>
+              <TH numeric>Remaining</TH>
+              <TH numeric>Days left</TH>
+            </THead>
+            <tbody>
+              {batches.map((batch) => (
+                <TR key={batch.id}>
+                  <TD>
+                    <Link
+                      href={`/inventory/batches/${batch.id}`}
+                      className="font-medium text-accent hover:underline"
+                    >
+                      {batch.batchRef}
+                    </Link>
+                  </TD>
+                  <TD>
+                    {batch.expiryDate === null ? (
+                      <span className="text-content-subtle">No date</span>
+                    ) : (
+                      formatDate(batch.expiryDate)
+                    )}
+                  </TD>
+                  <TD>
+                    {batch.supplierName ?? <span className="text-content-subtle">—</span>}
+                  </TD>
+                  <TD numeric>{quantity(makeQty(batch.qtyMilli), batchUnit)}</TD>
+                  <TD numeric>
+                    {batch.daysLeft === null ? (
+                      <span className="text-content-subtle">—</span>
+                    ) : batch.daysLeft < 0 ? (
+                      <Badge tone="danger">Expired</Badge>
+                    ) : batch.daysLeft <= 30 ? (
+                      <span className="font-medium text-warning">{batch.daysLeft}</span>
+                    ) : (
+                      <span className="text-content">{batch.daysLeft}</span>
+                    )}
+                  </TD>
+                </TR>
+              ))}
+            </tbody>
+          </TableWrap>
+        </section>
+      )}
 
       {lowStock.length > 0 && (
         <section className="mb-6" aria-labelledby="low-stock-heading">

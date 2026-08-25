@@ -3,10 +3,14 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Db, Tx } from '@/db/types';
 import {
   businessSettings,
+  customers,
   productBatches,
   products,
+  purchases,
+  sales,
   stockLedger,
   stockLedgerBatches,
+  suppliers,
 } from '@/db/schema';
 import type { MovementType } from '@/db/schema/inventory';
 import {
@@ -26,8 +30,10 @@ import {
   ValidationError,
 } from '@/domain/errors';
 import { assertPeriodOpen } from '@/domain/accounting/period-lock';
-import { assertBusinessDate } from '@/domain/business-date';
+import { addDays, assertBusinessDate, daysBetween } from '@/domain/business-date';
 import { readLockDate } from './journal.service';
+import { writeAudit } from './audit.service';
+import { writeTransaction } from '@/db/transaction';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import {
   allocateFefo,
@@ -776,6 +782,370 @@ export function readBatchSplits(
   }
 
   return [...byMovement.values()];
+}
+
+export interface ProductBatchRow {
+  id: number;
+  batchRef: string;
+  expiryDate: string | null;
+  receivedDate: string | null;
+  qtyMilli: number;
+  isClosed: boolean;
+  supplierName: string | null;
+  /** Negative when the date has passed. Null for undated stock. */
+  daysLeft: number | null;
+}
+
+/**
+ * One product's batches, in the order stock will be taken from them.
+ *
+ * The same ordering as `orderForPicking`, done in SQL: dated-and-good by
+ * soonest date, then undated, then expired. A shelf listed in a different order
+ * from the one the till draws in would be a second, quieter account of the same
+ * thing — and the two would eventually disagree.
+ */
+export function listProductBatches(db: Db, productId: number, asAt: string): ProductBatchRow[] {
+  const rows = db
+    .select({
+      id: productBatches.id,
+      batchRef: productBatches.batchRef,
+      expiryDate: productBatches.expiryDate,
+      receivedDate: productBatches.receivedDate,
+      qtyMilli: productBatches.qtyMilli,
+      isClosed: productBatches.isClosed,
+      supplierName: suppliers.name,
+    })
+    .from(productBatches)
+    .leftJoin(suppliers, eq(suppliers.id, productBatches.supplierId))
+    .where(and(eq(productBatches.productId, productId), eq(productBatches.isClosed, false)))
+    .orderBy(
+      // 0 dated and good, 1 undated, 2 expired — mirroring `orderForPicking`.
+      sql`CASE
+            WHEN ${productBatches.expiryDate} IS NULL THEN 1
+            WHEN ${productBatches.expiryDate} < ${asAt} THEN 2
+            ELSE 0
+          END`,
+      asc(productBatches.expiryDate),
+      asc(productBatches.id),
+    )
+    .all();
+
+  return rows.map((row) => ({
+    ...row,
+    daysLeft: row.expiryDate === null ? null : daysBetween(asAt, row.expiryDate),
+  }));
+}
+
+/**
+ * Correct the date on a crate.
+ *
+ * This exists for one situation, and it is not a rare one: on the day a shop
+ * installs this, migration 0019 opens an undated batch for everything already
+ * on the shelf. For a shop selling milk and bread, "this stock does not expire"
+ * is simply false, and there is no other way to make it true — the goods were
+ * bought before anybody was asked for a date.
+ *
+ * It changes NOTHING about quantity or value. It changes which crate the till
+ * reaches for next, and whether it refuses, which is exactly why it is audited
+ * with both the old value and the new.
+ */
+export function setBatchExpiry(
+  db: Db,
+  batchId: number,
+  expiryDate: string | null,
+  actor: { id: number; username: string },
+): void {
+  if (expiryDate !== null) assertBusinessDate(expiryDate, 'expiry date');
+
+  writeTransaction(db, (tx) => {
+    const batch = tx
+      .select({
+        id: productBatches.id,
+        batchRef: productBatches.batchRef,
+        expiryDate: productBatches.expiryDate,
+        productId: productBatches.productId,
+      })
+      .from(productBatches)
+      .where(eq(productBatches.id, batchId))
+      .get();
+
+    if (!batch) throw new NotFoundError('Batch', batchId);
+    if (batch.expiryDate === expiryDate) return;
+
+    const now = new Date();
+    tx.update(productBatches)
+      .set({ expiryDate, updatedAt: now })
+      .where(eq(productBatches.id, batchId))
+      .run();
+
+    writeAudit(tx, {
+      action: 'UPDATE',
+      entityType: 'product_batch',
+      entityId: batchId,
+      userId: actor.id,
+      username: actor.username,
+      summary:
+        expiryDate === null
+          ? `${batch.batchRef}: expiry date removed`
+          : `${batch.batchRef}: expiry date set to ${expiryDate}`,
+      metadata: {
+        before: { expiryDate: batch.expiryDate },
+        after: { expiryDate },
+        productId: batch.productId,
+      },
+      at: now,
+    });
+  });
+}
+
+export interface OpenBatchRow extends ProductBatchRow {
+  productId: number;
+  productName: string;
+  sku: string | null;
+  unit: string;
+}
+
+/**
+ * Every crate in the shop that still holds stock, soonest date first.
+ *
+ * For the expiry export, which is opened to answer "which ones" — the summary
+ * on screen answers "how bad is it". Undated crates come last: they are not
+ * distant, they are unknown, and putting them among the far-off dates would
+ * bury the ones that matter.
+ */
+export function listAllOpenBatches(db: Db, asAt: string): OpenBatchRow[] {
+  const rows = db
+    .select({
+      id: productBatches.id,
+      batchRef: productBatches.batchRef,
+      expiryDate: productBatches.expiryDate,
+      receivedDate: productBatches.receivedDate,
+      qtyMilli: productBatches.qtyMilli,
+      isClosed: productBatches.isClosed,
+      supplierName: suppliers.name,
+      productId: products.id,
+      productName: products.name,
+      sku: products.sku,
+      unit: products.unit,
+    })
+    .from(productBatches)
+    .innerJoin(products, eq(products.id, productBatches.productId))
+    .leftJoin(suppliers, eq(suppliers.id, productBatches.supplierId))
+    .where(and(eq(productBatches.isClosed, false), sql`${productBatches.qtyMilli} <> 0`))
+    .orderBy(
+      sql`CASE WHEN ${productBatches.expiryDate} IS NULL THEN 1 ELSE 0 END`,
+      asc(productBatches.expiryDate),
+      asc(products.name),
+      asc(productBatches.id),
+    )
+    .all();
+
+  return rows.map((row) => ({
+    ...row,
+    daysLeft: row.expiryDate === null ? null : daysBetween(asAt, row.expiryDate),
+  }));
+}
+
+export const EXPIRY_BUCKETS = ['expired', 'within7', 'within30', 'within90', 'later', 'undated'] as const;
+
+export type ExpiryBucket = (typeof EXPIRY_BUCKETS)[number];
+
+export interface ExpiryAgeingRow {
+  bucket: ExpiryBucket;
+  label: string;
+  batchCount: number;
+  qtyMilli: number;
+}
+
+const BUCKET_LABELS: Record<ExpiryBucket, string> = {
+  expired: 'Already expired',
+  within7: 'Within 7 days',
+  within30: 'Within 30 days',
+  within90: 'Within 90 days',
+  later: 'Later than 90 days',
+  undated: 'No date recorded',
+};
+
+/**
+ * Stock by how long it has left, in one pass.
+ *
+ * QUANTITY, not value. A batch has never carried a cost and must not start
+ * here: value is weighted-average and pooled per product, so "the value of
+ * stock expiring within 7 days" is a number this application cannot honestly
+ * produce — see `src/domain/inventory/batches.ts`.
+ *
+ * Every open batch holding stock lands in exactly one bucket, and undated stock
+ * has its own rather than being filed under "later". Undated is not distant;
+ * it is unknown, and a report that blurs the two would tell a shop its
+ * perishables were years away.
+ */
+export function getExpiryAgeing(db: Db, asAt: string): ExpiryAgeingRow[] {
+  const rows = db
+    .select({
+      expiryDate: productBatches.expiryDate,
+      qtyMilli: productBatches.qtyMilli,
+    })
+    .from(productBatches)
+    .where(and(eq(productBatches.isClosed, false), sql`${productBatches.qtyMilli} > 0`))
+    .all();
+
+  const totals = new Map<ExpiryBucket, { batchCount: number; qtyMilli: number }>(
+    EXPIRY_BUCKETS.map((bucket) => [bucket, { batchCount: 0, qtyMilli: 0 }]),
+  );
+
+  for (const row of rows) {
+    const bucket: ExpiryBucket =
+      row.expiryDate === null
+        ? 'undated'
+        : row.expiryDate < asAt
+          ? 'expired'
+          : row.expiryDate <= addDays(asAt, 7)
+            ? 'within7'
+            : row.expiryDate <= addDays(asAt, 30)
+              ? 'within30'
+              : row.expiryDate <= addDays(asAt, 90)
+                ? 'within90'
+                : 'later';
+
+    const total = totals.get(bucket)!;
+    total.batchCount += 1;
+    total.qtyMilli += row.qtyMilli;
+  }
+
+  return EXPIRY_BUCKETS.map((bucket) => ({
+    bucket,
+    label: BUCKET_LABELS[bucket],
+    ...totals.get(bucket)!,
+  }));
+}
+
+export interface BatchHistoryEntry {
+  ledgerId: number;
+  businessDate: string;
+  occurredAt: Date;
+  movementType: string;
+  sourceType: string;
+  sourceId: number | null;
+  sourceRef: string | null;
+  qtyInMilli: number;
+  qtyOutMilli: number;
+  /** Who the goods went to, when the document names somebody. */
+  partyName: string | null;
+}
+
+export interface BatchHistory {
+  batch: {
+    id: number;
+    productId: number;
+    productName: string;
+    unit: string;
+    batchRef: string;
+    expiryDate: string | null;
+    receivedDate: string | null;
+    qtyMilli: number;
+    openingQtyMilli: number;
+    isClosed: boolean;
+    supplierName: string | null;
+    note: string | null;
+  };
+  entries: BatchHistoryEntry[];
+}
+
+/**
+ * Everything that ever touched one batch, oldest first.
+ *
+ * The recall query, and the reason the split was hung off the LEDGER ROW rather
+ * than the sale line: one join from `stock_ledger_batches` through
+ * `stock_ledger.sourceType` and `sourceId` answers "who bought from this
+ * delivery?" for sales, returns, voids and write-offs alike, without this
+ * function needing to know what any of those documents look like.
+ *
+ * The customer name is looked up per entry rather than joined, because a
+ * movement can belong to five different kinds of document and a five-way outer
+ * join to fetch one string is worse than a handful of indexed reads on a page
+ * nobody opens twice a day.
+ */
+export function getBatchHistory(db: Db, batchId: number): BatchHistory {
+  const batch = db
+    .select({
+      id: productBatches.id,
+      productId: productBatches.productId,
+      productName: products.name,
+      unit: products.unit,
+      batchRef: productBatches.batchRef,
+      expiryDate: productBatches.expiryDate,
+      receivedDate: productBatches.receivedDate,
+      qtyMilli: productBatches.qtyMilli,
+      openingQtyMilli: productBatches.openingQtyMilli,
+      isClosed: productBatches.isClosed,
+      supplierName: suppliers.name,
+      note: productBatches.note,
+    })
+    .from(productBatches)
+    .innerJoin(products, eq(products.id, productBatches.productId))
+    .leftJoin(suppliers, eq(suppliers.id, productBatches.supplierId))
+    .where(eq(productBatches.id, batchId))
+    .get();
+
+  if (!batch) throw new NotFoundError('Batch', batchId);
+
+  const rows = db
+    .select({
+      ledgerId: stockLedger.id,
+      businessDate: stockLedger.businessDate,
+      occurredAt: stockLedger.occurredAt,
+      movementType: stockLedger.movementType,
+      sourceType: stockLedger.sourceType,
+      sourceId: stockLedger.sourceId,
+      sourceRef: stockLedger.sourceRef,
+      qtyInMilli: stockLedgerBatches.qtyInMilli,
+      qtyOutMilli: stockLedgerBatches.qtyOutMilli,
+    })
+    .from(stockLedgerBatches)
+    .innerJoin(stockLedger, eq(stockLedger.id, stockLedgerBatches.ledgerId))
+    .where(eq(stockLedgerBatches.batchId, batchId))
+    .orderBy(asc(stockLedger.id))
+    .all();
+
+  const entries = rows.map((row) => ({
+    ...row,
+    partyName: partyFor(db, row.sourceType, row.sourceId),
+  }));
+
+  return { batch, entries };
+}
+
+/** Who a movement's document was with, when it was with anybody. */
+function partyFor(db: Db, sourceType: string, sourceId: number | null): string | null {
+  if (sourceId === null) return null;
+
+  if (sourceType === 'SALE' || sourceType === 'SALE_RETURN' || sourceType === 'SALE_VOID') {
+    const row = db
+      .select({ name: customers.name })
+      .from(sales)
+      .leftJoin(customers, eq(customers.id, sales.customerId))
+      .where(eq(sales.id, sourceId))
+      .get();
+    // A walk-in customer is a real answer, not a missing one — and for a recall
+    // it is the answer that matters most, because nobody can be telephoned.
+    return row === undefined ? null : (row.name ?? 'Walk-in customer');
+  }
+
+  if (
+    sourceType === 'PURCHASE' ||
+    sourceType === 'PURCHASE_RETURN' ||
+    sourceType === 'PURCHASE_VOID'
+  ) {
+    const row = db
+      .select({ name: suppliers.name })
+      .from(purchases)
+      .leftJoin(suppliers, eq(suppliers.id, purchases.supplierId))
+      .where(eq(purchases.id, sourceId))
+      .get();
+    return row?.name ?? null;
+  }
+
+  return null;
 }
 
 export interface ExpiredBatch {

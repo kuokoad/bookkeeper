@@ -16,8 +16,10 @@ import {
   getStockValuation,
 } from '@/services/reporting/operations.service';
 import { getReceivablesAgeing, getPayablesAgeing } from '@/services/reporting/ledger.service';
+import { listAllOpenBatches } from '@/services/inventory.service';
 import { availableFinancialYears, getYearEndPack } from '@/services/reporting/year-end.service';
 import type { Minor } from '@/domain/money';
+import { qty as makeQty } from '@/domain/quantity';
 import { csvFilename, csvMoney, csvQty, csvResponse, toCsv, type CsvValue } from '@/lib/csv';
 import { toBusinessDate, isValidBusinessDate } from '@/lib/format';
 import { isDomainError } from '@/domain/errors';
@@ -251,6 +253,49 @@ function buildTable(report: string, request: NextRequest): Table | null {
           'Value at retail',
           'Qty in (period)',
           'Qty out (period)',
+          'Status',
+        ],
+        rows,
+      };
+    }
+
+    case 'expiry': {
+      /**
+       * Every crate still holding stock, with how long it has left.
+       *
+       * BATCHES, not buckets. The summary on screen answers "how bad is it";
+       * a spreadsheet is opened to answer "which ones", and six summary rows
+       * would not survive being printed and carried round a shelf.
+       *
+       * No money column, and there must never be one: a batch has never
+       * carried a cost — value is weighted-average and pooled per product —
+       * so any figure here would be invented.
+       */
+      const asAt = range.to;
+      const rows: CsvValue[][] = listAllOpenBatches(db, asAt).map((row): CsvValue[] => [
+        row.batchRef,
+        row.productName,
+        row.sku ?? '',
+        row.unit,
+        row.expiryDate ?? '',
+        row.daysLeft === null ? '' : String(row.daysLeft),
+        csvQty(makeQty(row.qtyMilli)),
+        row.supplierName ?? '',
+        row.receivedDate ?? '',
+        row.expiryDate === null ? 'no date' : row.daysLeft! < 0 ? 'expired' : 'in date',
+      ]);
+
+      return {
+        headers: [
+          'Batch',
+          'Product',
+          'SKU',
+          'Unit',
+          'Expires',
+          'Days left',
+          'Remaining',
+          'Supplier',
+          'Received',
           'Status',
         ],
         rows,
