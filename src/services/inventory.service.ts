@@ -26,6 +26,7 @@ import {
   ValidationError,
 } from '@/domain/errors';
 import { assertPeriodOpen } from '@/domain/accounting/period-lock';
+import { assertBusinessDate } from '@/domain/business-date';
 import { readLockDate } from './journal.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import {
@@ -77,14 +78,17 @@ export interface StockMovementInput {
   /**
    * Which batch the stock should come from, or land in.
    *
-   * IN  — `NEW` opens a batch, which is what a delivery does.
-   *       `RESTORE` puts units back into the exact batches they left from,
+   * IN  — `NEW` opens a batch, which is what a dated delivery does.
+   *       `SOURCE` puts units back into the exact batches they left from,
    *       which is what a void or a customer return must do, or the dates on a
    *       shelf become fiction after the first one.
    *       Omitted: lands in the product's undated batch.
    *
    * OUT — `PICK` runs first-expiry-first-out. Omitted means the same with
    *       `allowExpired: false`, which is the ordinary till.
+   *       `SOURCE` takes the units back out of the batches a document put
+   *       there, which is what returning goods to a supplier must do: their
+   *       crate goes back, not whichever crate happens to be oldest.
    *
    * Every caller may omit this and get today's behaviour, because a shop whose
    * stock is all undated picks from one batch either way.
@@ -101,7 +105,14 @@ export type BatchDirective =
       warnDays?: number | undefined;
       note?: string | undefined;
     }
-  | { kind: 'RESTORE'; allocations: readonly Allocation[] }
+  /**
+   * The split a document originally made, from `readBatchSplits`.
+   *
+   * Works in both directions and means the same thing either way: these exact
+   * batches, in proportion to what each contributed. Going IN it puts units
+   * back where they were; going OUT it takes back what a document brought.
+   */
+  | { kind: 'SOURCE'; allocations: readonly Allocation[] }
   | { kind: 'PICK'; allowExpired?: boolean };
 
 export interface StockMovementResult {
@@ -282,7 +293,7 @@ function allocateIn(tx: Tx, input: StockMovementInput): Allocation[] {
     return [{ batchId: batch.id, batchRef: batch.batchRef, qtyMilli: input.qty }];
   }
 
-  if (directive?.kind === 'RESTORE') {
+  if (directive?.kind === 'SOURCE') {
     // Put the units back in the batches they left from, whatever state those
     // are in now. A batch that emptied is reopened rather than replaced: open a
     // new one and the trace from a delivery to its customers is broken.
@@ -295,10 +306,12 @@ function allocateIn(tx: Tx, input: StockMovementInput): Allocation[] {
   return [{ batchId: undated.id, batchRef: undated.batchRef, qtyMilli: input.qty }];
 }
 
-/** Stock leaving: first-expiry-first-out. */
+/** Stock leaving: back to its source if a document named one, otherwise FEFO. */
 function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
   const directive = input.batch;
   const approved = directive?.kind === 'PICK' && directive.allowExpired === true;
+
+  if (directive?.kind === 'SOURCE') return allocateOutToSource(tx, input, directive.allocations);
 
   const open = tx
     .select({
@@ -392,6 +405,83 @@ function mergeByBatch(allocations: readonly Allocation[]): Allocation[] {
   return [...merged.values()];
 }
 
+/**
+ * Take stock back out of the batches a document put it in.
+ *
+ * Returning goods to a supplier, or voiding their delivery, has to remove
+ * THEIR crate. Picking the oldest one instead would leave the shop holding
+ * goods it has been paid back for, under a date that belongs to something else.
+ *
+ * Their crate may not be there any more, because some of it was sold. What is
+ * left goes back first; the remainder falls through to ordinary picking, which
+ * is the honest answer — the goods really did have to come from somewhere else.
+ * Expired batches are open to it, because a void is not a sale and refusing to
+ * undo a mistake over a date helps nobody.
+ */
+function allocateOutToSource(
+  tx: Tx,
+  input: StockMovementInput,
+  source: readonly Allocation[],
+): Allocation[] {
+  const held = new Map(
+    tx
+      .select({ id: productBatches.id, qtyMilli: productBatches.qtyMilli })
+      .from(productBatches)
+      .where(eq(productBatches.productId, input.productId))
+      .all()
+      .map((row) => [row.id, row.qtyMilli]),
+  );
+
+  const wanted = allocateProportional(source, input.qty);
+  const allocations: Allocation[] = [];
+  let short = 0;
+
+  for (const allocation of wanted) {
+    const available = Math.max(0, held.get(allocation.batchId) ?? 0);
+    const take = Math.min(available, allocation.qtyMilli);
+    if (take > 0) allocations.push({ ...allocation, qtyMilli: take });
+    short += allocation.qtyMilli - take;
+  }
+
+  if (short === 0) return allocations;
+
+  const taken = new Set(allocations.map((allocation) => allocation.batchId));
+  const rest = tx
+    .select({
+      id: productBatches.id,
+      batchRef: productBatches.batchRef,
+      expiryDate: productBatches.expiryDate,
+      qtyMilli: productBatches.qtyMilli,
+    })
+    .from(productBatches)
+    .where(and(eq(productBatches.productId, input.productId), eq(productBatches.isClosed, false)))
+    .all()
+    .filter((batch) => !taken.has(batch.id));
+
+  const plan =
+    rest.length === 0
+      ? { allocations: [], shortfall: short }
+      : allocateFefo(rest, makeQty(short), { today: input.businessDate, allowExpired: true });
+
+  const merged = mergeByBatch([...allocations, ...plan.allocations]);
+  if (plan.shortfall === 0) return merged;
+
+  // Nothing left anywhere. The costing engine has already decided whether the
+  // shop tolerates that; batches follow it rather than argue with it.
+  if (input.allowNegative === true) {
+    const undated = findOrOpenUndatedBatch(tx, input);
+    return mergeByBatch([
+      ...merged,
+      { batchId: undated.id, batchRef: undated.batchRef, qtyMilli: plan.shortfall },
+    ]);
+  }
+
+  throw new InvariantViolatedError(
+    `Stock exists that no batch owns: ${formatQty(plan.shortfall)} of product ${input.productId}.`,
+    { productId: input.productId, shortfall: plan.shortfall },
+  );
+}
+
 /** Shop policy: is expired stock refused at the till? */
 function expiryBlocksSales(tx: Tx): boolean {
   const settings = tx
@@ -407,6 +497,10 @@ function openBatch(
   input: StockMovementInput,
   directive: Extract<BatchDirective, { kind: 'NEW' }>,
 ): { id: number; batchRef: string } {
+  if (directive.expiryDate !== null && directive.expiryDate !== undefined) {
+    assertBusinessDate(directive.expiryDate, 'expiry date');
+  }
+
   const batchRef = nextDocumentNumber(tx, DOC_TYPES.BATCH);
 
   const row = tx
@@ -551,6 +645,56 @@ export interface BatchCoverageCheck {
  * the batch started with, once, at migration, is the difference between proving
  * something and appearing to.
  */
+/**
+ * The batch split of each stock movement a document made for one product,
+ * oldest movement first.
+ *
+ * One array per ledger row, because the same product can appear on two lines of
+ * one invoice and each line moved its own goods. Callers walk the lines in
+ * order and take the head, exactly as the void path already does with the
+ * original costs.
+ *
+ * An EMPTY array back is not a failure and must not be treated as one: every
+ * movement made before batches existed has no split, and voiding a delivery
+ * from last year has to keep working. The caller falls back to ordinary
+ * picking, which is what that delivery would have got anyway.
+ */
+export function readBatchSplits(
+  tx: Tx,
+  source: { sourceType: string; sourceId: number },
+  productId: number,
+): Allocation[][] {
+  const rows = tx
+    .select({
+      ledgerId: stockLedgerBatches.ledgerId,
+      batchId: stockLedgerBatches.batchId,
+      batchRef: productBatches.batchRef,
+      qtyInMilli: stockLedgerBatches.qtyInMilli,
+    })
+    .from(stockLedgerBatches)
+    .innerJoin(stockLedger, eq(stockLedger.id, stockLedgerBatches.ledgerId))
+    .innerJoin(productBatches, eq(productBatches.id, stockLedgerBatches.batchId))
+    .where(
+      and(
+        eq(stockLedger.sourceType, source.sourceType),
+        eq(stockLedger.sourceId, source.sourceId),
+        eq(stockLedger.productId, productId),
+      ),
+    )
+    .orderBy(asc(stockLedgerBatches.ledgerId), asc(stockLedgerBatches.id))
+    .all();
+
+  const byMovement = new Map<number, Allocation[]>();
+  for (const row of rows) {
+    if (row.qtyInMilli <= 0) continue;
+    const split = byMovement.get(row.ledgerId) ?? [];
+    split.push({ batchId: row.batchId, batchRef: row.batchRef, qtyMilli: row.qtyInMilli });
+    byMovement.set(row.ledgerId, split);
+  }
+
+  return [...byMovement.values()];
+}
+
 export function verifyProductBatches(db: Db, productId: number): BatchVerification[] {
   const batches = db
     .select()

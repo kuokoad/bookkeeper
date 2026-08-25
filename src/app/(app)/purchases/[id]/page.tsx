@@ -181,6 +181,14 @@ export default async function PurchaseDetailPage({
             <TR key={item.id}>
               <TD>
                 <span className="font-medium text-content">{item.productName}</span>
+                {item.batches.map((batch) => (
+                  <span
+                    key={batch.batchRef}
+                    className="mt-0.5 block text-xs text-content-muted"
+                  >
+                    {batch.batchRef} · expires {formatDate(batch.expiryDate!)}
+                  </span>
+                ))}
               </TD>
               <TD numeric>{quantity(makeQty(item.qtyMilli), item.unit)}</TD>
               <TD numeric>{money(minor(item.unitCostMinor), { bare: true })}</TD>

@@ -7,6 +7,7 @@ import {
   products,
   purchaseItems,
   purchases,
+  productBatches,
   saleItems,
   sales,
   stockLedger,
@@ -40,7 +41,12 @@ import {
   getReturnablePurchaseItems,
   getReturnableSaleItems,
 } from '@/services/returns.service';
-import { verifyProductStock, getInventoryValue } from '@/services/inventory.service';
+import {
+  verifyBatchCoverage,
+  verifyProductBatches,
+  verifyProductStock,
+  getInventoryValue,
+} from '@/services/inventory.service';
 import { getAccountBalanceByCode, getTrialBalance } from '@/services/reporting/balances.service';
 import { minor, type Minor } from '@/domain/money';
 import { fromUnits, type Qty } from '@/domain/quantity';
@@ -882,5 +888,334 @@ describe('reads', () => {
       .get();
     expect(line?.returnedQtyMilli).toBe(2_000);
     expect(line?.qtyMilli).toBe(10_000);
+  });
+});
+
+describe('a delivery that carries a date', () => {
+  /**
+   * The first thing about expiry the shop can actually see.
+   *
+   * A line with a date opens its own batch. A line without one changes nothing
+   * at all — which matters more than it sounds, because most lines in most
+   * shops will never carry a date and none of those people should notice this
+   * feature exists.
+   */
+
+  const batchesOf = (productId: number) =>
+    context.db
+      .select()
+      .from(productBatches)
+      .where(eq(productBatches.productId, productId))
+      .all()
+      .sort((a, b) => a.id - b.id);
+
+  function expectBatchesIntact(label: string): void {
+    for (const row of verifyBatchCoverage(context.db)) {
+      expect(row.ok, `${label}: product ${row.productId}`).toBe(true);
+    }
+    for (const product of context.db.select({ id: products.id }).from(products).all()) {
+      for (const check of verifyProductBatches(context.db, product.id)) {
+        expect(check.ok, `${label}: batch ${check.batchId}`).toBe(true);
+      }
+    }
+  }
+
+  it('opens a batch carrying that date', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const milk = makeProduct('Evaporated Milk');
+
+    createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: milk, qty: u(24), unitCost: m(300), expiryDate: '2027-03-31' }],
+        tenders: [{ paymentAccountId: CASH, amount: m(7_200) }],
+      },
+      ACTOR,
+    );
+
+    const [batch] = batchesOf(milk);
+    expect(batch!.expiryDate).toBe('2027-03-31');
+    expect(batch!.qtyMilli).toBe(24_000);
+    expect(batch!.supplierId).toBe(supplierId);
+    expect(batch!.sourceType).toBe('PURCHASE');
+    expect(batch!.batchRef).toMatch(/^BAT-\d{5}$/);
+    expectBatchesIntact('dated delivery');
+  });
+
+  it('lands in the undated batch when no date is given', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const rice = makeProduct('Rice 5kg');
+
+    createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: rice, qty: u(10), unitCost: m(1_000) }],
+        tenders: [{ paymentAccountId: CASH, amount: m(10_000) }],
+      },
+      ACTOR,
+    );
+
+    const [batch] = batchesOf(rice);
+    expect(batch!.expiryDate).toBeNull();
+    expect(batch!.qtyMilli).toBe(10_000);
+    expectBatchesIntact('undated delivery');
+  });
+
+  it('keeps two dates of the same product apart', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const milk = makeProduct('Evaporated Milk');
+
+    createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [
+          { productId: milk, qty: u(12), unitCost: m(300), expiryDate: '2026-11-30' },
+          { productId: milk, qty: u(12), unitCost: m(300), expiryDate: '2027-03-31' },
+        ],
+        tenders: [{ paymentAccountId: CASH, amount: m(7_200) }],
+      },
+      ACTOR,
+    );
+
+    expect(batchesOf(milk).map((b) => [b.expiryDate, b.qtyMilli])).toEqual([
+      ['2026-11-30', 12_000],
+      ['2027-03-31', 12_000],
+    ]);
+    expectBatchesIntact('two dates on one invoice');
+  });
+
+  it('sells the tighter date first, and leaves the other alone', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const milk = makeProduct('Evaporated Milk');
+
+    createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [
+          { productId: milk, qty: u(6), unitCost: m(300), expiryDate: '2027-03-31' },
+          { productId: milk, qty: u(6), unitCost: m(300), expiryDate: '2026-11-30' },
+        ],
+        tenders: [{ paymentAccountId: CASH, amount: m(3_600) }],
+      },
+      ACTOR,
+    );
+
+    createSale(
+      context.db,
+      {
+        businessDate: TODAY,
+        items: [{ productId: milk, qty: u(4) }],
+        tenders: [{ paymentAccountId: CASH, amount: m(3_200) }],
+      },
+      ACTOR,
+    );
+
+    expect(batchesOf(milk).map((b) => [b.expiryDate, b.qtyMilli])).toEqual([
+      ['2027-03-31', 6_000],
+      ['2026-11-30', 2_000],
+    ]);
+    expectBatchesIntact('fefo from a real sale');
+  });
+
+  it('refuses a date that is not a date', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const milk = makeProduct('Evaporated Milk');
+
+    // Batch dates are compared as text, so '31/03/2027' would sort as though it
+    // were centuries away and quietly change which crate leaves the shelf.
+    expect(() =>
+      createPurchase(
+        context.db,
+        {
+          businessDate: TODAY,
+          supplierId,
+          items: [{ productId: milk, qty: u(6), unitCost: m(300), expiryDate: '31/03/2027' }],
+          tenders: [{ paymentAccountId: CASH, amount: m(1_800) }],
+        },
+        ACTOR,
+      ),
+    ).toThrow(ValidationError);
+
+    expect(batchesOf(milk)).toEqual([]);
+    expect(getProduct(context.db, milk).qtyOnHand).toBe(0);
+  });
+});
+
+describe('sending goods back to the supplier they came from', () => {
+  const batchesOf = (productId: number) =>
+    context.db
+      .select()
+      .from(productBatches)
+      .where(eq(productBatches.productId, productId))
+      .all()
+      .sort((a, b) => a.id - b.id);
+
+  it('empties the batch the voided delivery opened, not the oldest one', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const milk = makeProduct('Evaporated Milk');
+
+    // An older crate that expires SOONER, so FEFO would take this one first.
+    createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: milk, qty: u(6), unitCost: m(300), expiryDate: '2026-10-31' }],
+        tenders: [{ paymentAccountId: CASH, amount: m(1_800) }],
+      },
+      ACTOR,
+    );
+
+    const later = createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: milk, qty: u(6), unitCost: m(300), expiryDate: '2027-03-31' }],
+        tenders: [{ paymentAccountId: CASH, amount: m(1_800) }],
+      },
+      ACTOR,
+    );
+
+    voidPurchase(context.db, later.purchaseId, 'Delivered to the wrong shop', ACTOR);
+
+    expect(batchesOf(milk).map((b) => [b.expiryDate, b.qtyMilli, b.isClosed])).toEqual([
+      ['2026-10-31', 6_000, false],
+      ['2027-03-31', 0, true],
+    ]);
+    assertBooksHealthy('void of a dated delivery');
+  });
+
+  it('draws a return from that supplier batch even when an older one exists', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const milk = makeProduct('Evaporated Milk');
+
+    createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: milk, qty: u(6), unitCost: m(300), expiryDate: '2026-10-31' }],
+        tenders: [{ paymentAccountId: CASH, amount: m(1_800) }],
+      },
+      ACTOR,
+    );
+
+    const second = createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: milk, qty: u(6), unitCost: m(400), expiryDate: '2027-03-31' }],
+        tenders: [{ paymentAccountId: CASH, amount: m(2_400) }],
+      },
+      ACTOR,
+    );
+
+    const items = getReturnablePurchaseItems(context.db, second.purchaseId);
+    createSupplierReturn(
+      context.db,
+      second.purchaseId,
+      { businessDate: TODAY, items: [{ itemId: items[0]!.id, qty: u(4) }] },
+      ACTOR,
+    );
+
+    // Four came out of THEIR crate. The older, tighter-dated one is untouched.
+    expect(batchesOf(milk).map((b) => [b.expiryDate, b.qtyMilli])).toEqual([
+      ['2026-10-31', 6_000],
+      ['2027-03-31', 2_000],
+    ]);
+    assertBooksHealthy('supplier return from a dated batch');
+  });
+
+  it('falls back to picking when their crate has already been sold', () => {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const milk = makeProduct('Evaporated Milk');
+
+    // Their delivery expires SOONEST, so the sale takes all of it.
+    const theirs = createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: milk, qty: u(6), unitCost: m(300), expiryDate: '2026-10-31' }],
+        tenders: [{ paymentAccountId: CASH, amount: m(1_800) }],
+      },
+      ACTOR,
+    );
+
+    createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: milk, qty: u(6), unitCost: m(300), expiryDate: '2027-03-31' }],
+        tenders: [{ paymentAccountId: CASH, amount: m(1_800) }],
+      },
+      ACTOR,
+    );
+
+    createSale(
+      context.db,
+      {
+        businessDate: TODAY,
+        items: [{ productId: milk, qty: u(6) }],
+        tenders: [{ paymentAccountId: CASH, amount: m(4_800) }],
+      },
+      ACTOR,
+    );
+
+    // Nothing of theirs is left. The goods still have to leave, so the rest
+    // comes from what IS on the shelf rather than driving their batch negative.
+    const items = getReturnablePurchaseItems(context.db, theirs.purchaseId);
+    createSupplierReturn(
+      context.db,
+      theirs.purchaseId,
+      { businessDate: TODAY, items: [{ itemId: items[0]!.id, qty: u(3) }] },
+      ACTOR,
+    );
+
+    expect(batchesOf(milk).map((b) => [b.expiryDate, b.qtyMilli])).toEqual([
+      ['2026-10-31', 0],
+      ['2027-03-31', 3_000],
+    ]);
+    assertBooksHealthy('return after their stock was sold');
+  });
+
+  it('still voids a delivery made before batches existed', () => {
+    /**
+     * Every purchase in every existing shop is one of these. Migration 0019
+     * backfilled an opening batch and left history alone, so there is no split
+     * to put back — and the void must work exactly as it did before.
+     */
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const rice = makeProduct('Rice 5kg');
+
+    const purchase = createPurchase(
+      context.db,
+      {
+        businessDate: TODAY,
+        supplierId,
+        items: [{ productId: rice, qty: u(10), unitCost: m(1_000) }],
+        tenders: [{ paymentAccountId: CASH, amount: m(10_000) }],
+      },
+      ACTOR,
+    );
+
+    // Erase the split, as a pre-migration delivery has none.
+    context.connection.prepare('DELETE FROM stock_ledger_batches').run();
+
+    voidPurchase(context.db, purchase.purchaseId, 'Never arrived', ACTOR);
+
+    expect(getProduct(context.db, rice).qtyOnHand).toBe(0);
+    assertBooksHealthy('void of a pre-batch delivery');
   });
 });

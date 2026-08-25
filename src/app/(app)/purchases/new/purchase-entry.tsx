@@ -34,6 +34,16 @@ interface Row {
   qty: string;
   unitCost: string;
   discount: string;
+  /**
+   * When these goods run out, 'YYYY-MM-DD', or '' for goods that do not.
+   *
+   * Hidden behind a link rather than sitting on every line, because most lines
+   * in most shops are rice and soap and nobody should be asked a question about
+   * those. A field that is present gets filled in, and a wrong date at the till
+   * is worse than no date at all.
+   */
+  expiryDate: string;
+  showExpiry: boolean;
 }
 
 function toMinor(text: string): number {
@@ -89,7 +99,7 @@ export function PurchaseEntry({
   const [note, setNote] = useState('');
   const [invoiceDiscount, setInvoiceDiscount] = useState('');
   const [rows, setRows] = useState<Row[]>([
-    { key: 1, productId: '', qty: '', unitCost: '', discount: '' },
+    { key: 1, productId: '', qty: '', unitCost: '', discount: '', expiryDate: '', showExpiry: false },
   ]);
   const [payAccountId, setPayAccountId] = useState(
     String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? ''),
@@ -102,7 +112,9 @@ export function PurchaseEntry({
   const [handled, setHandled] = useState<string | undefined>(undefined);
   if (state.purchaseNo && state.purchaseNo !== handled) {
     setHandled(state.purchaseNo);
-    setRows([{ key: 1, productId: '', qty: '', unitCost: '', discount: '' }]);
+    setRows([
+      { key: 1, productId: '', qty: '', unitCost: '', discount: '', expiryDate: '', showExpiry: false },
+    ]);
     setInvoiceNo('');
     setNote('');
     setInvoiceDiscount('');
@@ -123,6 +135,8 @@ export function PurchaseEntry({
         qty: '',
         unitCost: '',
         discount: '',
+        expiryDate: '',
+        showExpiry: false,
       },
     ]);
   }
@@ -173,6 +187,7 @@ export function PurchaseEntry({
       qty: row.qty.trim(),
       unitCost: row.unitCost.trim() || '0',
       discount: row.discount.trim() || undefined,
+      expiryDate: row.expiryDate.trim() || undefined,
     })),
     tenders:
       payAmount.trim() && payAccountId
@@ -357,6 +372,61 @@ export function PurchaseEntry({
                     ✕
                   </Button>
                 </div>
+
+                {row.productId !== '' && (
+                  <div className="sm:col-span-12">
+                    {row.showExpiry || row.expiryDate !== '' ? (
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="w-44">
+                          <label
+                            htmlFor={`e-${row.key}`}
+                            className="mb-1 block text-xs font-medium text-content-muted"
+                          >
+                            Expires
+                          </label>
+                          <TextInput
+                            id={`e-${row.key}`}
+                            type="date"
+                            value={row.expiryDate}
+                            onChange={(event) =>
+                              updateRow(row.key, { expiryDate: event.target.value })
+                            }
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            updateRow(row.key, { expiryDate: '', showExpiry: false })
+                          }
+                        >
+                          No date
+                        </Button>
+                        {row.expiryDate !== '' && row.expiryDate < businessDate && (
+                          /**
+                           * The mistyped year, caught here rather than at the
+                           * counter. Goods dated before the day they arrived
+                           * are expired the moment they are saved, and the till
+                           * would refuse to sell them — which is how staff
+                           * learn to sell off-system.
+                           */
+                          <p className="text-xs font-medium text-warning">
+                            That date has already passed — these goods will count as expired.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => updateRow(row.key, { showExpiry: true })}
+                        className="text-xs font-medium text-accent hover:underline"
+                      >
+                        + Expiry date
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

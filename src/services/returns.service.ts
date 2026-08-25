@@ -24,6 +24,7 @@ import { postJournalEntry, type Actor } from './journal.service';
 import { recordStockMovement } from './inventory.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { getSaleOutstanding } from './sale.service';
+import { batchSplitByPurchaseItem } from './purchase.service';
 import { readSaleTaxes, taxAccountFor, writeSaleTaxes } from './tax.service';
 import { taxShareOf } from '@/domain/tax/components';
 
@@ -523,6 +524,9 @@ export function createSupplierReturn(
       throw new ValidationError('This return has no value to record.');
     }
 
+    /** Which crate each line of the original delivery filled. */
+    const sourceBatches = batchSplitByPurchaseItem(tx, originalPurchaseId);
+
     /**
      * The tax reclaim goes back with the goods.
      *
@@ -578,12 +582,20 @@ export function createSupplierReturn(
         .get();
 
       if (product?.trackInventory) {
+        // And leaves from the crate THIS supplier delivered. Sending back
+        // goods means sending back theirs: pick by expiry instead and the shop
+        // keeps their dated stock while an older crate goes out of the door.
+        const cameFrom = sourceBatches.get(line.item.id);
+
         recordStockMovement(tx, {
           productId: line.item.productId,
           direction: 'OUT',
           qty: line.request.qty,
           // Leaves at the price THIS supplier charged, not the blended average.
           totalCost: line.costShare,
+          ...(cameFrom === undefined
+            ? {}
+            : { batch: { kind: 'SOURCE' as const, allocations: cameFrom } }),
           movementType: 'PURCHASE_RETURN',
           sourceType: 'PURCHASE_RETURN',
           sourceId: returnPurchase.id,

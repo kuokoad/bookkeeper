@@ -136,6 +136,13 @@ const purchaseSchema = z.object({
         qty: z.string().trim().min(1),
         unitCost: z.string().trim().min(1),
         discount: z.string().trim().optional(),
+        // Empty is the ordinary case and means "these goods do not expire",
+        // so it is optional here and only checked when something was typed.
+        expiryDate: z
+          .string()
+          .trim()
+          .refine((value) => value === '' || isValidBusinessDate(value), 'Enter a valid date.')
+          .optional(),
       }),
     )
     .min(1, 'Add at least one product to the purchase.'),
@@ -177,6 +184,9 @@ export async function createPurchaseAction(
         unitCost: parseMoney(item.unitCost),
         ...(item.discount && item.discount.length > 0
           ? { discount: parseMoney(item.discount) }
+          : {}),
+        ...(item.expiryDate && item.expiryDate.length > 0
+          ? { expiryDate: item.expiryDate }
           : {}),
       });
     }

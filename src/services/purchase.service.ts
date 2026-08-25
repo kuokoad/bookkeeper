@@ -7,6 +7,7 @@ import {
   accounts,
   businessSettings,
   paymentAccounts,
+  productBatches,
   products,
   purchaseItems,
   purchasePayments,
@@ -32,7 +33,8 @@ import { extendPrice, qty as makeQty, type Qty } from '@/domain/quantity';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
-import { recordStockMovement } from './inventory.service';
+import { readBatchSplits, recordStockMovement } from './inventory.service';
+import type { Allocation } from '@/domain/inventory/batches';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import {
   getTaxProfile,
@@ -60,6 +62,15 @@ export interface PurchaseLineRequest {
   /** What this supplier charged per unit on this delivery. */
   unitCost: Minor;
   discount?: Minor;
+  /**
+   * The date these goods run out, 'YYYY-MM-DD', if the person entering the
+   * delivery knew it. Opens a batch carrying that date.
+   *
+   * Left out — which is most lines in most shops — the goods land in the
+   * product's undated batch, exactly as every delivery did before this existed.
+   * Nobody is made to answer a question about a bag of rice.
+   */
+  expiryDate?: string | null;
 }
 
 export interface PurchaseTenderRequest {
@@ -248,6 +259,12 @@ export function createPurchase(
       const lineCost = sum([subtract(line.lineTotal, lineShare), leviesShares[index] ?? ZERO]);
 
       if (line.product.trackInventory) {
+        // A dated line opens its own batch, so two deliveries of the same
+        // product with different dates stay apart on the shelf. An undated one
+        // is left to the gateway, which pools it where undated stock has always
+        // gone.
+        const expiryDate = line.item.expiryDate ?? null;
+
         recordStockMovement(tx, {
           productId: line.product.id,
           direction: 'IN',
@@ -261,6 +278,15 @@ export function createPurchase(
           occurredAt,
           userId: actor.id,
           isDemo: input.isDemo ?? false,
+          ...(expiryDate === null
+            ? {}
+            : {
+                batch: {
+                  kind: 'NEW' as const,
+                  expiryDate,
+                  ...(input.supplierId === undefined ? {} : { supplierId: input.supplierId }),
+                },
+              }),
         });
         inventoryValue = sum([inventoryValue, lineCost]);
       }
@@ -544,6 +570,26 @@ export function voidPurchase(
       originalCosts.set(row.productId, queue);
     }
 
+    /**
+     * And which BATCHES each line put stock into, consumed the same way.
+     *
+     * A void has to take the goods out of the crate this delivery brought, not
+     * out of whichever crate happens to be oldest. Undo it by FEFO and the
+     * shop is left holding the supplier's dated goods under somebody else's
+     * date, and the batch this purchase opened stays on the shelf for ever.
+     *
+     * Empty for a delivery made before batches existed, which is not a failure:
+     * that purchase never named a batch, so it is voided the way it was made.
+     */
+    const originalBatches = new Map<number, Allocation[][]>();
+    for (const item of items) {
+      if (originalBatches.has(item.productId)) continue;
+      originalBatches.set(
+        item.productId,
+        readBatchSplits(tx, { sourceType: 'PURCHASE', sourceId: purchaseId }, item.productId),
+      );
+    }
+
     items.forEach((item, index) => {
       const product = tx.select().from(products).where(eq(products.id, item.productId)).get();
 
@@ -551,12 +597,16 @@ export function voidPurchase(
         // Same product can appear on more than one line, so costs are consumed
         // in the order they were recorded.
         const wentInAt = originalCosts.get(item.productId)?.shift();
+        const wentInTo = originalBatches.get(item.productId)?.shift();
 
         const movement = recordStockMovement(tx, {
           productId: item.productId,
           direction: 'OUT',
           qty: makeQty(item.qtyMilli),
           ...(wentInAt === undefined ? {} : { totalCost: wentInAt }),
+          ...(wentInTo === undefined || wentInTo.length === 0
+            ? {}
+            : { batch: { kind: 'SOURCE' as const, allocations: wentInTo } }),
           movementType: 'PURCHASE_RETURN',
           sourceType: 'PURCHASE_VOID',
           sourceId: reversal.id,
@@ -845,11 +895,37 @@ export function getPurchase(db: Db, purchaseId: number) {
 
   if (!found) throw new NotFoundError('Purchase', purchaseId);
 
-  const items = db
+  const lines = db
     .select()
     .from(purchaseItems)
     .where(eq(purchaseItems.purchaseId, purchaseId))
     .all();
+
+  /**
+   * Which crate each line filled, so the delivery can be shown as the shop
+   * sees it: not just "24 tins" but which 24 tins, and when they run out.
+   *
+   * Empty for a delivery made before batches existed, and for goods nobody
+   * dated — most of them — in which case the line simply shows nothing extra.
+   */
+  const splits = batchSplitByPurchaseItem(db, purchaseId);
+  const dates = new Map(
+    db
+      .select({ id: productBatches.id, expiryDate: productBatches.expiryDate })
+      .from(productBatches)
+      .all()
+      .map((row) => [row.id, row.expiryDate]),
+  );
+
+  const items = lines.map((line) => ({
+    ...line,
+    batches: (splits.get(line.id) ?? [])
+      .map((allocation) => ({
+        batchRef: allocation.batchRef,
+        expiryDate: dates.get(allocation.batchId) ?? null,
+      }))
+      .filter((batch) => batch.expiryDate !== null),
+  }));
 
   const tenders = db
     .select({
@@ -909,4 +985,49 @@ export function getOpenPurchases(db: Db, supplierId: number) {
     .all()
     .map((row) => ({ ...row, outstandingMinor: outstanding.get(row.id) ?? minor(0) }))
     .filter((row) => row.outstandingMinor > 0);
+}
+
+/**
+ * Map each line of a delivery to the batch split it produced.
+ *
+ * `readBatchSplits` returns one split per stock movement, in the order the
+ * movements were made, which is the order the lines were written. So the lines
+ * are walked the same way and each takes the head of its product's queue —
+ * exactly how `voidPurchase` already consumes the original line costs.
+ *
+ * Lines whose product does not track stock made no movement and take nothing,
+ * or every line after them would be paired with the wrong crate. Lines from a
+ * delivery that predates batches are simply absent, and their caller falls back
+ * to ordinary picking.
+ */
+export function batchSplitByPurchaseItem(tx: Tx, purchaseId: number): Map<number, Allocation[]> {
+  const lines = tx
+    .select({
+      id: purchaseItems.id,
+      productId: purchaseItems.productId,
+      trackInventory: products.trackInventory,
+    })
+    .from(purchaseItems)
+    .innerJoin(products, eq(products.id, purchaseItems.productId))
+    .where(eq(purchaseItems.purchaseId, purchaseId))
+    .orderBy(asc(purchaseItems.lineNo))
+    .all();
+
+  const queues = new Map<number, Allocation[][]>();
+  const byLine = new Map<number, Allocation[]>();
+
+  for (const line of lines) {
+    if (!line.trackInventory) continue;
+
+    let queue = queues.get(line.productId);
+    if (queue === undefined) {
+      queue = readBatchSplits(tx, { sourceType: 'PURCHASE', sourceId: purchaseId }, line.productId);
+      queues.set(line.productId, queue);
+    }
+
+    const split = queue.shift();
+    if (split !== undefined && split.length > 0) byLine.set(line.id, split);
+  }
+
+  return byLine;
 }

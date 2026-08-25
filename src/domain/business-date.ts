@@ -72,6 +72,23 @@ function fromDayNumber(dayNumber: number): Parts {
 }
 
 /** `days` after `date`. Negative moves backwards. */
+/**
+ * Refuse anything that is not a real business date.
+ *
+ * Batch dates are compared as TEXT, which is only correct while every one of
+ * them is `YYYY-MM-DD`. A '2026-8-5' or a '05/08/2026' would sort as though it
+ * were years away and quietly change which crate leaves the shelf, so the
+ * guard belongs where the date is first written down rather than where the
+ * comparison happens.
+ */
+export function assertBusinessDate(date: string, label = 'date'): void {
+  try {
+    parse(date);
+  } catch {
+    throw new ValidationError(`The ${label} "${date}" is not a real date (YYYY-MM-DD).`, { date });
+  }
+}
+
 export function addDays(date: string, days: number): string {
   if (!Number.isInteger(days)) {
     throw new ValidationError('Days must be a whole number.', { days });
