@@ -2,11 +2,13 @@ import { and, asc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
-import { businessSettings, categories, products, stockLedger } from '@/db/schema';
+import { businessSettings, categories, productBatches, products, stockLedger } from '@/db/schema';
 import { minor, type Minor } from '@/domain/money';
 import { qty as makeQty, type Qty } from '@/domain/quantity';
 import { averageUnitCost, isLowStock, isOutOfStock } from '@/domain/inventory/costing';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
+import { addDays } from '@/domain/business-date';
+import { toBusinessDate } from '@/lib/format';
 import { writeAudit } from './audit.service';
 import type { Actor } from './journal.service';
 
@@ -401,6 +403,13 @@ export interface ProductQuery {
   categoryId?: number;
   includeInactive?: boolean;
   lowStockOnly?: boolean;
+  /**
+   * Products holding dated stock: `'expired'` for what has already turned,
+   * `'soon'` for what falls inside the shop's warning window.
+   */
+  expiring?: 'expired' | 'soon';
+  /** The day the window is measured from. Defaults to today. */
+  asAt?: string;
   limit?: number;
   offset?: number;
 }
@@ -421,6 +430,33 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
   if (query.id !== undefined) conditions.push(eq(products.id, query.id));
   if (!query.includeInactive) conditions.push(eq(products.isActive, true));
   if (query.categoryId !== undefined) conditions.push(eq(products.categoryId, query.categoryId));
+
+  /**
+   * Products whose batches carry a date worth looking at.
+   *
+   * An EXISTS rather than a join: a product with three crates going off is one
+   * row in this list, and a join would give it three. The dates live on the
+   * batches, so this is the one place the two tables meet.
+   */
+  if (query.expiring !== undefined) {
+    const asAt = query.asAt ?? toBusinessDate();
+    const window =
+      query.expiring === 'expired'
+        ? sql`${productBatches.expiryDate} < ${asAt}`
+        : sql`${productBatches.expiryDate} >= ${asAt}
+              AND ${productBatches.expiryDate} <= ${addDays(asAt, getExpirySummary(db, asAt).warningDays)}`;
+
+    conditions.push(
+      sql`EXISTS (
+        SELECT 1 FROM ${productBatches}
+        WHERE ${productBatches.productId} = ${products.id}
+          AND ${productBatches.isClosed} = 0
+          AND ${productBatches.qtyMilli} > 0
+          AND ${productBatches.expiryDate} IS NOT NULL
+          AND ${window}
+      )`,
+    );
+  }
 
   if (query.search) {
     const term = `%${query.search.trim().toLowerCase()}%`;
@@ -541,6 +577,74 @@ export function getStockSummary(db: Db): StockSummary {
     totalStockValue: minor(items.reduce((total, item) => total + item.stockValue, 0)),
     lowStockCount: items.filter((item) => item.lowStock && !item.outOfStock).length,
     outOfStockCount: items.filter((item) => item.outOfStock).length,
+  };
+}
+
+export interface ExpirySummary {
+  /** Products holding stock that has passed its date. */
+  expiredCount: number;
+  /** How much of it there is, in milli-units, across every product. */
+  expiredQtyMilli: number;
+  /** Products whose soonest date falls inside the shop's warning window. */
+  expiringSoonCount: number;
+  /** The window itself, so a message can say what it means. */
+  warningDays: number;
+}
+
+/**
+ * What the shop needs to be told about dates, in one pass.
+ *
+ * Counts PRODUCTS, not batches, because that is the unit an owner acts on —
+ * three crates of the same milk going off is one thing to deal with, not three.
+ *
+ * Deliberately no value figure for expiring-soon stock. Goods that have not
+ * turned yet are worth exactly what the books say; putting a number beside them
+ * would invite writing it off early, which is the opposite of the point.
+ */
+export function getExpirySummary(db: Db, asAt: string = toBusinessDate()): ExpirySummary {
+  const settings = db
+    .select({ warningDays: businessSettings.expiryWarningDays })
+    .from(businessSettings)
+    .where(eq(businessSettings.id, 1))
+    .get();
+  const warningDays = settings?.warningDays ?? 30;
+  const horizon = addDays(asAt, warningDays);
+
+  const expired = db
+    .select({
+      productCount: sql<number>`COUNT(DISTINCT ${productBatches.productId})`,
+      qtyMilli: sql<number>`COALESCE(SUM(${productBatches.qtyMilli}), 0)`,
+    })
+    .from(productBatches)
+    .where(
+      and(
+        eq(productBatches.isClosed, false),
+        sql`${productBatches.qtyMilli} > 0`,
+        sql`${productBatches.expiryDate} IS NOT NULL`,
+        sql`${productBatches.expiryDate} < ${asAt}`,
+      ),
+    )
+    .get();
+
+  const soon = db
+    .select({ productCount: sql<number>`COUNT(DISTINCT ${productBatches.productId})` })
+    .from(productBatches)
+    .where(
+      and(
+        eq(productBatches.isClosed, false),
+        sql`${productBatches.qtyMilli} > 0`,
+        sql`${productBatches.expiryDate} IS NOT NULL`,
+        sql`${productBatches.expiryDate} >= ${asAt}`,
+        sql`${productBatches.expiryDate} <= ${horizon}`,
+      ),
+    )
+    .get();
+
+  return {
+    expiredCount: expired?.productCount ?? 0,
+    expiredQtyMilli: expired?.qtyMilli ?? 0,
+    expiringSoonCount: soon?.productCount ?? 0,
+    warningDays,
   };
 }
 

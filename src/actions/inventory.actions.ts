@@ -21,7 +21,8 @@ import type { FormState } from './auth.actions';
 /**
  * Stock adjustment actions.
  *
- * The form posts parallel arrays (productId[], direction[], qty[], value[]).
+ * The form posts parallel arrays (productId[], direction[], qty[], value[],
+ * and batchId[] on an expired write-off).
  * Every row is validated individually so the owner is told exactly which line
  * is wrong, and the whole document is rejected if any line is — a half-applied
  * adjustment is never written.
@@ -60,6 +61,13 @@ export async function createAdjustmentAction(
   const directions = formData.getAll('direction');
   const quantities = formData.getAll('qty');
   const values = formData.getAll('value');
+  /**
+   * One entry per row, but ONLY when the reason is a write-off of expired
+   * goods — that is the only time the form renders the field, as a picker or as
+   * an empty hidden input. Any other reason posts nothing here and every lookup
+   * below reads `undefined`, which is exactly "no crate named".
+   */
+  const batchIds = formData.getAll('batchId');
 
   const items: AdjustmentItemInput[] = [];
 
@@ -101,7 +109,13 @@ export async function createAdjustmentAction(
       }
     } else {
       // Value is computed from the weighted average — never taken from the form.
-      items.push({ productId, direction, qty });
+      const rawBatchId = String(batchIds[index] ?? '').trim();
+      const batchId = rawBatchId === '' ? undefined : Number(rawBatchId);
+      if (batchId !== undefined && (!Number.isInteger(batchId) || batchId <= 0)) {
+        return { error: `Line ${index + 1}: that batch could not be read.` };
+      }
+
+      items.push({ productId, direction, qty, ...(batchId === undefined ? {} : { batchId }) });
     }
   }
 

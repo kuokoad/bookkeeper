@@ -103,7 +103,8 @@ export function orderForPicking(
  *
  * Expired batches are SKIPPED whenever the good stock covers the quantity. They
  * are only reported — and only taken with `allowExpired` — when there is
- * nothing else left. That distinction is what keeps this from becoming a block
+ * nothing else left. The one exception is `expiredFirst`, which inverts the
+ * order entirely and belongs to writing expired goods OFF. That distinction is what keeps this from becoming a block
  * staff route around: a shop with one old crate at the back of the shelf never
  * sees an interruption while it still has fresh stock.
  *
@@ -112,7 +113,7 @@ export function orderForPicking(
 export function allocateFefo(
   batches: readonly PickableBatch[],
   qty: Qty,
-  options: { today: string; allowExpired?: boolean },
+  options: { today: string; allowExpired?: boolean; expiredFirst?: boolean },
 ): FefoPlan {
   if (qty <= 0) {
     throw new ValidationError('Picking requires a quantity greater than zero.', { qty });
@@ -133,6 +134,27 @@ export function allocateFefo(
       remaining -= take;
     }
   };
+
+  /**
+   * Writing off expired goods reverses the whole order: the point of the
+   * exercise is to remove the stock that has turned, so it goes first and the
+   * good stock is what may be left over. Without this the write-off would take
+   * fresh stock and leave the bad crate on the shelf, short by the amount
+   * removed from somewhere else — a wrong answer no balance check could see.
+   */
+  if (options.expiredFirst === true) {
+    drawFrom(expired);
+    drawFrom(good);
+    const tookExpired = allocations
+      .filter((allocation) => expired.some((batch) => batch.id === allocation.batchId))
+      .reduce((total, allocation) => total + allocation.qtyMilli, 0);
+    return {
+      allocations,
+      shortfall: Math.max(0, remaining),
+      expiredNeeded: tookExpired,
+      expiredRefs: expired.map((batch) => batch.batchRef),
+    };
+  }
 
   drawFrom(good);
 

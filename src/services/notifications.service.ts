@@ -5,7 +5,7 @@ import type { Db } from '@/db/types';
 import { can, type Principal } from '@/lib/auth/permissions';
 import { toBusinessDate } from '@/lib/format';
 import { financialYearFor } from '@/domain/financial-year';
-import { getStockSummary } from '@/services/catalog.service';
+import { getExpirySummary, getStockSummary } from '@/services/catalog.service';
 import { describeBackupStatus, getBackupStatus } from './backup.service';
 import { getTrialBalance } from '@/services/reporting/balances.service';
 import { getReceivablesAgeing } from '@/services/reporting/ledger.service';
@@ -65,6 +65,34 @@ export function getNotices(db: Db, user: Principal): Notice[] {
         title: `${stock.lowStockCount} product${stock.lowStockCount === 1 ? '' : 's'} running low`,
         detail: 'Time to reorder.',
         href: '/products?low=1',
+      });
+    }
+
+    /**
+     * Dates, on the same footing as quantity and with the same precedence:
+     * stock that has already turned crowds out the warning about stock that is
+     * going to, exactly as out-of-stock crowds out running-low. Two notices
+     * about the same shelf is one notice too many.
+     *
+     * Both are conditions holding right now, read from the batches. Neither is
+     * a nudge, and neither appears at all in a shop that never dates anything.
+     */
+    const expiry = getExpirySummary(db, today);
+    if (expiry.expiredCount > 0) {
+      notices.push({
+        id: 'expired-stock',
+        tone: 'danger',
+        title: `${expiry.expiredCount} product${expiry.expiredCount === 1 ? '' : 's'} with expired stock`,
+        detail: 'It cannot be sold. Write it off to take it out of the accounts.',
+        href: '/products?expiring=expired',
+      });
+    } else if (expiry.expiringSoonCount > 0) {
+      notices.push({
+        id: 'expiring-soon',
+        tone: 'warning',
+        title: `${expiry.expiringSoonCount} product${expiry.expiringSoonCount === 1 ? '' : 's'} expiring within ${expiry.warningDays} days`,
+        detail: 'Still sellable. Move it first.',
+        href: '/products?expiring=soon',
       });
     }
   }

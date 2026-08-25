@@ -7,11 +7,13 @@ import { businessSettings } from '@/db/schema';
 import { ADJUSTMENT_REASONS } from '@/db/schema/inventory';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { listProducts } from '@/services/catalog.service';
+import { listExpiredBatches } from '@/services/inventory.service';
 import {
   REASON_DEFAULT_DIRECTION,
   REASON_LABELS,
 } from '@/services/stock-adjustment.service';
-import { toBusinessDate, quantity } from '@/lib/format';
+import { formatDate, toBusinessDate, quantity } from '@/lib/format';
+import { qty as makeQty } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/ui/page';
 import { AdjustmentForm } from './adjustment-form';
@@ -22,6 +24,11 @@ export const dynamic = 'force-dynamic';
 export default async function NewAdjustmentPage() {
   await requirePageAccess('inventory', 'create');
 
+  // Which crates have actually turned, so a write-off can name one instead of
+  // taking the stock out of whatever happens to expire soonest — the good crate.
+  const today = toBusinessDate();
+  const expired = listExpiredBatches(db, today);
+
   const products = listProducts(db)
     .filter((product) => product.trackInventory)
     .map((product) => ({
@@ -29,6 +36,12 @@ export default async function NewAdjustmentPage() {
       name: product.name,
       unit: product.unit,
       qtyOnHandLabel: `${quantity(product.qtyOnHand, product.unit)} on hand`,
+      expiredBatches: expired
+        .filter((batch) => batch.productId === product.id)
+        .map((batch) => ({
+          id: batch.id,
+          label: `${batch.batchRef} — ${quantity(makeQty(batch.qtyMilli), product.unit)}, expired ${formatDate(batch.expiryDate)}`,
+        })),
     }));
 
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();

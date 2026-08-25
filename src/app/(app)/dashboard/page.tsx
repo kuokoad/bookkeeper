@@ -7,7 +7,7 @@ import {
   getPaymentAccountBalances,
   getTrialBalance,
 } from '@/services/reporting/balances.service';
-import { getStockSummary, listProducts } from '@/services/catalog.service';
+import { getExpirySummary, getStockSummary, listProducts } from '@/services/catalog.service';
 import { getSalesSummary } from '@/services/sale.service';
 import { getSalesByDay } from '@/services/reporting/operations.service';
 import { getMoneyByMonth } from '@/services/reporting/money-trend';
@@ -161,6 +161,7 @@ export default async function DashboardPage({
   const trialBalance = shows.money ? getTrialBalance(db) : null;
   const entryCount = shows.money ? countJournalEntries(db) : 0;
   const stock = shows.stock ? getStockSummary(db) : null;
+  const expiry = shows.stock ? getExpirySummary(db) : null;
   const lowStockItems = shows.stock ? listProducts(db, { lowStockOnly: true }) : [];
 
   const salesFrom = daysBefore(today, RANGES[salesRange].days);
@@ -412,6 +413,36 @@ export default async function DashboardPage({
               {lowStockItems.length > 3 && ` and ${lowStockItems.length - 3} more`}.{' '}
               <Link href="/products?low=1" className="text-accent hover:underline">
                 See all
+              </Link>
+            </p>
+          )}
+
+          {/*
+            Dates, and ONLY when there is something to say. A row reading "0"
+            every day in a shop that never dates anything is a row people stop
+            reading, and then it is not there on the day it says 3.
+          */}
+          {expiry !== null && expiry.expiredCount > 0 && (
+            <p className="mt-3 border-t border-line pt-3 text-xs text-content-muted">
+              <span className="font-medium text-danger">
+                {expiry.expiredCount} product{expiry.expiredCount === 1 ? '' : 's'} with expired
+                stock
+              </span>{' '}
+              — it cannot be sold.{' '}
+              <Link href="/products?expiring=expired" className="text-accent hover:underline">
+                Write it off
+              </Link>
+            </p>
+          )}
+          {expiry !== null && expiry.expiredCount === 0 && expiry.expiringSoonCount > 0 && (
+            <p className="mt-3 border-t border-line pt-3 text-xs text-content-muted">
+              <span className="font-medium text-warning">
+                {expiry.expiringSoonCount} product{expiry.expiringSoonCount === 1 ? '' : 's'}{' '}
+                expiring within {expiry.warningDays} days
+              </span>{' '}
+              — worth moving first.{' '}
+              <Link href="/products?expiring=soon" className="text-accent hover:underline">
+                See which
               </Link>
             </p>
           )}

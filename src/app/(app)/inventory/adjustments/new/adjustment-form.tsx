@@ -15,6 +15,8 @@ export interface ProductOption {
   name: string;
   unit: string;
   qtyOnHandLabel: string;
+  /** Crates of this product that have passed their date. Usually empty. */
+  expiredBatches: { id: number; label: string }[];
 }
 
 export interface ReasonOption {
@@ -30,6 +32,8 @@ interface Row {
   direction: 'IN' | 'OUT';
   qty: string;
   value: string;
+  /** Which crate expired, when the reason is that something did. */
+  batchId: string;
 }
 
 function SubmitButton() {
@@ -55,7 +59,7 @@ export function AdjustmentForm({
   const [state, formAction] = useActionState<FormState, FormData>(createAdjustmentAction, {});
   const [reason, setReason] = useState(reasons[0]?.value ?? 'COUNT_CORRECTION');
   const [rows, setRows] = useState<Row[]>([
-    { key: 1, productId: '', direction: 'IN', qty: '', value: '' },
+    { key: 1, productId: '', direction: 'IN', qty: '', value: '', batchId: '' },
   ]);
 
   const selectedReason = reasons.find((option) => option.value === reason);
@@ -71,6 +75,7 @@ export function AdjustmentForm({
       {
         key: Math.max(0, ...current.map((row) => row.key)) + 1,
         productId: '',
+        batchId: '',
         direction: (forcedDirection as 'IN' | 'OUT') ?? 'OUT',
         qty: '',
         value: '',
@@ -85,9 +90,17 @@ export function AdjustmentForm({
   function onReasonChange(next: string) {
     setReason(next);
     const direction = reasons.find((option) => option.value === next)?.defaultDirection;
-    if (direction === 'IN' || direction === 'OUT') {
-      setRows((current) => current.map((row) => ({ ...row, direction })));
-    }
+    // A crate only means anything on an expired write-off, and the service
+    // refuses it anywhere else — so leaving one behind would turn a change of
+    // mind into a rejected form.
+    const clearBatch = next !== 'EXPIRED';
+    setRows((current) =>
+      current.map((row) => ({
+        ...row,
+        ...(direction === 'IN' || direction === 'OUT' ? { direction } : {}),
+        ...(clearBatch ? { batchId: '' } : {}),
+      })),
+    );
   }
 
   return (
@@ -135,7 +148,12 @@ export function AdjustmentForm({
         <h2 className="mb-3 text-sm font-semibold text-content">Products</h2>
 
         <div className="space-y-3">
-          {rows.map((row, index) => (
+          {rows.map((row, index) => {
+            const chosenProduct = products.find(
+              (product) => String(product.id) === row.productId,
+            );
+
+            return (
             <div
               key={row.key}
               className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-12"
@@ -151,7 +169,11 @@ export function AdjustmentForm({
                   id={`product-${row.key}`}
                   name="productId"
                   value={row.productId}
-                  onChange={(event) => updateRow(row.key, { productId: event.target.value })}
+                  onChange={(event) =>
+                    // Clearing the crate too: it belongs to the old product and
+                    // the service would refuse it.
+                    updateRow(row.key, { productId: event.target.value, batchId: '' })
+                  }
                   className="h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
                 >
                   <option value="">Choose a product…</option>
@@ -205,6 +227,43 @@ export function AdjustmentForm({
                 />
               </div>
 
+              {reason === 'EXPIRED' && (
+                <div className="sm:col-span-12 sm:order-last">
+                  {chosenProduct !== undefined && chosenProduct.expiredBatches.length > 0 ? (
+                    <>
+                      <label
+                        htmlFor={`batch-${row.key}`}
+                        className="mb-1 block text-xs font-medium text-content-muted"
+                      >
+                        Which batch expired
+                      </label>
+                      <select
+                        id={`batch-${row.key}`}
+                        name="batchId"
+                        value={row.batchId}
+                        onChange={(event) => updateRow(row.key, { batchId: event.target.value })}
+                        className="h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
+                      >
+                        <option value="">Whatever has expired</option>
+                        {chosenProduct.expiredBatches.map((batch) => (
+                          <option key={batch.id} value={String(batch.id)}>
+                            {batch.label}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : (
+                    /*
+                      Nothing dated has expired for this product, which is the
+                      ordinary case for a shop that dates nothing. The write-off
+                      still works — the gateway takes what has turned first, and
+                      falls through to the rest.
+                    */
+                    <input type="hidden" name="batchId" value="" />
+                  )}
+                </div>
+              )}
+
               <div className="sm:col-span-2">
                 <label
                   htmlFor={`value-${row.key}`}
@@ -237,7 +296,8 @@ export function AdjustmentForm({
                 </Button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mt-3">

@@ -1,0 +1,2 @@
+ALTER TABLE `stock_adjustment_items` ADD `batch_id` integer REFERENCES product_batches(id);--> statement-breakpoint
+CREATE INDEX `idx_stock_adjustment_items_batch` ON `stock_adjustment_items` (`batch_id`);

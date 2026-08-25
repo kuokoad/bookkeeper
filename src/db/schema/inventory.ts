@@ -188,6 +188,17 @@ export const stockAdjustmentItems = sqliteTable(
       .notNull()
       .references(() => products.id, { onDelete: 'restrict' }),
 
+    /**
+     * The crate this adjustment is about, when it is about one.
+     *
+     * Null for every ordinary adjustment — a stocktake correction or a breakage
+     * is about the product, and the gateway picks. Set when the person knew
+     * which crate they meant, which is always the case for a write-off of goods
+     * that have expired: those are exactly one batch, and taking them out of
+     * some other batch would leave the expired ones still on the shelf.
+     */
+    batchId: integer('batch_id').references(() => productBatches.id, { onDelete: 'restrict' }),
+
     direction: text('direction', { enum: ADJUSTMENT_DIRECTIONS }).notNull(),
     qtyMilli: qtyMilli('qty_milli').notNull(),
 
@@ -201,6 +212,7 @@ export const stockAdjustmentItems = sqliteTable(
   (t) => [
     index('idx_stock_adjustment_items_adjustment').on(t.adjustmentId),
     index('idx_stock_adjustment_items_product').on(t.productId),
+    index('idx_stock_adjustment_items_batch').on(t.batchId),
     check('ck_stock_adjustment_items_direction', oneOf(t.direction, ADJUSTMENT_DIRECTIONS)),
     check('ck_stock_adjustment_items_qty_positive', sql`${t.qtyMilli} > 0`),
     check('ck_stock_adjustment_items_cost_nonneg', sql`${t.totalCostMinor} >= 0`),

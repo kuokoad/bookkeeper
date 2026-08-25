@@ -5,6 +5,7 @@ import type { Db, Tx } from '@/db/types';
 import {
   accounts,
   businessSettings,
+  productBatches,
   products,
   stockAdjustmentItems,
   stockAdjustments,
@@ -18,6 +19,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { recordStockMovement } from './inventory.service';
+import { formatQty } from '@/domain/inventory/batches';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 
 /**
@@ -86,6 +88,17 @@ export interface AdjustmentItemInput {
    */
   totalCost?: Minor;
   note?: string | undefined;
+  /**
+   * The exact crate this is about. Only an `EXPIRED` write-off may name one.
+   *
+   * Optional even then, because a shop that dates nothing still has bread that
+   * goes stale, and `EXPIRED` is the honest reason for it. Left out, the
+   * gateway takes the expired stock first and falls through to the rest — see
+   * `expiredFirst`. What it must never do is pick by soonest date, which would
+   * write off the GOOD stock and leave the expired crate on the shelf, still
+   * counted and still blocking sales.
+   */
+  batchId?: number;
 }
 
 export interface CreateAdjustmentInput {
@@ -164,6 +177,8 @@ export function createStockAdjustment(
         throw new ValidationError('Adding stock requires the value of the goods received.');
       }
 
+      const batch = resolveWriteOffBatch(tx, input.reason, item);
+
       const movement = recordStockMovement(tx, {
         productId: item.productId,
         direction: item.direction,
@@ -186,12 +201,27 @@ export function createStockAdjustment(
         note: item.note,
         allowNegative,
         isDemo: input.isDemo ?? false,
+        // A named crate is taken exactly; an unnamed expired write-off takes
+        // whatever has turned, oldest first, before anything else.
+        ...(batch !== undefined
+          ? {
+              batch: {
+                kind: 'SOURCE' as const,
+                allocations: [
+                  { batchId: batch.id, batchRef: batch.batchRef, qtyMilli: item.qty as number },
+                ],
+              },
+            }
+          : input.reason === 'EXPIRED' && item.direction === 'OUT'
+            ? { batch: { kind: 'PICK' as const, expiredFirst: true } }
+            : {}),
       });
 
       tx.insert(stockAdjustmentItems)
         .values({
           adjustmentId: adjustment.id,
           productId: item.productId,
+          batchId: batch?.id ?? null,
           direction: item.direction,
           qtyMilli: item.qty,
           unitCostMinor: movement.unitCost,
@@ -568,4 +598,57 @@ export function describeAdjustment(items: { direction: string; qtyMilli: number 
   if (inCount > 0) parts.push(`${inCount} in`);
   if (outCount > 0) parts.push(`${outCount} out`);
   return parts.join(', ') || 'no items';
+}
+
+/**
+ * The crate an item names, checked against the reason that named it.
+ *
+ * A batch on anything other than an expired write-off is refused: a recount
+ * tells you the shelf is wrong, not which crate is, and letting it claim
+ * otherwise would put a precision in the record that nobody has.
+ */
+function resolveWriteOffBatch(
+  tx: Tx,
+  reason: AdjustmentReason,
+  item: AdjustmentItemInput,
+): { id: number; batchRef: string } | undefined {
+  if (reason !== 'EXPIRED') {
+    if (item.batchId !== undefined) {
+      throw new ValidationError(
+        'Only a write-off of expired goods names the batch it came from.',
+        { reason },
+      );
+    }
+    return undefined;
+  }
+
+  // No crate named: the gateway takes the expired stock first, which is right
+  // both for a shop that dates nothing and for one that simply did not say.
+  if (item.batchId === undefined) return undefined;
+
+  const batch = tx
+    .select({
+      id: productBatches.id,
+      batchRef: productBatches.batchRef,
+      productId: productBatches.productId,
+      qtyMilli: productBatches.qtyMilli,
+    })
+    .from(productBatches)
+    .where(eq(productBatches.id, item.batchId))
+    .get();
+
+  if (!batch) throw new NotFoundError('Batch', item.batchId);
+  if (batch.productId !== item.productId) {
+    throw new ValidationError('That batch belongs to a different product.', {
+      batchId: item.batchId,
+    });
+  }
+  if ((item.qty as number) > batch.qtyMilli) {
+    throw new ValidationError(
+      `${batch.batchRef} only holds ${formatQty(batch.qtyMilli)}, so ${formatQty(item.qty as number)} cannot be written off from it.`,
+      { batchId: batch.id, holds: batch.qtyMilli, requested: item.qty },
+    );
+  }
+
+  return { id: batch.id, batchRef: batch.batchRef };
 }

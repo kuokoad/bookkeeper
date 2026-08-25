@@ -34,6 +34,7 @@ import {
   allocateProportional,
   formatQty,
   type Allocation,
+  type FefoPlan,
 } from '@/domain/inventory/batches';
 
 /**
@@ -113,7 +114,16 @@ export type BatchDirective =
    * back where they were; going OUT it takes back what a document brought.
    */
   | { kind: 'SOURCE'; allocations: readonly Allocation[] }
-  | { kind: 'PICK'; allowExpired?: boolean };
+  | {
+      kind: 'PICK';
+      allowExpired?: boolean;
+      /**
+       * Take the expired stock FIRST, which is what writing it off means.
+       * Implies `allowExpired`: refusing to touch expired goods during a
+       * write-off of expired goods would be absurd.
+       */
+      expiredFirst?: boolean;
+    };
 
 export interface StockMovementResult {
   ledgerId: number;
@@ -320,7 +330,8 @@ function allocateIn(tx: Tx, input: StockMovementInput): Allocation[] {
 /** Stock leaving: back to its source if a document named one, otherwise FEFO. */
 function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
   const directive = input.batch;
-  const approved = directive?.kind === 'PICK' && directive.allowExpired === true;
+  const expiredFirst = directive?.kind === 'PICK' && directive.expiredFirst === true;
+  const approved = expiredFirst || (directive?.kind === 'PICK' && directive.allowExpired === true);
 
   if (directive?.kind === 'SOURCE') return allocateOutToSource(tx, input, directive.allocations);
 
@@ -342,6 +353,17 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
   // decides whether anybody needs to be asked — and on the ordinary path, where
   // good stock covers the quantity, it is also the answer, so an old crate at
   // the back of the shelf never interrupts the till.
+  if (expiredFirst) {
+    const written = allocateFefo(open, input.qty, {
+      today: input.businessDate,
+      allowExpired: true,
+      expiredFirst: true,
+    });
+    return written.shortfall > 0
+      ? withShortfall(tx, input, written)
+      : written.allocations;
+  }
+
   let plan = allocateFefo(open, input.qty, { today: input.businessDate, allowExpired: false });
 
   if (plan.expiredNeeded > 0) {
@@ -366,32 +388,39 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
     plan = allocateFefo(open, input.qty, { today: input.businessDate, allowExpired: true });
   }
 
-  if (plan.shortfall > 0) {
-    // The costing engine has already refused an oversell unless the shop allows
-    // negative stock, so reaching here with a shortfall means one of two things.
-    if (input.allowNegative === true) {
-      // Allowed: the shortfall drives the undated batch below zero, which keeps
-      // every unit — including the ones that are not there — owned by a batch.
-      const undated = findOrOpenUndatedBatch(tx, input);
-      // Merged, not appended: the undated batch may already be in the plan
-      // (drained to zero on the way past), and one movement may touch a batch
-      // only once — see `uq_stock_ledger_batches`.
-      return mergeByBatch([
-        ...plan.allocations,
-        { batchId: undated.id, batchRef: undated.batchRef, qtyMilli: plan.shortfall },
-      ]);
-    }
-
-    // Not allowed, and yet the product says there is enough: the batches no
-    // longer cover the shelf. That is `verifyBatchCoverage` failing, and it must
-    // stop the transaction rather than quietly take stock from nowhere.
-    throw new InvariantViolatedError(
-      `Stock exists that no batch owns: ${formatQty(plan.shortfall)} of product ${input.productId}.`,
-      { productId: input.productId, shortfall: plan.shortfall },
-    );
-  }
+  if (plan.shortfall > 0) return withShortfall(tx, input, plan);
 
   return plan.allocations;
+}
+
+/**
+ * What to do when the batches cannot cover what the product says is there.
+ *
+ * The costing engine has already decided whether an oversell is allowed, so
+ * only two cases are left — and neither may quietly take stock from nowhere.
+ */
+function withShortfall(tx: Tx, input: StockMovementInput, plan: FefoPlan): Allocation[] {
+  if (input.allowNegative === true) {
+    // Allowed: the shortfall drives the undated batch below zero, which keeps
+    // every unit — including the ones that are not there — owned by a batch.
+    //
+    // Merged, not appended: the undated batch may already be in the plan
+    // (drained to zero on the way past), and one movement may touch a batch
+    // only once — see `uq_stock_ledger_batches`.
+    const undated = findOrOpenUndatedBatch(tx, input);
+    return mergeByBatch([
+      ...plan.allocations,
+      { batchId: undated.id, batchRef: undated.batchRef, qtyMilli: plan.shortfall },
+    ]);
+  }
+
+  // Not allowed, and yet the product says there is enough: the batches no
+  // longer cover the shelf. That is `verifyBatchCoverage` failing, and it must
+  // stop the transaction rather than invent stock.
+  throw new InvariantViolatedError(
+    `Stock exists that no batch owns: ${formatQty(plan.shortfall)} of product ${input.productId}.`,
+    { productId: input.productId, shortfall: plan.shortfall },
+  );
 }
 
 /**
@@ -747,6 +776,44 @@ export function readBatchSplits(
   }
 
   return [...byMovement.values()];
+}
+
+export interface ExpiredBatch {
+  id: number;
+  productId: number;
+  batchRef: string;
+  expiryDate: string;
+  qtyMilli: number;
+}
+
+/**
+ * Every crate that has passed its date and still holds stock.
+ *
+ * For the write-off form, which has to let somebody say WHICH crate went off.
+ * Ordered soonest-expired first, so the oldest problem is at the top of the
+ * list where it belongs.
+ */
+export function listExpiredBatches(db: Db, asAt: string): ExpiredBatch[] {
+  return db
+    .select({
+      id: productBatches.id,
+      productId: productBatches.productId,
+      batchRef: productBatches.batchRef,
+      expiryDate: productBatches.expiryDate,
+      qtyMilli: productBatches.qtyMilli,
+    })
+    .from(productBatches)
+    .where(
+      and(
+        eq(productBatches.isClosed, false),
+        sql`${productBatches.qtyMilli} > 0`,
+        sql`${productBatches.expiryDate} IS NOT NULL`,
+        sql`${productBatches.expiryDate} < ${asAt}`,
+      ),
+    )
+    .orderBy(asc(productBatches.expiryDate), asc(productBatches.id))
+    .all()
+    .map((row) => ({ ...row, expiryDate: row.expiryDate as string }));
 }
 
 export interface ExpiryOutlook {

@@ -188,6 +188,57 @@ describe('taking stock out', () => {
   });
 });
 
+describe('writing off what has turned', () => {
+  /**
+   * The one place the order is inverted, and it has to be.
+   *
+   * A write-off of expired goods that picked by soonest date would remove the
+   * GOOD stock and leave the expired crate on the shelf — still counted, still
+   * blocking sales, and now short by whatever was taken from elsewhere. The
+   * books would balance perfectly throughout.
+   */
+  it('takes the expired stock first, oldest first', () => {
+    const plan = allocateFefo(
+      [batch(1, 5, '2026-09-01'), batch(2, 3, '2026-02-01'), batch(3, 3, '2026-01-01')],
+      u(6),
+      { today: TODAY, allowExpired: true, expiredFirst: true },
+    );
+
+    expect(took(plan)).toEqual([
+      [3, 3_000],
+      [2, 3_000],
+    ]);
+    expect(plan.shortfall).toBe(0);
+  });
+
+  it('falls through to the rest once the expired stock runs out', () => {
+    // A shop that dates nothing still has bread going stale. There is no
+    // expired batch to find, so the write-off comes out of what there is.
+    const plan = allocateFefo([batch(1, 4, null), batch(2, 2, '2026-01-01')], u(5), {
+      today: TODAY,
+      allowExpired: true,
+      expiredFirst: true,
+    });
+
+    expect(took(plan)).toEqual([
+      [2, 2_000],
+      [1, 3_000],
+    ]);
+    expect(plan.expiredNeeded).toBe(2_000);
+  });
+
+  it('reports a shortfall rather than inventing stock', () => {
+    const plan = allocateFefo([batch(1, 2, '2026-01-01')], u(5), {
+      today: TODAY,
+      allowExpired: true,
+      expiredFirst: true,
+    });
+
+    expect(total(plan)).toBe(2_000);
+    expect(plan.shortfall).toBe(3_000);
+  });
+});
+
 describe('putting stock back where it came from', () => {
   it('returns the whole movement batch for batch', () => {
     const source = [

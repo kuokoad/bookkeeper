@@ -23,6 +23,7 @@ export default async function ProductsPage({
     q?: string;
     category?: string;
     low?: string;
+    expiring?: string;
     inactive?: string;
     created?: string;
     updated?: string;
@@ -36,13 +37,18 @@ export default async function ProductsPage({
     ...(params.q ? { search: params.q } : {}),
     ...(Number.isInteger(categoryId) ? { categoryId } : {}),
     lowStockOnly: params.low === '1',
+    ...(params.expiring === 'expired' || params.expiring === 'soon'
+      ? { expiring: params.expiring }
+      : {}),
     includeInactive: params.inactive === '1',
   });
 
   const categories = listCategories(db);
   const summary = getStockSummary(db);
   const canCreate = can(user, 'products', 'create');
-  const isFiltered = Boolean(params.q || params.category || params.low === '1');
+  const isFiltered = Boolean(
+    params.q || params.category || params.low === '1' || params.expiring,
+  );
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -95,6 +101,32 @@ export default async function ProductsPage({
           tone={summary.outOfStockCount > 0 ? 'danger' : 'default'}
         />
       </div>
+
+      {(params.expiring === 'expired' || params.expiring === 'soon') && (
+        /*
+          The dashboard sends people here, so the page has to say what it is
+          showing. Without this the list looks like the whole catalogue with
+          products mysteriously missing.
+        */
+        <Alert
+          tone={params.expiring === 'expired' ? 'danger' : 'warning'}
+          className="mb-4"
+          title={
+            params.expiring === 'expired'
+              ? 'Showing products with stock that has expired'
+              : 'Showing products with stock expiring soon'
+          }
+        >
+          <p>
+            {params.expiring === 'expired'
+              ? 'It cannot be sold. Record a stock adjustment with the reason "Expired" to take it off the shelf and out of the accounts.'
+              : 'Still sellable, and worth moving first.'}{' '}
+            <Link href="/products" className="font-medium text-accent hover:underline">
+              Show everything
+            </Link>
+          </p>
+        </Alert>
+      )}
 
       <ProductFilters categories={categories} />
 
