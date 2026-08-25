@@ -1,9 +1,19 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { businessDate, createdAt, isDemo, moneyMinor, qtyMilli, timestampMs, updatedAt } from './_shared';
+import {
+  boolean,
+  businessDate,
+  createdAt,
+  isDemo,
+  moneyMinor,
+  qtyMilli,
+  timestampMs,
+  updatedAt,
+} from './_shared';
 import { oneOf } from './_check';
 import { journalEntries } from './accounting';
 import { products } from './catalog';
+import { suppliers } from './suppliers';
 import { users } from './users';
 
 /** Why stock moved. Every ledger row names one. */
@@ -196,6 +206,167 @@ export const stockAdjustmentItems = sqliteTable(
     check('ck_stock_adjustment_items_cost_nonneg', sql`${t.totalCostMinor} >= 0`),
   ],
 );
+
+/**
+ * A batch: a quantity of one product that arrived together and runs out together.
+ *
+ * ---------------------------------------------------------------------------
+ * A BATCH TRACKS QUANTITY. IT NEVER TRACKS COST.
+ *
+ * Inventory is valued by weighted average, pooled across all stock of a product,
+ * and no per-unit average is ever stored — see `src/domain/inventory/costing.ts`.
+ * Batches run ALONGSIDE that and answer a different question:
+ *
+ *   What is this stock worth?    -> stock_ledger, quantity AND value
+ *   Which physical units left?   -> here, and stock_ledger_batches
+ *
+ * Nothing in the costing engine changes because of this table. The cost of a
+ * unit sold is still the running average, whichever batch it came out of. That
+ * is what makes expiry tracking affordable: no re-costing, no migration of
+ * historical value, and no report that reads money has to change at all.
+ *
+ * The price of that decision, stated plainly: per-batch MARGIN does not exist
+ * and cannot be added later without abandoning weighted average. What batches
+ * buy instead is first-expiry-first-out, a warning before goods turn, and a
+ * trace from a bad delivery to the customers who bought from it.
+ * ---------------------------------------------------------------------------
+ */
+export const productBatches = sqliteTable(
+  'product_batches',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+
+    productId: integer('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'restrict' }),
+
+    /** 'BAT-00041'. From the sequence service, like every other document. */
+    batchRef: text('batch_ref').notNull(),
+
+    /**
+     * NULL means "does not expire" — cement, hardware, and the opening batch
+     * every stocked product receives at migration. Undated stock never warns,
+     * and is picked only after everything dated that has not yet passed.
+     */
+    expiryDate: businessDate('expiry_date'),
+    receivedDate: businessDate('received_date').notNull(),
+
+    /**
+     * Cached remaining quantity, exactly as `products.qtyOnHandMilli` is a
+     * cache. The truth is this batch's rows in `stock_ledger_batches`, and
+     * `verifyProductBatches` proves the one against the other.
+     *
+     * May go negative, but only where the shop has allowed negative stock.
+     */
+    qtyMilli: qtyMilli('qty_milli').notNull().default(0),
+
+    /**
+     * What this batch began with, before any movement was allocated to it.
+     *
+     * Zero for every batch the application opens: those start empty and are
+     * filled by their own `stock_ledger_batches` rows, so the allocations are
+     * the whole story.
+     *
+     * Non-zero only for the OPENING batches the migration creates, whose stock
+     * arrived before batches existed and therefore has no allocations to
+     * replay. Recording it makes `qtyMilli = openingQtyMilli + in - out` a real
+     * check for every batch rather than a tautology for those.
+     */
+    openingQtyMilli: qtyMilli('opening_qty_milli').notNull().default(0),
+
+    /** 'PURCHASE' and its id, or 'OPENING', or 'ADJUSTMENT'. */
+    sourceType: text('source_type').notNull(),
+    sourceId: integer('source_id'),
+
+    /** For a recall: whose delivery was this? */
+    supplierId: integer('supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
+
+    /** Overrides the shop-wide warning window. Null uses the setting. */
+    warnDays: integer('warn_days'),
+
+    note: text('note'),
+
+    /**
+     * Set when the batch empties. Kept, never deleted: the ledger points at it,
+     * and a recall asks about batches that are long gone.
+     */
+    isClosed: boolean('is_closed').notNull().default(false),
+
+    isDemo: isDemo(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('uq_product_batches_ref').on(t.batchRef),
+    // The picking order reads this one: a product, earliest date first.
+    index('idx_product_batches_product').on(t.productId, t.expiryDate),
+    index('idx_product_batches_expiry').on(t.expiryDate),
+    index('idx_product_batches_open').on(t.productId, t.isClosed),
+    // "Which batch did this purchase open?" — what a supplier return asks.
+    index('idx_product_batches_source').on(t.sourceType, t.sourceId),
+
+    check('ck_product_batches_ref', sql`length(trim(${t.batchRef})) > 0`),
+    check(
+      'ck_product_batches_expiry_format',
+      sql`${t.expiryDate} IS NULL OR ${t.expiryDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`,
+    ),
+    check(
+      'ck_product_batches_received_format',
+      sql`${t.receivedDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`,
+    ),
+    check('ck_product_batches_warn_days', sql`${t.warnDays} IS NULL OR ${t.warnDays} >= 0`),
+    // A closed batch holds nothing — the same shape of rule as
+    // `ck_products_zero_qty_zero_value`, and for the same reason.
+    check('ck_product_batches_closed_is_empty', sql`${t.isClosed} = 0 OR ${t.qtyMilli} = 0`),
+  ],
+);
+
+/**
+ * Which batches one stock movement touched, and by how much.
+ *
+ * Hung off the LEDGER ROW rather than off a sale line, so a single table covers
+ * sales, purchases, both kinds of return, both kinds of void and adjustments —
+ * and sits beside the thing that is already the source of truth for stock.
+ *
+ * The recall question, "which documents drew from this batch?", is then one join
+ * through `stock_ledger.sourceType` and `sourceId`.
+ *
+ * Append-only, like the ledger it hangs from.
+ */
+export const stockLedgerBatches = sqliteTable(
+  'stock_ledger_batches',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+
+    ledgerId: integer('ledger_id')
+      .notNull()
+      .references(() => stockLedger.id, { onDelete: 'restrict' }),
+    batchId: integer('batch_id')
+      .notNull()
+      .references(() => productBatches.id, { onDelete: 'restrict' }),
+
+    qtyInMilli: qtyMilli('qty_in_milli').notNull().default(0),
+    qtyOutMilli: qtyMilli('qty_out_milli').notNull().default(0),
+
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // One movement touches a given batch once. A second allocation to the same
+    // batch would be a double count that nothing downstream could unpick.
+    uniqueIndex('uq_stock_ledger_batches').on(t.ledgerId, t.batchId),
+    index('idx_stock_ledger_batches_batch').on(t.batchId),
+    // The same one-direction rule the ledger itself enforces.
+    check(
+      'ck_stock_ledger_batches_one_direction',
+      sql`(${t.qtyInMilli} > 0 AND ${t.qtyOutMilli} = 0)
+       OR (${t.qtyInMilli} = 0 AND ${t.qtyOutMilli} > 0)`,
+    ),
+  ],
+);
+
+export type ProductBatch = typeof productBatches.$inferSelect;
+export type NewProductBatch = typeof productBatches.$inferInsert;
+export type StockLedgerBatch = typeof stockLedgerBatches.$inferSelect;
 
 export type StockLedgerRow = typeof stockLedger.$inferSelect;
 export type NewStockLedgerRow = typeof stockLedger.$inferInsert;

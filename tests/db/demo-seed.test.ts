@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
-import { businessSettings, products } from '@/db/schema';
+import { businessSettings, productBatches, products } from '@/db/schema';
 import { seedDemo } from '@/db/seed/demo';
-import { verifyProductStock } from '@/services/inventory.service';
+import { verifyBatchCoverage, verifyProductStock } from '@/services/inventory.service';
 import { getTrialBalance } from '@/services/reporting/balances.service';
 
 /**
@@ -57,5 +57,25 @@ describe('the demo seed', () => {
     for (const row of context.db.select({ id: products.id }).from(products).all()) {
       expect(verifyProductStock(context.db, row.id).ok, `product ${row.id}`).toBe(true);
     }
+  });
+
+  it('leaves every unit of stock owned by a batch', async () => {
+    /**
+     * A demo database is built AFTER the migration that backfills opening
+     * batches, by services that do not allocate batches yet. Without the seed
+     * opening them itself, a freshly installed shop would fail its own preflight
+     * on a database nobody had touched.
+     */
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+
+    const coverage = verifyBatchCoverage(context.db);
+    expect(coverage.length).toBeGreaterThan(0);
+    expect(coverage.filter((row) => !row.ok)).toEqual([]);
+
+    // Undated, like the migration's: no date here was entered by anybody.
+    const batches = context.db.select().from(productBatches).all();
+    expect(batches.length).toBeGreaterThan(0);
+    expect(batches.every((batch) => batch.expiryDate === null)).toBe(true);
+    expect(batches.every((batch) => batch.isDemo)).toBe(true);
   });
 });

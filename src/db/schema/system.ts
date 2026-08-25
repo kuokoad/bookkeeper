@@ -59,6 +59,24 @@ export const businessSettings = sqliteTable(
     lowStockThresholdMilli: integer('low_stock_threshold_milli').notNull().default(5000),
     allowNegativeStock: boolean('allow_negative_stock').notNull().default(false),
 
+    /** How long before a batch's date the shop wants to hear about it. */
+    expiryWarningDays: integer('expiry_warning_days').notNull().default(30),
+
+    /**
+     * Whether expired stock is refused at the till.
+     *
+     * On by default, because selling goods past their date is the thing this
+     * feature exists to prevent. Off for a shop that stocks nothing perishable
+     * and does not want a block it can only ever hit by accident — the warnings
+     * still show either way.
+     *
+     * Expired stock is SKIPPED rather than blocking whenever good stock covers
+     * the sale, so this only ever fires when there is genuinely nothing else to
+     * sell. A block that fired more often than that would be routed around, and
+     * a sale made off-system is worse than one made from an old batch.
+     */
+    expiryBlocksSales: boolean('expiry_blocks_sales').notNull().default(true),
+
     // Payment policy.
     allowOverpayment: boolean('allow_overpayment').notNull().default(false),
 

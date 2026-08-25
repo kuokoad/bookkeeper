@@ -1,7 +1,7 @@
 import { asc, eq, sql } from 'drizzle-orm';
 
 import type { Db, Tx } from '@/db/types';
-import { products, stockLedger } from '@/db/schema';
+import { productBatches, products, stockLedger, stockLedgerBatches } from '@/db/schema';
 import type { MovementType } from '@/db/schema/inventory';
 import {
   applyStockIn,
@@ -183,6 +183,124 @@ function requireTotalCost(input: StockMovementInput): Minor {
     });
   }
   return input.totalCost;
+}
+
+// --- batch integrity -------------------------------------------------------
+
+export interface BatchVerification {
+  batchId: number;
+  batchRef: string;
+  productId: number;
+  cachedQty: Qty;
+  /** Opening quantity plus every allocation the ledger recorded against it. */
+  allocatedQty: Qty;
+  drift: number;
+  ok: boolean;
+}
+
+export interface BatchCoverageCheck {
+  productId: number;
+  productName: string;
+  productQty: Qty;
+  /** The sum of every batch this product has. */
+  batchedQty: Qty;
+  drift: number;
+  ok: boolean;
+  batchCount: number;
+}
+
+/**
+ * Per batch: does its cached quantity match what it opened with, plus every
+ * movement the ledger allocated to it?
+ *
+ *     qtyMilli === openingQtyMilli + sum(qtyIn) - sum(qtyOut)
+ *
+ * The same relationship `verifyProductStock` proves for a product, one level
+ * down. `product_batches.qtyMilli` is a cache exactly as
+ * `products.qtyOnHandMilli` is, and it is worth no more than its proof.
+ *
+ * `openingQtyMilli` is what makes this a real check rather than a tautology.
+ * Stock that predates batches has no allocations to replay, so an earlier draft
+ * of this function derived the opening figure by winding the cache back through
+ * its own allocations — which can only ever agree with itself. Recording what
+ * the batch started with, once, at migration, is the difference between proving
+ * something and appearing to.
+ */
+export function verifyProductBatches(db: Db, productId: number): BatchVerification[] {
+  const batches = db
+    .select()
+    .from(productBatches)
+    .where(eq(productBatches.productId, productId))
+    .all();
+
+  return batches.map((batch) => {
+    const moved = db
+      .select({
+        inQty: sql<number>`COALESCE(SUM(${stockLedgerBatches.qtyInMilli}), 0)`,
+        outQty: sql<number>`COALESCE(SUM(${stockLedgerBatches.qtyOutMilli}), 0)`,
+      })
+      .from(stockLedgerBatches)
+      .where(eq(stockLedgerBatches.batchId, batch.id))
+      .get();
+
+    const allocated = batch.openingQtyMilli + (moved?.inQty ?? 0) - (moved?.outQty ?? 0);
+    const drift = batch.qtyMilli - allocated;
+
+    return {
+      batchId: batch.id,
+      batchRef: batch.batchRef,
+      productId: batch.productId,
+      cachedQty: makeQty(batch.qtyMilli),
+      allocatedQty: makeQty(allocated),
+      drift,
+      ok: drift === 0,
+    };
+  });
+}
+
+/**
+ * Per product: does every unit on the shelf belong to some batch?
+ *
+ * THE ONE THAT MATTERS MOST. If this fails, stock exists that no batch owns,
+ * which means picking runs against an incomplete set: a sale can report there is
+ * nothing to take while the shelf is full, and — worse and quieter — an expiry
+ * warning can be missing for goods that are about to turn.
+ *
+ * Cheap by design, so it can sit in `preflight` beside the stock-cache check:
+ * one grouped sum against a cached column, no replay.
+ */
+export function verifyBatchCoverage(db: Db): BatchCoverageCheck[] {
+  const rows = db.all<{
+    productId: number;
+    productName: string;
+    productQty: number;
+    batchedQty: number;
+    batchCount: number;
+  }>(sql`
+    SELECT
+      p.id                                        AS productId,
+      p.name                                      AS productName,
+      p.qty_on_hand_milli                         AS productQty,
+      COALESCE(SUM(b.qty_milli), 0)               AS batchedQty,
+      COUNT(b.id)                                 AS batchCount
+    FROM products p
+    LEFT JOIN product_batches b ON b.product_id = p.id
+    WHERE p.track_inventory = 1
+    GROUP BY p.id
+  `);
+
+  return rows.map((row) => {
+    const drift = row.productQty - row.batchedQty;
+    return {
+      productId: row.productId,
+      productName: row.productName,
+      productQty: makeQty(row.productQty),
+      batchedQty: makeQty(row.batchedQty),
+      drift,
+      ok: drift === 0,
+      batchCount: row.batchCount,
+    };
+  });
 }
 
 // --- integrity ------------------------------------------------------------

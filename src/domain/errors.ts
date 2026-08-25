@@ -10,6 +10,7 @@ export type ErrorCode =
   | 'VALIDATION'
   | 'MONEY_OVERFLOW'
   | 'INSUFFICIENT_STOCK'
+  | 'EXPIRED_STOCK'
   | 'UNBALANCED_ENTRY'
   | 'INVARIANT_VIOLATED'
   | 'NOT_FOUND'
@@ -63,6 +64,26 @@ export class InsufficientStockError extends DomainError {
       `Insufficient stock for ${productName}: available ${available}, requested ${requested}`,
       `Not enough stock for ${productName}. Available: ${available}, requested: ${requested}.`,
       { productName, available, requested },
+    );
+  }
+}
+
+/**
+ * The sale could only be filled by reaching into expired stock.
+ *
+ * Distinct from `InsufficientStockError`, which means there is not enough of
+ * anything. Here there IS enough — it has simply gone past its date, and
+ * somebody senior has to say so before it leaves the shop. The batch refs
+ * travel with the error so the person deciding can go and look at the goods.
+ */
+export class ExpiredStockError extends DomainError {
+  constructor(productName: string, qtyExpired: string, batchRefs: readonly string[]) {
+    super(
+      'EXPIRED_STOCK',
+      `Expired stock required for ${productName}: ${qtyExpired} from ${batchRefs.join(', ')}`,
+      `The only stock left of ${productName} has passed its date (${batchRefs.join(', ')}). ` +
+        `Someone who can approve it has to allow the sale, or the goods should be written off.`,
+      { productName, qtyExpired, batchRefs: [...batchRefs] },
     );
   }
 }

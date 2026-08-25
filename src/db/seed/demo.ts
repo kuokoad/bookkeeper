@@ -11,6 +11,7 @@ import { seedDemoCatalog } from './demo-catalog';
 import { seedDemoPurchases } from './demo-purchases';
 import { seedDemoSales } from './demo-sales';
 import { seedDemoCashbook } from './demo-cashbook';
+import { openOpeningBatches } from './opening-batches';
 
 /**
  * Development-only demo data.
@@ -89,6 +90,20 @@ export async function seedDemo(db: Db, now: Date = new Date()): Promise<void> {
     // exercises stock, COGS and journal posting exactly as production does.
     seedDemoSales(db, actor, toBusinessDate(now));
     seedDemoCashbook(db, actor, toBusinessDate(now));
+
+    // Give whatever is left on the shelf an opening batch.
+    //
+    // The migration does this for a shop that already existed, but a demo
+    // database is created AFTER it runs: the products above are made here, and
+    // their stock moves through the ordinary services — which do not allocate
+    // batches yet. Without this step a freshly seeded shop holds stock that no
+    // batch owns, and `verifyBatchCoverage` fails on a database nobody has
+    // touched.
+    //
+    // Undated, exactly as the migration leaves real stock: nothing here has a
+    // date anybody entered, and inventing one would put a warning, or a refused
+    // sale, behind a number nobody chose.
+    openOpeningBatches(db, toBusinessDate(now));
   }
 
   writeTransaction(db, (tx) => {

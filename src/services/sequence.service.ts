@@ -27,6 +27,7 @@ export const DOC_TYPES = {
   INCOME: 'INCOME',
   ADJUSTMENT: 'ADJUSTMENT',
   RECONCILIATION: 'RECONCILIATION',
+  BATCH: 'BATCH',
 } as const;
 
 export type DocType = (typeof DOC_TYPES)[keyof typeof DOC_TYPES];
@@ -44,6 +45,9 @@ export const DEFAULT_SEQUENCES: readonly { docType: DocType; prefix: string; pad
   { docType: DOC_TYPES.INCOME, prefix: 'INC-', padding: 5 },
   { docType: DOC_TYPES.ADJUSTMENT, prefix: 'ADJ-', padding: 5 },
   { docType: DOC_TYPES.RECONCILIATION, prefix: 'REC-', padding: 5 },
+  // A batch is a document in its own right: a shop points at one during a
+  // recall, and a stock take reads the ref off the shelf.
+  { docType: DOC_TYPES.BATCH, prefix: 'BAT-', padding: 5 },
 ];
 
 export function formatDocumentNumber(prefix: string, value: number, padding: number): string {

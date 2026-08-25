@@ -204,6 +204,48 @@ export function runPreflight(databasePath: string = env.DATABASE_PATH): Check[] 
       );
     }
 
+    // Every unit on the shelf must belong to some batch.
+    //
+    // This is the invariant expiry tracking rests on. If stock exists that no
+    // batch owns, first-expiry-first-out is choosing from an incomplete set:
+    // a sale can be refused while the shelf is full, and an expiry warning can
+    // be missing for goods that are about to turn. Neither announces itself.
+    //
+    // One grouped sum against a cached column — cheap enough to sit beside the
+    // replay above rather than waiting for somebody to go looking.
+    const batchTable = connection
+      .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='product_batches'")
+      .get() as { count: number };
+
+    if (batchTable.count > 0) {
+      const uncovered = connection
+        .prepare(
+          `SELECT p.name, p.qty_on_hand_milli AS productQty,
+                  COALESCE(SUM(b.qty_milli), 0) AS batchedQty
+           FROM products p
+           LEFT JOIN product_batches b ON b.product_id = p.id
+           WHERE p.track_inventory = 1
+           GROUP BY p.id
+           HAVING productQty <> batchedQty`,
+        )
+        .all() as { name: string; productQty: number; batchedQty: number }[];
+
+      const trackedCount = (
+        connection
+          .prepare('SELECT COUNT(*) AS count FROM products WHERE track_inventory = 1')
+          .get() as { count: number }
+      ).count;
+
+      add(
+        'Every unit of stock belongs to a batch',
+        uncovered.length === 0 ? 'pass' : 'fail',
+        uncovered.length === 0
+          ? `${trackedCount} product(s) fully covered by their batches`
+          : `${uncovered.length} product(s) hold stock no batch owns: ` +
+            `${uncovered.map((row) => row.name).join(', ')}. Expiry warnings may be missing.`,
+      );
+    }
+
     // Demo data must not be sitting in a real shop's records.
     const demoTables = ['products', 'sales', 'purchases', 'customers', 'suppliers'];
     let demoRows = 0;
