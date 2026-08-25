@@ -7,6 +7,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { configureConnection } from '@/db/pragmas';
 import { writeTransaction } from '@/db/transaction';
+import { createProduct } from '@/services/catalog.service';
+import { recordStockMovement } from '@/services/inventory.service';
+import { minor } from '@/domain/money';
+import { fromUnits } from '@/domain/quantity';
 
 /**
  * Why every write opens with `BEGIN IMMEDIATE`.
@@ -128,6 +132,52 @@ describe('what BEGIN IMMEDIATE does instead', () => {
       context.connection.prepare('SELECT COUNT(*) AS c FROM products').get() as { c: number }
     ).c;
     expect(after).toBe(before);
+  });
+
+  it('takes a movement, its batch split and the batch itself back together', () => {
+    /**
+     * The stock ledger, the batch it drew from and the shelf are three writes
+     * that only mean anything as one. A partial commit is the state
+     * `verifyBatchCoverage` exists to catch — stock on a shelf that no batch
+     * owns — so it must not be reachable by an ordinary failure.
+     */
+    context.connection
+      .prepare('INSERT INTO users (id, username, display_name, role, password_hash) VALUES (?,?,?,?,?)')
+      .run(1, 'kwame', 'Kwame', 'OWNER', 'scrypt$1$2$3$a$b');
+
+    const productId = createProduct(
+      context.db,
+      { name: 'Milo 400g', costPrice: minor(500), sellingPrice: minor(800), unit: 'pcs' },
+      { id: 1, username: 'kwame' },
+    );
+
+    expect(() =>
+      writeTransaction(context.db, (tx) => {
+        recordStockMovement(tx, {
+          productId,
+          direction: 'IN',
+          qty: fromUnits(10),
+          totalCost: minor(5_000),
+          movementType: 'ADJUSTMENT_IN',
+          sourceType: 'TEST',
+          businessDate: '2026-08-10',
+          occurredAt: new Date('2026-08-10T09:00:00Z'),
+        });
+        throw new Error('the caller failed after the stock moved');
+      }),
+    ).toThrow('the caller failed after the stock moved');
+
+    const count = (table: string): number =>
+      (context.connection.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
+
+    expect(count('stock_ledger')).toBe(0);
+    expect(count('stock_ledger_batches')).toBe(0);
+    expect(count('product_batches')).toBe(0);
+
+    const shelf = context.connection
+      .prepare('SELECT qty_on_hand_milli AS qty FROM products WHERE id = ?')
+      .get(productId) as { qty: number };
+    expect(shelf.qty).toBe(0);
   });
 });
 

@@ -32,14 +32,19 @@ const OWNER: Principal = {
 const DAY = 86_400_000;
 const NOW = new Date('2026-08-24T18:00:00Z');
 
-/** A backup taken `daysAgo`, as the download route records it. */
-function recordBackup(daysAgo: number) {
+/** A backup taken at a given instant, as the download route records it. */
+function recordBackupAt(at: number) {
   context.connection
     .prepare(
       `INSERT INTO audit_logs (user_id, username, action, entity_type, summary, created_at)
        VALUES (1, 'kwame', 'CREATE', 'backup', 'Downloaded a backup', ?)`,
     )
-    .run(NOW.getTime() - daysAgo * DAY);
+    .run(at);
+}
+
+/** A backup taken `daysAgo`, measured from the fixed NOW these tests pass in. */
+function recordBackup(daysAgo: number) {
+  recordBackupAt(NOW.getTime() - daysAgo * DAY);
 }
 
 /** A posted journal entry, as any sale or purchase would leave behind. */
@@ -185,7 +190,11 @@ describe('what the owner actually sees', () => {
   });
 
   it('is told the day count when the week rule fires with nothing unsaved', () => {
-    recordBackup(30);
+    // Anchored on the real clock, not NOW: `getNotices` takes no date and reads
+    // `new Date()` itself, so a backup dated from NOW drifts a day for every day
+    // that passes and this asserted an exact count that only held on the day it
+    // was written.
+    recordBackupAt(Date.now() - 30 * DAY);
     const notice = getNotices(context.db, OWNER).find((n) => n.id === 'stale-backup');
     expect(notice?.title).toMatch(/30 days ago/);
   });

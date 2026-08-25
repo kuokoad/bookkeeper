@@ -39,6 +39,7 @@ function makeProduct(name: string): number {
   );
 }
 
+/** Stock brought in the ordinary way, through the gateway, which allocates. */
 function addStock(productId: number, qtyUnits: number, cost: number) {
   createStockAdjustment(
     context.db,
@@ -49,6 +50,21 @@ function addStock(productId: number, qtyUnits: number, cost: number) {
     },
     ACTOR,
   );
+}
+
+/**
+ * Stock sitting on the shelf that no batch owns.
+ *
+ * What a database migrated from before batches existed looks like, and — now
+ * that the gateway allocates every movement — the only way left to produce it.
+ * Written straight to the product cache, exactly as migration 0019 finds it.
+ */
+function addStockBeforeBatches(productId: number, qtyUnits: number) {
+  context.db
+    .update(products)
+    .set({ qtyOnHandMilli: qtyUnits * 1_000 })
+    .where(eq(products.id, productId))
+    .run();
 }
 
 beforeEach(() => {
@@ -95,8 +111,8 @@ describe('opening batches', () => {
   it('gives every stocked product exactly one', () => {
     const milo = makeProduct('Milo 400g');
     const rice = makeProduct('Rice 5kg');
-    addStock(milo, 10, 5_000);
-    addStock(rice, 4, 12_000);
+    addStockBeforeBatches(milo, 10);
+    addStockBeforeBatches(rice, 4);
 
     expect(countUncoveredProducts(context.db)).toBe(2);
     expect(openOpeningBatches(context.db, TODAY)).toBe(2);
@@ -111,7 +127,7 @@ describe('opening batches', () => {
 
   it('records what each batch began with, rather than leaving it to be derived', () => {
     const milo = makeProduct('Milo 400g');
-    addStock(milo, 10, 5_000);
+    addStockBeforeBatches(milo, 10);
     openOpeningBatches(context.db, TODAY);
 
     const batch = context.db.select().from(productBatches).all()[0]!;
@@ -143,7 +159,7 @@ describe('opening batches', () => {
 
   it('is idempotent — running it twice does not double the shelf', () => {
     const milo = makeProduct('Milo 400g');
-    addStock(milo, 10, 5_000);
+    addStockBeforeBatches(milo, 10);
 
     expect(openOpeningBatches(context.db, TODAY)).toBe(1);
     expect(openOpeningBatches(context.db, TODAY)).toBe(0);
@@ -171,7 +187,7 @@ describe('coverage: does every unit belong to a batch?', () => {
     // The state this check exists for: a shelf holding goods that picking would
     // never see.
     const milo = makeProduct('Milo 400g');
-    addStock(milo, 10, 5_000);
+    addStockBeforeBatches(milo, 10);
 
     const coverage = verifyBatchCoverage(context.db);
     expect(coverage[0]!.ok).toBe(false);
@@ -238,7 +254,7 @@ describe('per batch: is the cached quantity backed by anything?', () => {
     // The failure the earlier tautological version could not see: change what
     // the batch claims it started with, and the check must notice.
     const milo = makeProduct('Milo 400g');
-    addStock(milo, 10, 5_000);
+    addStockBeforeBatches(milo, 10);
     openOpeningBatches(context.db, TODAY);
 
     context.connection.prepare('UPDATE product_batches SET opening_qty_milli = 2000').run();

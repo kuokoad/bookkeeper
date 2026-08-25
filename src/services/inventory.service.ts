@@ -1,7 +1,13 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type { Db, Tx } from '@/db/types';
-import { productBatches, products, stockLedger, stockLedgerBatches } from '@/db/schema';
+import {
+  businessSettings,
+  productBatches,
+  products,
+  stockLedger,
+  stockLedgerBatches,
+} from '@/db/schema';
 import type { MovementType } from '@/db/schema/inventory';
 import {
   applyStockIn,
@@ -13,9 +19,21 @@ import {
 } from '@/domain/inventory/costing';
 import { minor, subtract, type Minor } from '@/domain/money';
 import { qty as makeQty, type Qty } from '@/domain/quantity';
-import { InvariantViolatedError, NotFoundError, ValidationError } from '@/domain/errors';
+import {
+  ExpiredStockError,
+  InvariantViolatedError,
+  NotFoundError,
+  ValidationError,
+} from '@/domain/errors';
 import { assertPeriodOpen } from '@/domain/accounting/period-lock';
 import { readLockDate } from './journal.service';
+import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
+import {
+  allocateFefo,
+  allocateProportional,
+  formatQty,
+  type Allocation,
+} from '@/domain/inventory/batches';
 
 /**
  * The single gateway through which inventory changes.
@@ -55,7 +73,36 @@ export interface StockMovementInput {
   isDemo?: boolean;
   /** Owner-level bypass of the books lock. See postJournalEntry. */
   overridePeriodLock?: boolean;
+
+  /**
+   * Which batch the stock should come from, or land in.
+   *
+   * IN  — `NEW` opens a batch, which is what a delivery does.
+   *       `RESTORE` puts units back into the exact batches they left from,
+   *       which is what a void or a customer return must do, or the dates on a
+   *       shelf become fiction after the first one.
+   *       Omitted: lands in the product's undated batch.
+   *
+   * OUT — `PICK` runs first-expiry-first-out. Omitted means the same with
+   *       `allowExpired: false`, which is the ordinary till.
+   *
+   * Every caller may omit this and get today's behaviour, because a shop whose
+   * stock is all undated picks from one batch either way.
+   */
+  batch?: BatchDirective;
 }
+
+export type BatchDirective =
+  | {
+      kind: 'NEW';
+      /** 'YYYY-MM-DD', or omitted for goods that do not expire. */
+      expiryDate?: string | null;
+      supplierId?: number | undefined;
+      warnDays?: number | undefined;
+      note?: string | undefined;
+    }
+  | { kind: 'RESTORE'; allocations: readonly Allocation[] }
+  | { kind: 'PICK'; allowExpired?: boolean };
 
 export interface StockMovementResult {
   ledgerId: number;
@@ -69,6 +116,14 @@ export interface StockMovementResult {
    * to the ledger — see `MovementResult.residual`.
    */
   residual: Minor;
+
+  /**
+   * Which batches this movement touched, and by how much.
+   *
+   * Quantity only. A batch never carries a cost, so nothing here can be
+   * multiplied by anything — see `src/domain/inventory/batches.ts`.
+   */
+  batchAllocations: Allocation[];
 }
 
 export function getStockState(tx: Tx, productId: number): StockState {
@@ -167,13 +222,283 @@ export function recordStockMovement(tx: Tx, input: StockMovementInput): StockMov
     .where(eq(products.id, input.productId))
     .run();
 
+  // Which physical units moved. Runs inside the same transaction as everything
+  // above, so a shelf can never be left holding stock no batch owns.
+  const batchAllocations = allocateMovementToBatches(tx, input, ledgerRow.id);
+
   return {
     ledgerId: ledgerRow.id,
     totalCost: movement.totalCost,
     unitCost: movement.unitCost,
     state: movement.state,
     residual: movement.residual,
+    batchAllocations,
   };
+}
+
+// --- batch allocation ------------------------------------------------------
+
+/**
+ * Decide which batches a movement touched, and record it.
+ *
+ * Deliberately the last thing `recordStockMovement` does, and deliberately
+ * inside it. Every caller — sales, purchases, both returns, both voids,
+ * adjustments — comes through this one function, so none of them grows its own
+ * copy of the picking rule, and none of them can forget.
+ *
+ * Quantity only. Nothing in here reads or writes a cost.
+ */
+function allocateMovementToBatches(
+  tx: Tx,
+  input: StockMovementInput,
+  ledgerId: number,
+): Allocation[] {
+  const allocations =
+    input.direction === 'IN' ? allocateIn(tx, input) : allocateOut(tx, input);
+
+  for (const allocation of allocations) {
+    tx.insert(stockLedgerBatches)
+      .values({
+        ledgerId,
+        batchId: allocation.batchId,
+        qtyInMilli: input.direction === 'IN' ? allocation.qtyMilli : 0,
+        qtyOutMilli: input.direction === 'OUT' ? allocation.qtyMilli : 0,
+        createdAt: input.occurredAt,
+      })
+      .run();
+
+    applyToBatchCache(tx, allocation.batchId, input.direction, allocation.qtyMilli, input.occurredAt);
+  }
+
+  return allocations;
+}
+
+/** Stock arriving: into a new batch, back where it came from, or undated. */
+function allocateIn(tx: Tx, input: StockMovementInput): Allocation[] {
+  const directive = input.batch;
+
+  if (directive?.kind === 'NEW') {
+    const batch = openBatch(tx, input, directive);
+    return [{ batchId: batch.id, batchRef: batch.batchRef, qtyMilli: input.qty }];
+  }
+
+  if (directive?.kind === 'RESTORE') {
+    // Put the units back in the batches they left from, whatever state those
+    // are in now. A batch that emptied is reopened rather than replaced: open a
+    // new one and the trace from a delivery to its customers is broken.
+    const back = allocateProportional(directive.allocations, input.qty);
+    for (const allocation of back) reopenIfClosed(tx, allocation.batchId);
+    return back;
+  }
+
+  const undated = findOrOpenUndatedBatch(tx, input);
+  return [{ batchId: undated.id, batchRef: undated.batchRef, qtyMilli: input.qty }];
+}
+
+/** Stock leaving: first-expiry-first-out. */
+function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
+  const directive = input.batch;
+  const approved = directive?.kind === 'PICK' && directive.allowExpired === true;
+
+  const open = tx
+    .select({
+      id: productBatches.id,
+      batchRef: productBatches.batchRef,
+      expiryDate: productBatches.expiryDate,
+      qtyMilli: productBatches.qtyMilli,
+    })
+    .from(productBatches)
+    .where(and(eq(productBatches.productId, input.productId), eq(productBatches.isClosed, false)))
+    .all();
+
+  // Expiry is judged as at the SHOP'S day for this movement, not the wall
+  // clock. A sale entered late for yesterday is judged as it stood yesterday.
+  //
+  // Planned WITHOUT expired stock first, always. That first answer is what
+  // decides whether anybody needs to be asked — and on the ordinary path, where
+  // good stock covers the quantity, it is also the answer, so an old crate at
+  // the back of the shelf never interrupts the till.
+  let plan = allocateFefo(open, input.qty, { today: input.businessDate, allowExpired: false });
+
+  if (plan.expiredNeeded > 0) {
+    if (!approved && expiryBlocksSales(tx)) {
+      const product = tx
+        .select({ name: products.name })
+        .from(products)
+        .where(eq(products.id, input.productId))
+        .get();
+
+      throw new ExpiredStockError(
+        product?.name ?? 'this product',
+        formatQty(plan.expiredNeeded),
+        plan.expiredRefs,
+      );
+    }
+
+    // Either somebody approved it or the shop does not block on dates. Plan
+    // again including the expired batches — otherwise the stock leaves the
+    // shelf while no batch is recorded as giving it up, which is exactly the
+    // hole `verifyBatchCoverage` exists to catch.
+    plan = allocateFefo(open, input.qty, { today: input.businessDate, allowExpired: true });
+  }
+
+  if (plan.shortfall > 0) {
+    // The costing engine has already refused an oversell unless the shop allows
+    // negative stock, so reaching here with a shortfall means one of two things.
+    if (input.allowNegative === true) {
+      // Allowed: the shortfall drives the undated batch below zero, which keeps
+      // every unit — including the ones that are not there — owned by a batch.
+      const undated = findOrOpenUndatedBatch(tx, input);
+      // Merged, not appended: the undated batch may already be in the plan
+      // (drained to zero on the way past), and one movement may touch a batch
+      // only once — see `uq_stock_ledger_batches`.
+      return mergeByBatch([
+        ...plan.allocations,
+        { batchId: undated.id, batchRef: undated.batchRef, qtyMilli: plan.shortfall },
+      ]);
+    }
+
+    // Not allowed, and yet the product says there is enough: the batches no
+    // longer cover the shelf. That is `verifyBatchCoverage` failing, and it must
+    // stop the transaction rather than quietly take stock from nowhere.
+    throw new InvariantViolatedError(
+      `Stock exists that no batch owns: ${formatQty(plan.shortfall)} of product ${input.productId}.`,
+      { productId: input.productId, shortfall: plan.shortfall },
+    );
+  }
+
+  return plan.allocations;
+}
+
+/**
+ * Fold repeated batches into one line, keeping first-touched order.
+ *
+ * `uq_stock_ledger_batches` allows a movement to touch a batch once, and the
+ * only path that can name one twice is an oversell that drains a batch and then
+ * pushes the same one negative.
+ */
+function mergeByBatch(allocations: readonly Allocation[]): Allocation[] {
+  const merged = new Map<number, Allocation>();
+
+  for (const allocation of allocations) {
+    const seen = merged.get(allocation.batchId);
+    if (seen) {
+      seen.qtyMilli += allocation.qtyMilli;
+    } else {
+      merged.set(allocation.batchId, { ...allocation });
+    }
+  }
+
+  return [...merged.values()];
+}
+
+/** Shop policy: is expired stock refused at the till? */
+function expiryBlocksSales(tx: Tx): boolean {
+  const settings = tx
+    .select({ blocks: businessSettings.expiryBlocksSales })
+    .from(businessSettings)
+    .where(eq(businessSettings.id, 1))
+    .get();
+  return settings?.blocks ?? true;
+}
+
+function openBatch(
+  tx: Tx,
+  input: StockMovementInput,
+  directive: Extract<BatchDirective, { kind: 'NEW' }>,
+): { id: number; batchRef: string } {
+  const batchRef = nextDocumentNumber(tx, DOC_TYPES.BATCH);
+
+  const row = tx
+    .insert(productBatches)
+    .values({
+      productId: input.productId,
+      batchRef,
+      expiryDate: directive.expiryDate ?? null,
+      receivedDate: input.businessDate,
+      // Opens empty and is filled by the allocation about to be written, so the
+      // ledger is the whole story for it — see `verifyProductBatches`.
+      qtyMilli: 0,
+      openingQtyMilli: 0,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId ?? null,
+      supplierId: directive.supplierId ?? null,
+      warnDays: directive.warnDays ?? null,
+      note: directive.note ?? null,
+      isDemo: input.isDemo ?? false,
+      createdAt: input.occurredAt,
+      updatedAt: input.occurredAt,
+    })
+    .returning({ id: productBatches.id, batchRef: productBatches.batchRef })
+    .get();
+
+  if (!row) throw new InvariantViolatedError('Batch could not be opened.');
+  return row;
+}
+
+/**
+ * The product's undated batch, opened if it has none.
+ *
+ * Where stock lands when nobody said otherwise, and where a negative position
+ * is carried. One per product: a second undated batch would split the same
+ * anonymous stock across two rows for no reason anybody could later explain.
+ */
+function findOrOpenUndatedBatch(
+  tx: Tx,
+  input: StockMovementInput,
+): { id: number; batchRef: string } {
+  const existing = tx
+    .select({ id: productBatches.id, batchRef: productBatches.batchRef })
+    .from(productBatches)
+    .where(and(eq(productBatches.productId, input.productId), isNull(productBatches.expiryDate)))
+    .orderBy(asc(productBatches.id))
+    .get();
+
+  if (existing) {
+    reopenIfClosed(tx, existing.id);
+    return existing;
+  }
+
+  return openBatch(tx, input, { kind: 'NEW', expiryDate: null });
+}
+
+/** A batch receiving stock again must not stay marked empty. */
+function reopenIfClosed(tx: Tx, batchId: number): void {
+  tx.update(productBatches)
+    .set({ isClosed: false })
+    .where(and(eq(productBatches.id, batchId), eq(productBatches.isClosed, true)))
+    .run();
+}
+
+/**
+ * Move a batch's cached quantity, and close it when it empties.
+ *
+ * The cache is never the authority — `verifyProductBatches` proves it against
+ * the allocations — but it is what picking reads, so it moves in the same
+ * transaction as the allocation that changed it.
+ */
+function applyToBatchCache(
+  tx: Tx,
+  batchId: number,
+  direction: 'IN' | 'OUT',
+  qtyMilli: number,
+  at: Date,
+): void {
+  const batch = tx.select().from(productBatches).where(eq(productBatches.id, batchId)).get();
+  if (!batch) throw new InvariantViolatedError('Batch vanished mid-movement.', { batchId });
+
+  const next = direction === 'IN' ? batch.qtyMilli + qtyMilli : batch.qtyMilli - qtyMilli;
+
+  tx.update(productBatches)
+    .set({
+      qtyMilli: next,
+      // Exactly empty and nothing left to come: closed. A negative position is
+      // NOT closed — it is an open debt against the next delivery.
+      isClosed: next === 0,
+      updatedAt: at,
+    })
+    .where(eq(productBatches.id, batchId))
+    .run();
 }
 
 function requireTotalCost(input: StockMovementInput): Minor {
