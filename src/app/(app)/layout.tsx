@@ -41,7 +41,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => can(user, item.module, 'view')),
+    // An item with no module needs no permission — see `NavItem.module`. Hiding
+    // a link is a convenience either way; the page's own guard is the protection.
+    items: section.items.filter((item) => item.module === undefined || can(user, item.module, 'view')),
   })).filter((section) => section.items.length > 0);
 
   const primaryItems = sections.flatMap((section) => section.items).filter((item) => item.primary);

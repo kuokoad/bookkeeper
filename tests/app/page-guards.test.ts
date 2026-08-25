@@ -103,6 +103,64 @@ describe('pages that read the database render fresh', () => {
   });
 });
 
+describe('a menu link never demands more than the page behind it', () => {
+  /**
+   * The Dashboard link used to require `reports`, while the dashboard page
+   * itself requires only a session — and every sign-in redirects there. So a
+   * staff account was sent to a page its own menu then refused to mention, and
+   * the only route back was the "no access" screen's escape button.
+   *
+   * Hiding a link is a convenience; the page's guard is the protection. But a
+   * link hidden from somebody allowed to open the page is just a page nobody
+   * can find, so the two have to agree.
+   */
+  const navSource = read(join(process.cwd(), 'src', 'components', 'shared', 'navigation.ts'));
+
+  const navItems = [...navSource.matchAll(/\{ href: '([^']+)'[^}]*?\}/g)].map((match) => ({
+    href: match[1] as string,
+    module: (/module: '([^']+)'/.exec(match[0]) ?? [])[1],
+  }));
+
+  it('finds the menu to check', () => {
+    expect(navItems.length).toBeGreaterThan(10);
+  });
+
+  it('every link agrees with the guard on the page it points at', () => {
+    const offenders: string[] = [];
+
+    for (const item of navItems) {
+      const page = join(APP_DIR, '(app)', ...item.href.split('/').filter(Boolean), 'page.tsx');
+      let source: string;
+      try {
+        source = read(page);
+      } catch {
+        continue; // Not every link is a page in this tree; those are covered elsewhere.
+      }
+
+      const guard = (/requirePageAccess\(\s*'([^']+)'/.exec(source) ?? [])[1];
+
+      if (item.module === undefined && guard !== undefined) {
+        offenders.push(`${item.href}: menu asks for nothing, page requires "${guard}"`);
+      }
+      if (item.module !== undefined && guard !== item.module) {
+        offenders.push(
+          `${item.href}: menu asks for "${item.module}", page requires "${guard ?? 'nothing'}"`,
+        );
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('the dashboard in particular asks for no permission', () => {
+    // It is where every sign-in lands. A menu that can hide it would hide the
+    // page the person is standing on.
+    const dashboard = navItems.find((item) => item.href === '/dashboard');
+    expect(dashboard).toBeDefined();
+    expect(dashboard?.module).toBeUndefined();
+  });
+});
+
 describe('the dashboard shows only what the person may see', () => {
   /**
    * The dashboard is not one module, so it cannot be gated by a single

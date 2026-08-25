@@ -27,7 +27,13 @@ export interface NavItem {
   href: string;
   label: string;
   icon: IconName;
-  module: PermissionModule;
+  /**
+   * The module this item requires, or omitted for a page any signed-in user may
+   * open. Only the dashboard is in the second group, and it has to be: every
+   * sign-in lands there, so a menu that could hide it would hide the page the
+   * person is standing on.
+   */
+  module?: PermissionModule;
   /** Shown in the mobile bottom bar (space for five). */
   primary?: boolean;
   /** Not yet built — rendered disabled with a "Soon" tag rather than as a dead link. */
@@ -60,7 +66,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Daily',
     defaultOpen: true,
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', module: 'reports', primary: true },
+      // No module: the dashboard asks only for a signed-in user, exactly as the
+      // page itself does. It used to require `reports`, which hid it from every
+      // staff account — while `loginAction` went on sending them straight to it.
+      { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', primary: true },
       { href: '/sales', label: 'Sales', icon: 'sales', module: 'sales', primary: true },
       { href: '/purchases', label: 'Purchases', icon: 'purchases', module: 'purchases' },
       { href: '/expenses', label: 'Expenses', icon: 'expenses', module: 'expenses', primary: true },
