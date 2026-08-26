@@ -263,9 +263,21 @@ export function voidSupplierPayment(
       );
     }
 
-    tx.delete(supplierPaymentAllocations)
-      .where(eq(supplierPaymentAllocations.paymentId, paymentId))
-      .run();
+    /**
+     * The allocations STAY.
+     *
+     * They used to be deleted here, so the sales this payment had settled would
+     * become outstanding again. They already do: every reader of these rows
+     * joins back to the payment and counts only `status = 'POSTED'` — all six
+     * of them, in `sale.service.ts`, `purchase.service.ts` and here. Marking the
+     * payment voided on the next line is what frees the sales.
+     *
+     * So the delete freed nothing and cost the only record of what this payment
+     * had settled. In an application whose rule is that history is corrected by
+     * a reversing entry and never by deleting, it was the one place that broke
+     * it — and the answer to "what did this payment pay for?" is exactly what
+     * somebody asks months later when a customer disputes a receipt.
+     */
 
     tx.update(supplierPayments)
       .set({ status: 'VOIDED', voidedAt: now, voidReason: reason.trim(), updatedAt: now })
