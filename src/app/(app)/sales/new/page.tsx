@@ -43,6 +43,7 @@ export default async function NewSalePage() {
       trackInventory: product.trackInventory,
       goodQtyMilli: dates?.goodQtyMilli ?? 0,
       soonestExpiry: dates?.soonestExpiry ?? null,
+      warnDays: dates?.warnDays ?? (settings?.expiryWarningDays ?? 30),
     };
   });
 
@@ -100,7 +101,6 @@ export default async function NewSalePage() {
           taxInclusive={settings?.taxInclusive ?? false}
           mayOverridePrice={can(user, 'sales', 'edit')}
           maySellExpired={can(user, 'inventory', 'void')}
-          expiryWarningDays={settings?.expiryWarningDays ?? 30}
           expiryBlocksSales={settings?.expiryBlocksSales ?? true}
           cartSeed={randomUUID()}
         />

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { eq } from 'drizzle-orm';
+
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { getNotices } from '@/services/notifications.service';
-import { createProduct } from '@/services/catalog.service';
+import { createProduct, listProducts } from '@/services/catalog.service';
 import { createStockAdjustment } from '@/services/stock-adjustment.service';
 import { recordStockMovement, verifyBatchCoverage } from '@/services/inventory.service';
 import { writeTransaction } from '@/db/transaction';
@@ -474,6 +476,133 @@ describe('writing off what has expired', () => {
           reason: 'COUNT_CORRECTION',
           items: [{ productId: milk, direction: 'OUT', qty: u(2), batchId: batch }],
         },
+        ACTOR,
+      ),
+    ).toThrow(ValidationError);
+  });
+});
+
+describe('a shop where bread and tinned milk cannot share one window', () => {
+  /**
+   * The shop-wide window is a default, not a rule. Thirty days suits tinned
+   * goods and is absurd for bread, which will have been thrown out three weeks
+   * before the warning arrives — so a product may set its own, and a single
+   * crate may override even that.
+   *
+   * The cascade is batch, then product, then shop. Each level answers a
+   * different question and none of them is redundant.
+   */
+  const inDays = (days: number): string => addDays(toBusinessDate(), days);
+
+  function deliver(productId: number, qtyUnits: number, expiryDate: string | null) {
+    return writeTransaction(context.db, (tx) =>
+      recordStockMovement(tx, {
+        productId,
+        direction: 'IN',
+        qty: u(qtyUnits),
+        totalCost: m(100 * qtyUnits),
+        movementType: 'PURCHASE',
+        sourceType: 'TEST',
+        businessDate: inDays(-1),
+        occurredAt: new Date(),
+        userId: 1,
+        batch: { kind: 'NEW', expiryDate },
+      }),
+    ).batchAllocations[0]!.batchId;
+  }
+
+  function stocked(name: string, warnDays: number | null): number {
+    return createProduct(
+      context.db,
+      {
+        name,
+        costPrice: m(100),
+        sellingPrice: m(200),
+        unit: 'pcs',
+        ...(warnDays === null ? {} : { warnDays }),
+      },
+      ACTOR,
+    );
+  }
+
+  it('leaves a product alone when its own window has not been reached', () => {
+    // Twenty days out. The shop would warn at thirty; bread says three.
+    const bread = stocked('Tea Bread', 3);
+    deliver(bread, 10, inDays(20));
+
+    expect(ids(OWNER)).not.toContain('expiring-soon');
+  });
+
+  it('warns as soon as its own window is reached', () => {
+    const bread = stocked('Tea Bread', 3);
+    deliver(bread, 10, inDays(2));
+
+    expect(ids(OWNER)).toContain('expiring-soon');
+  });
+
+  it('still uses the shop default for a product that sets nothing', () => {
+    const milk = stocked('Evaporated Milk', null);
+    deliver(milk, 10, inDays(20));
+
+    expect(ids(OWNER)).toContain('expiring-soon');
+  });
+
+  it('lets one crate override even its product', () => {
+    // The product says three days; this delivery says sixty, because it is a
+    // long-life batch of the same thing.
+    const bread = stocked('Tea Bread', 3);
+    const batchId = deliver(bread, 10, inDays(20));
+    expect(ids(OWNER)).not.toContain('expiring-soon');
+
+    context.db
+      .update(productBatches)
+      .set({ warnDays: 60 })
+      .where(eq(productBatches.id, batchId))
+      .run();
+
+    expect(ids(OWNER)).toContain('expiring-soon');
+  });
+
+  it('names the number of days only while every product agrees on it', () => {
+    /**
+     * "Expiring within 30 days" is false for the very product that made
+     * somebody set a shorter window, so the moment one is set the message stops
+     * quoting a figure it cannot stand behind.
+     */
+    const milk = stocked('Evaporated Milk', null);
+    deliver(milk, 10, inDays(20));
+
+    const shared = getNotices(context.db, OWNER).find((row) => row.id === 'expiring-soon');
+    expect(shared!.title).toContain('within 30 days');
+
+    const bread = stocked('Tea Bread', 3);
+    deliver(bread, 10, inDays(2));
+
+    const mixed = getNotices(context.db, OWNER).find((row) => row.id === 'expiring-soon');
+    expect(mixed!.title).toContain('expiring soon');
+    expect(mixed!.title).not.toContain('30 days');
+  });
+
+  it('shows the same products on the page the notice links to', () => {
+    // The notice and the filter must agree about what "soon" means, or the page
+    // opens on a list that does not explain the number that sent somebody to it.
+    const bread = stocked('Tea Bread', 3);
+    const milk = stocked('Evaporated Milk', null);
+    deliver(bread, 10, inDays(2));
+    deliver(milk, 10, inDays(20));
+
+    const notice = getNotices(context.db, OWNER).find((row) => row.id === 'expiring-soon');
+    const listed = listProducts(context.db, { expiring: 'soon' });
+
+    expect(notice!.title).toContain('2 products');
+    expect(listed.map((row) => row.name).sort()).toEqual(['Evaporated Milk', 'Tea Bread']);
+  });
+
+  it('refuses a negative window on a product', () => {
+    expect(() =>
+      createProduct(
+        context.db,
+        { name: 'Nonsense', costPrice: m(100), sellingPrice: m(200), unit: 'pcs', warnDays: -1 },
         ACTOR,
       ),
     ).toThrow(ValidationError);

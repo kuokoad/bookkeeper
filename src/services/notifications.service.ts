@@ -90,7 +90,15 @@ export function getNotices(db: Db, user: Principal): Notice[] {
       notices.push({
         id: 'expiring-soon',
         tone: 'warning',
-        title: `${expiry.expiringSoonCount} product${expiry.expiringSoonCount === 1 ? '' : 's'} expiring within ${expiry.warningDays} days`,
+        /**
+         * The number of days is only named when every product counted agrees
+         * on it. Once one sets its own window there is no single figure to
+         * quote, and "expiring within 30 days" would be false for the very
+         * product that made somebody set a shorter one.
+         */
+        title: expiry.uniformWindow
+          ? `${expiry.expiringSoonCount} product${expiry.expiringSoonCount === 1 ? '' : 's'} expiring within ${expiry.warningDays} days`
+          : `${expiry.expiringSoonCount} product${expiry.expiringSoonCount === 1 ? '' : 's'} expiring soon`,
         detail: 'Still sellable. Move it first.',
         href: '/products?expiring=soon',
       });

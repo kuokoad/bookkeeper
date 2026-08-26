@@ -19,6 +19,7 @@ export interface ProductFormValues {
   costPrice: string;
   sellingPrice: string;
   minStock: string;
+  warnDays: string;
   trackInventory: boolean;
 }
 
@@ -180,6 +181,22 @@ export function ProductForm({
               name="minStock"
               defaultValue={initial.minStock}
               invalid={Boolean(state.fieldErrors?.['minStock'])}
+            />
+          </Field>
+
+          <Field
+            label="Warn me this long before it expires"
+            htmlFor="warnDays"
+            hint="In days. Leave blank to use the shop default. Bread wants two or three; tinned goods can wait a month."
+            error={state.fieldErrors?.['warnDays']}
+          >
+            <TextInput
+              id="warnDays"
+              name="warnDays"
+              inputMode="numeric"
+              placeholder="Shop default"
+              defaultValue={initial.warnDays}
+              invalid={Boolean(state.fieldErrors?.['warnDays'])}
             />
           </Field>
 

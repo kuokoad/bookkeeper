@@ -7,7 +7,6 @@ import { minor, type Minor } from '@/domain/money';
 import { qty as makeQty, type Qty } from '@/domain/quantity';
 import { averageUnitCost, isLowStock, isOutOfStock } from '@/domain/inventory/costing';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
-import { addDays } from '@/domain/business-date';
 import { toBusinessDate } from '@/lib/format';
 import { writeAudit } from './audit.service';
 import type { Actor } from './journal.service';
@@ -173,6 +172,11 @@ export interface ProductInput {
   costPrice: Minor;
   sellingPrice: Minor;
   minStock?: Qty | null;
+  /**
+   * Days before this product's stock expires that the shop wants telling.
+   * Null uses the shop-wide setting, like `minStock` above it.
+   */
+  warnDays?: number | null;
   trackInventory?: boolean;
 }
 
@@ -187,6 +191,13 @@ function assertProductInput(input: ProductInput): void {
   if (input.sellingPrice < 0) throw new ValidationError('Selling price cannot be negative.');
   if (input.minStock !== null && input.minStock !== undefined && input.minStock < 0) {
     throw new ValidationError('Reorder level cannot be negative.');
+  }
+  if (input.warnDays !== null && input.warnDays !== undefined) {
+    if (!Number.isInteger(input.warnDays) || input.warnDays < 0) {
+      throw new ValidationError('The expiry warning period must be a whole number of days.', {
+        warnDays: input.warnDays,
+      });
+    }
   }
 }
 
@@ -211,6 +222,7 @@ export function createProduct(db: Db, input: ProductInput, actor: Actor): number
         costPriceMinor: input.costPrice,
         sellingPriceMinor: input.sellingPrice,
         minStockMilli: input.minStock ?? null,
+        warnDays: input.warnDays ?? null,
         trackInventory: input.trackInventory ?? true,
         // Stock starts empty. The ONLY way to give a product opening stock is a
         // recorded stock adjustment, so its value always traces to the ledger.
@@ -273,6 +285,7 @@ export function updateProduct(db: Db, id: number, input: ProductInput, actor: Ac
         costPriceMinor: input.costPrice,
         sellingPriceMinor: input.sellingPrice,
         minStockMilli: input.minStock ?? null,
+        warnDays: input.warnDays ?? null,
         trackInventory: input.trackInventory ?? existing.trackInventory,
         updatedAt: now,
       })
@@ -386,6 +399,8 @@ export interface ProductListItem {
   stockValue: Minor;
   averageCost: Minor;
   minStock: Qty | null;
+  /** Null means the product uses the shop-wide expiry warning window. */
+  warnDays: number | null;
   trackInventory: boolean;
   isActive: boolean;
   lowStock: boolean;
@@ -440,11 +455,15 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
    */
   if (query.expiring !== undefined) {
     const asAt = query.asAt ?? toBusinessDate();
+    // The same three-level window `getExpirySummary` uses, or this page and the
+    // notice that sends people to it would disagree about what "soon" means.
+    const shopDays = getExpirySummary(db, asAt).warningDays;
     const window =
       query.expiring === 'expired'
         ? sql`${productBatches.expiryDate} < ${asAt}`
         : sql`${productBatches.expiryDate} >= ${asAt}
-              AND ${productBatches.expiryDate} <= ${addDays(asAt, getExpirySummary(db, asAt).warningDays)}`;
+              AND CAST(julianday(${productBatches.expiryDate}) - julianday(${asAt}) AS INTEGER)
+                  <= COALESCE(${productBatches.warnDays}, ${products.warnDays}, ${shopDays})`;
 
     conditions.push(
       sql`EXISTS (
@@ -482,6 +501,7 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
       qtyOnHandMilli: products.qtyOnHandMilli,
       stockValueMinor: products.stockValueMinor,
       minStockMilli: products.minStockMilli,
+      warnDays: products.warnDays,
       trackInventory: products.trackInventory,
       isActive: products.isActive,
     })
@@ -500,6 +520,7 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
     const minStock = row.minStockMilli === null ? null : makeQty(row.minStockMilli);
 
     return {
+      warnDays: row.warnDays,
       id: row.id,
       name: row.name,
       sku: row.sku,
@@ -585,10 +606,17 @@ export interface ExpirySummary {
   expiredCount: number;
   /** How much of it there is, in milli-units, across every product. */
   expiredQtyMilli: number;
-  /** Products whose soonest date falls inside the shop's warning window. */
+  /** Products whose soonest date falls inside their own warning window. */
   expiringSoonCount: number;
-  /** The window itself, so a message can say what it means. */
+  /** The shop-wide window, for a message that needs to name a number. */
   warningDays: number;
+  /**
+   * Whether every product counted uses that shop-wide window.
+   *
+   * False as soon as one product sets its own, at which point no single number
+   * describes "soon" and a message must not pretend otherwise.
+   */
+  uniformWindow: boolean;
 }
 
 /**
@@ -608,7 +636,17 @@ export function getExpirySummary(db: Db, asAt: string = toBusinessDate()): Expir
     .where(eq(businessSettings.id, 1))
     .get();
   const warningDays = settings?.warningDays ?? 30;
-  const horizon = addDays(asAt, warningDays);
+
+  /**
+   * The window that applies to a batch, in SQL: its own, else its product's,
+   * else the shop's.
+   *
+   * Three levels because each answers a different question. The shop sets a
+   * default; a product overrides it because bread and tinned milk cannot share
+   * one number; a crate overrides that for the rare delivery that is different
+   * from the rest.
+   */
+  const effectiveDays = sql`COALESCE(${productBatches.warnDays}, ${products.warnDays}, ${warningDays})`;
 
   const expired = db
     .select({
@@ -627,15 +665,26 @@ export function getExpirySummary(db: Db, asAt: string = toBusinessDate()): Expir
     .get();
 
   const soon = db
-    .select({ productCount: sql<number>`COUNT(DISTINCT ${productBatches.productId})` })
+    .select({
+      productCount: sql<number>`COUNT(DISTINCT ${productBatches.productId})`,
+      // Counted here rather than queried again: a message can only name a
+      // number when every product it counted agrees on one.
+      overrides: sql<number>`SUM(
+        CASE WHEN ${productBatches.warnDays} IS NOT NULL OR ${products.warnDays} IS NOT NULL
+             THEN 1 ELSE 0 END
+      )`,
+    })
     .from(productBatches)
+    .innerJoin(products, eq(products.id, productBatches.productId))
     .where(
       and(
         eq(productBatches.isClosed, false),
         sql`${productBatches.qtyMilli} > 0`,
         sql`${productBatches.expiryDate} IS NOT NULL`,
         sql`${productBatches.expiryDate} >= ${asAt}`,
-        sql`${productBatches.expiryDate} <= ${horizon}`,
+        // Days between today and the date, against the window that applies to
+        // THIS crate — not one horizon for the whole shop.
+        sql`CAST(julianday(${productBatches.expiryDate}) - julianday(${asAt}) AS INTEGER) <= ${effectiveDays}`,
       ),
     )
     .get();
@@ -645,6 +694,7 @@ export function getExpirySummary(db: Db, asAt: string = toBusinessDate()): Expir
     expiredQtyMilli: expired?.qtyMilli ?? 0,
     expiringSoonCount: soon?.productCount ?? 0,
     warningDays,
+    uniformWindow: (soon?.overrides ?? 0) === 0,
   };
 }
 

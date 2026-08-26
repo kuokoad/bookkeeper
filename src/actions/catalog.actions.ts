@@ -55,6 +55,7 @@ const productSchema = z.object({
   costPrice: z.string().trim().min(1, 'Enter a cost price.'),
   sellingPrice: z.string().trim().min(1, 'Enter a selling price.'),
   minStock: z.string().trim().optional(),
+  warnDays: z.string().trim().optional(),
   trackInventory: z.string().optional(),
 });
 
@@ -69,6 +70,7 @@ function readProductForm(formData: FormData) {
     costPrice: formData.get('costPrice'),
     sellingPrice: formData.get('sellingPrice'),
     minStock: formData.get('minStock') ?? undefined,
+    warnDays: formData.get('warnDays') ?? undefined,
     trackInventory: formData.get('trackInventory') ?? undefined,
   });
 }
@@ -79,6 +81,7 @@ function parseProductNumbers(data: z.infer<typeof productSchema>) {
   let costPrice = 0;
   let sellingPrice = 0;
   let minStock: number | null = null;
+  let warnDays: number | null = null;
 
   try {
     costPrice = parseMoney(data.costPrice);
@@ -98,7 +101,18 @@ function parseProductNumbers(data: z.infer<typeof productSchema>) {
     }
   }
 
-  return { costPrice, sellingPrice, minStock, fieldErrors };
+  if (data.warnDays && data.warnDays.length > 0) {
+    const days = Number(data.warnDays);
+    if (!Number.isInteger(days) || days < 0) {
+      fieldErrors['warnDays'] = 'Enter a whole number of days, or leave it blank.';
+    } else if (days > 3_650) {
+      fieldErrors['warnDays'] = 'A warning further than ten years ahead is not useful.';
+    } else {
+      warnDays = days;
+    }
+  }
+
+  return { costPrice, sellingPrice, minStock, warnDays, fieldErrors };
 }
 
 export async function createProductAction(
@@ -128,6 +142,7 @@ export async function createProductAction(
         costPrice: numbers.costPrice as never,
         sellingPrice: numbers.sellingPrice as never,
         minStock: numbers.minStock as never,
+        warnDays: numbers.warnDays,
         trackInventory: parsed.data.trackInventory === 'on',
       },
       { id: actor.id, username: actor.username },
@@ -170,6 +185,7 @@ export async function updateProductAction(
         costPrice: numbers.costPrice as never,
         sellingPrice: numbers.sellingPrice as never,
         minStock: numbers.minStock as never,
+        warnDays: numbers.warnDays,
         trackInventory: parsed.data.trackInventory === 'on',
       },
       { id: actor.id, username: actor.username },

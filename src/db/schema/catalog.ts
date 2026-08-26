@@ -59,6 +59,20 @@ export const products = sqliteTable(
     minStockMilli: qtyMilli('min_stock_milli'),
 
     /**
+     * How many days before this product's stock goes off the shop wants
+     * telling. Null falls back to the shop-wide setting, like the reorder level
+     * above it.
+     *
+     * One window for a whole shop cannot be right: thirty days suits tinned
+     * milk and is absurd for bread, which will have been thrown away three
+     * weeks before the warning arrives. It lives on the PRODUCT rather than on
+     * each crate because nobody wants to answer the question per delivery —
+     * they want to say "bread warns at three days" once, and have every loaf
+     * after that inherit it.
+     */
+    warnDays: integer('warn_days'),
+
+    /**
      * Cached mirror of the newest stock_ledger row for this product.
      *
      * The LEDGER is the source of truth; these two columns exist so a product
@@ -94,6 +108,7 @@ export const products = sqliteTable(
     check('ck_products_cost_price', sql`${t.costPriceMinor} >= 0`),
     check('ck_products_selling_price', sql`${t.sellingPriceMinor} >= 0`),
     check('ck_products_min_stock', sql`${t.minStockMilli} IS NULL OR ${t.minStockMilli} >= 0`),
+    check('ck_products_warn_days', sql`${t.warnDays} IS NULL OR ${t.warnDays} >= 0`),
     // Stock quantity MAY be negative (only when the shop enables that policy),
     // but a product that holds no quantity must hold no value.
     check(

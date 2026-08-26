@@ -598,6 +598,11 @@ function openBatch(
       sourceType: input.sourceType,
       sourceId: input.sourceId ?? null,
       supplierId: directive.supplierId ?? null,
+      // Left null unless this delivery says otherwise. Inheriting the product's
+      // figure by COPYING it would freeze today's answer onto the crate, so a
+      // shop that later changed "bread warns at 3 days" would find its existing
+      // loaves still on the old number. The readers resolve the cascade
+      // instead — batch, then product, then shop.
       warnDays: directive.warnDays ?? null,
       note: directive.note ?? null,
       isDemo: input.isDemo ?? false,
@@ -1199,6 +1204,12 @@ export interface ExpiryOutlook {
    * This is the crate first-expiry-first-out will reach for next.
    */
   soonestExpiry: string | null;
+  /**
+   * How many days ahead THIS product wants warning about — its own figure if
+   * it has one, otherwise the shop's. Resolved here so the till does not have
+   * to know the cascade.
+   */
+  warnDays: number;
 }
 
 /**
@@ -1209,13 +1220,22 @@ export interface ExpiryOutlook {
  * it has run out.
  */
 export function getExpiryOutlook(db: Db, businessDate: string): Map<number, ExpiryOutlook> {
+  const settings = db
+    .select({ warningDays: businessSettings.expiryWarningDays })
+    .from(businessSettings)
+    .where(eq(businessSettings.id, 1))
+    .get();
+  const shopDays = settings?.warningDays ?? 30;
+
   const rows = db
     .select({
       productId: productBatches.productId,
       goodQtyMilli: sql<number>`COALESCE(SUM(${productBatches.qtyMilli}), 0)`,
       soonestExpiry: sql<string | null>`MIN(${productBatches.expiryDate})`,
+      warnDays: sql<number>`COALESCE(MIN(${products.warnDays}), ${shopDays})`,
     })
     .from(productBatches)
+    .innerJoin(products, eq(products.id, productBatches.productId))
     .where(
       and(
         eq(productBatches.isClosed, false),
@@ -1229,7 +1249,11 @@ export function getExpiryOutlook(db: Db, businessDate: string): Map<number, Expi
   return new Map(
     rows.map((row) => [
       row.productId,
-      { goodQtyMilli: row.goodQtyMilli, soonestExpiry: row.soonestExpiry },
+      {
+        goodQtyMilli: row.goodQtyMilli,
+        soonestExpiry: row.soonestExpiry,
+        warnDays: row.warnDays,
+      },
     ]),
   );
 }

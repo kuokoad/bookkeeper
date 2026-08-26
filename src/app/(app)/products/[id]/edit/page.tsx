@@ -57,6 +57,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
           costPrice: toInputString(product.costPrice),
           sellingPrice: toInputString(product.sellingPrice),
           minStock: product.minStock === null ? '' : toQtyInputString(product.minStock),
+          warnDays: product.warnDays === null ? '' : String(product.warnDays),
           trackInventory: product.trackInventory,
         }}
       />

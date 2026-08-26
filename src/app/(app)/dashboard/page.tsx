@@ -438,7 +438,8 @@ export default async function DashboardPage({
             <p className="mt-3 border-t border-line pt-3 text-xs text-content-muted">
               <span className="font-medium text-warning">
                 {expiry.expiringSoonCount} product{expiry.expiringSoonCount === 1 ? '' : 's'}{' '}
-                expiring within {expiry.warningDays} days
+                {/* Only name the number when every product counted shares it. */}
+                {expiry.uniformWindow ? `expiring within ${expiry.warningDays} days` : 'expiring soon'}
               </span>{' '}
               — worth moving first.{' '}
               <Link href="/products?expiring=soon" className="text-accent hover:underline">

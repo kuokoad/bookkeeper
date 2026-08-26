@@ -33,6 +33,8 @@ export interface PosProduct {
   goodQtyMilli: number;
   /** Soonest date among that good stock — the crate picking reaches for next. */
   soonestExpiry: string | null;
+  /** Days ahead THIS product wants warning about. Already resolved server-side. */
+  warnDays: number;
 }
 
 export interface PosCustomer {
@@ -60,6 +62,7 @@ interface CartLine {
   trackInventory: boolean;
   goodQtyMilli: number;
   soonestExpiry: string | null;
+  warnDays: number;
 }
 
 // --- money helpers (display only; the server recomputes everything) --------
@@ -114,7 +117,6 @@ export function Pos({
   taxInclusive,
   mayOverridePrice,
   maySellExpired,
-  expiryWarningDays,
   expiryBlocksSales,
   cartSeed,
 }: {
@@ -139,8 +141,6 @@ export function Pos({
    * the actual decision, from the same right, and refuses either way.
    */
   maySellExpired: boolean;
-  /** How many days ahead the shop wants to be told about. */
-  expiryWarningDays: number;
   /** Whether this shop stops a sale on a date at all. */
   expiryBlocksSales: boolean;
   /**
@@ -224,6 +224,7 @@ export function Pos({
           trackInventory: product.trackInventory,
           goodQtyMilli: product.goodQtyMilli,
           soonestExpiry: product.soonestExpiry,
+          warnDays: product.warnDays,
         },
       ];
     });
@@ -522,10 +523,13 @@ export function Pos({
                   !short &&
                   qtyMilli > line.goodQtyMilli;
 
+                // This product's own window, not the shop's: bread wants three
+                // days' notice and tinned milk wants thirty, and one number for
+                // both is wrong for one of them.
                 const expiringSoon =
                   line.soonestExpiry !== null &&
                   !needsApproval &&
-                  daysBetween(today, line.soonestExpiry) <= expiryWarningDays;
+                  daysBetween(today, line.soonestExpiry) <= line.warnDays;
 
                 return (
                   <li key={line.key} className="px-4 py-3">

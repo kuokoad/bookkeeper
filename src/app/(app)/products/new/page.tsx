@@ -40,6 +40,7 @@ export default async function NewProductPage() {
           costPrice: '0.00',
           sellingPrice: '0.00',
           minStock: '',
+          warnDays: '',
           trackInventory: true,
         }}
       />
