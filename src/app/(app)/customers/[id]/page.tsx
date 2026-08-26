@@ -18,6 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
 import { Card, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
+import { RowVoidForm } from '@/components/shared/row-void-form';
+import { voidPaymentAction } from '@/actions/sale.actions';
 import { ReceivePaymentForm } from './receive-payment-form';
 
 export const metadata: Metadata = { title: 'Customer' };
@@ -35,6 +37,7 @@ export default async function CustomerDetailPage({
   const query = await searchParams;
 
   const customerId = Number(id);
+  const canVoid = can(user, 'customers', 'void');
   if (!Number.isInteger(customerId) || customerId <= 0) notFound();
 
   let customer;
@@ -230,6 +233,7 @@ export default async function CustomerDetailPage({
             <TH>Method</TH>
             <TH numeric>Amount</TH>
             <TH>Status</TH>
+            <TH />
           </THead>
           <tbody>
             {payments.map((payment) => (
@@ -249,6 +253,15 @@ export default async function CustomerDetailPage({
                     <Badge tone="danger">Voided</Badge>
                   ) : (
                     <Badge tone="success">Received</Badge>
+                  )}
+                </TD>
+                <TD>
+                  {payment.status !== 'VOIDED' && canVoid && (
+                    <RowVoidForm
+                      action={voidPaymentAction.bind(null, payment.id, customerId)}
+                      what={payment.paymentNo}
+                      placeholder="e.g. Wrong customer"
+                    />
                   )}
                 </TD>
               </TR>

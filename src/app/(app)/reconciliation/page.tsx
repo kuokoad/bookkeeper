@@ -18,6 +18,8 @@ import { Alert } from '@/components/ui/alert';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
 import { CountForm } from './count-form';
+import { RowVoidForm } from '@/components/shared/row-void-form';
+import { voidReconciliationAction } from '@/actions/reconciliation.actions';
 
 export const metadata: Metadata = { title: 'Reconciliation' };
 export const dynamic = 'force-dynamic';
@@ -57,6 +59,7 @@ export default async function ReconciliationPage({
   const unresolved = sum(overview.map((account) => account.unresolvedDifference));
   const neverCounted = overview.filter((account) => account.lastCountedOn === null);
   const canCount = can(user, 'reconciliation', 'create');
+  const canVoid = can(user, 'reconciliation', 'void');
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -171,6 +174,7 @@ export default async function ReconciliationPage({
                 <TH numeric>Counted</TH>
                 <TH numeric>Difference</TH>
                 <TH>Outcome</TH>
+                <TH />
               </THead>
               <tbody>
                 {history.map((row) => (
@@ -213,6 +217,15 @@ export default async function ReconciliationPage({
                         <Badge tone="accent">Adjusted</Badge>
                       ) : (
                         <Badge tone="warning">Open</Badge>
+                      )}
+                    </TD>
+                    <TD>
+                      {row.status !== 'VOIDED' && canVoid && (
+                        <RowVoidForm
+                          action={voidReconciliationAction.bind(null, row.id)}
+                          what={row.reconciliationNo}
+                          placeholder="e.g. Counted the wrong till"
+                        />
                       )}
                     </TD>
                   </TR>

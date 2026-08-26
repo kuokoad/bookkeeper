@@ -320,3 +320,46 @@ describe('the forced password change is enforced where acting happens', () => {
     expect(body).not.toContain('assertPasswordChosen');
   });
 });
+
+describe('every way of undoing something is reachable', () => {
+  /**
+   * A void action that no screen calls is a correction the shop cannot make.
+   *
+   * Five of them were exactly that: `voidPaymentAction`,
+   * `voidSupplierPaymentAction`, `voidExpenseAction`, `voidIncomeAction` and
+   * `voidReconciliationAction` were all implemented, permission-guarded,
+   * service-backed and tested — and no page called any of them. Recording a
+   * payment against the wrong customer, or keying the rent twice, had no
+   * correction path at all.
+   *
+   * It went unnoticed because every check anybody had written asked whether an
+   * action was GUARDED, never whether it was REACHED. This asks the second
+   * question.
+   */
+  const pageFiles = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      return entry.isDirectory() ? pageFiles(path) : path.endsWith('.tsx') ? [path] : [];
+    });
+
+  const appSource = pageFiles(join(process.cwd(), 'src', 'app'))
+    .concat(pageFiles(join(process.cwd(), 'src', 'components')))
+    .map((file) => readFileSync(file, 'utf8'))
+    .join(String.fromCharCode(10));
+
+  const voidActions = actionFiles.flatMap((file) =>
+    exportedActions(readFileSync(file, 'utf8'))
+      .map((action) => action.name)
+      .filter((name) => /^void[A-Z]/.test(name)),
+  );
+
+  it('finds the void actions to check', () => {
+    expect(voidActions.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it.each(voidActions.map((name) => [name]))('%s is called by a screen', (name: string) => {
+    expect(appSource, `${name} exists but nothing in src/app or src/components calls it`).toContain(
+      name,
+    );
+  });
+});

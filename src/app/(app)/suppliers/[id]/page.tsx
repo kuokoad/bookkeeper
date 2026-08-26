@@ -10,6 +10,8 @@ import { can } from '@/lib/auth/permissions';
 import { getSupplier } from '@/services/supplier.service';
 import { listPurchases } from '@/services/purchase.service';
 import { listSupplierPayments } from '@/services/supplier-payment.service';
+import { voidSupplierPaymentAction } from '@/actions/purchase.actions';
+import { RowVoidForm } from '@/components/shared/row-void-form';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { isDomainError } from '@/domain/errors';
@@ -50,6 +52,7 @@ export default async function SupplierDetailPage({
 
   const purchases = listPurchases(db, { supplierId, limit: 100 });
   const payments = listSupplierPayments(db, supplierId, 100);
+  const canVoid = can(user, 'suppliers', 'void');
 
   const totalBought = purchases
     .filter((purchase) => purchase.status === 'POSTED' && purchase.kind === 'PURCHASE')
@@ -197,6 +200,7 @@ export default async function SupplierDetailPage({
             <TH>Method</TH>
             <TH numeric>Amount</TH>
             <TH>Status</TH>
+            <TH />
           </THead>
           <tbody>
             {payments.map((payment) => (
@@ -216,6 +220,15 @@ export default async function SupplierDetailPage({
                     <Badge tone="danger">Voided</Badge>
                   ) : (
                     <Badge tone="success">Paid</Badge>
+                  )}
+                </TD>
+                <TD>
+                  {payment.status !== 'VOIDED' && canVoid && (
+                    <RowVoidForm
+                      action={voidSupplierPaymentAction.bind(null, payment.id, supplierId)}
+                      what={payment.paymentNo}
+                      placeholder="e.g. Paid the wrong supplier"
+                    />
                   )}
                 </TD>
               </TR>

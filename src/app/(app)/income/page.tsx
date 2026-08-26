@@ -7,10 +7,15 @@ import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { getIncomesTotal, listIncomes } from '@/services/cashbook.service';
 import { listIncomeCategories, listPaymentAccounts } from '@/services/payment-account.service';
-import { createIncomeCategoryAction, recordIncomeAction } from '@/actions/cashbook.actions';
+import {
+  createIncomeCategoryAction,
+  recordIncomeAction,
+  voidIncomeAction,
+} from '@/actions/cashbook.actions';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { Badge } from '@/components/ui/badge';
+import { RowVoidForm } from '@/components/shared/row-void-form';
 import { Alert } from '@/components/ui/alert';
 import { Card, EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
@@ -45,6 +50,7 @@ export default async function IncomePage({
   }));
 
   const canCreate = can(user, 'income', 'create');
+  const canVoid = can(user, 'income', 'void');
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -112,7 +118,19 @@ export default async function IncomePage({
                         {money(minor(row.amountMinor), { bare: true })}
                       </span>
                     </TD>
-                    <TD>{row.status === 'VOIDED' && <Badge tone="danger">Voided</Badge>}</TD>
+                    <TD>
+                      {row.status === 'VOIDED' ? (
+                        <Badge tone="danger">Voided</Badge>
+                      ) : (
+                        canVoid && (
+                          <RowVoidForm
+                            action={voidIncomeAction.bind(null, row.id)}
+                            what={row.description}
+                            placeholder="e.g. Entered twice"
+                          />
+                        )
+                      )}
+                    </TD>
                   </TR>
                 ))}
               </tbody>

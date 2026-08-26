@@ -15,10 +15,12 @@ import { listExpenseCategories, listPaymentAccounts } from '@/services/payment-a
 import {
   createExpenseCategoryAction,
   recordExpenseAction,
+  voidExpenseAction,
 } from '@/actions/cashbook.actions';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { Badge } from '@/components/ui/badge';
+import { RowVoidForm } from '@/components/shared/row-void-form';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, EmptyState, PageHeader, Stat } from '@/components/ui/page';
@@ -55,6 +57,7 @@ export default async function ExpensesPage({
   }));
 
   const canCreate = can(user, 'expenses', 'create');
+  const canVoid = can(user, 'expenses', 'void');
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -131,7 +134,17 @@ export default async function ExpensesPage({
                       </span>
                     </TD>
                     <TD>
-                      {row.status === 'VOIDED' && <Badge tone="danger">Voided</Badge>}
+                      {row.status === 'VOIDED' ? (
+                        <Badge tone="danger">Voided</Badge>
+                      ) : (
+                        canVoid && (
+                          <RowVoidForm
+                            action={voidExpenseAction.bind(null, row.id)}
+                            what={row.description}
+                            placeholder="e.g. Entered twice"
+                          />
+                        )
+                      )}
                     </TD>
                   </TR>
                 ))}
