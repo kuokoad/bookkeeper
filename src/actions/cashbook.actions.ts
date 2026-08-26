@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { sanitiseFilterQuery } from '@/lib/filters';
 import { z } from 'zod';
 
 import { db } from '@/db/client';
@@ -59,6 +60,18 @@ function readCashbookForm(formData: FormData) {
   });
 }
 
+/**
+ * Back to the list the form was submitted from, filters and all.
+ *
+ * The query string is rebuilt from a known set of keys rather than trusted,
+ * so this can only ever point at the page that sent it — a redirect built from
+ * a form field is an open redirect if it is allowed to carry a path.
+ */
+function backTo(page: string, formData: FormData, flag: string): string {
+  const filters = sanitiseFilterQuery(formData.get('returnTo'));
+  return filters === '' ? `${page}?${flag}` : `${page}?${filters}&${flag}`;
+}
+
 export async function recordExpenseAction(
   _previous: FormState,
   formData: FormData,
@@ -87,7 +100,7 @@ export async function recordExpenseAction(
   revalidatePath('/expenses');
   revalidatePath('/accounts');
   revalidatePath('/dashboard');
-  redirect('/expenses?created=1');
+  redirect(backTo('/expenses', formData, 'created=1'));
 }
 
 export async function recordIncomeAction(
@@ -118,7 +131,7 @@ export async function recordIncomeAction(
   revalidatePath('/income');
   revalidatePath('/accounts');
   revalidatePath('/dashboard');
-  redirect('/income?created=1');
+  redirect(backTo('/income', formData, 'created=1'));
 }
 
 export async function voidExpenseAction(
@@ -140,7 +153,7 @@ export async function voidExpenseAction(
   revalidatePath('/expenses');
   revalidatePath('/accounts');
   revalidatePath('/dashboard');
-  redirect('/expenses?voided=1');
+  redirect(backTo('/expenses', formData, 'voided=1'));
 }
 
 export async function voidIncomeAction(
@@ -162,7 +175,7 @@ export async function voidIncomeAction(
   revalidatePath('/income');
   revalidatePath('/accounts');
   revalidatePath('/dashboard');
-  redirect('/income?voided=1');
+  redirect(backTo('/income', formData, 'voided=1'));
 }
 
 // --- categories -----------------------------------------------------------

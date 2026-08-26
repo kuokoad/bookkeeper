@@ -290,6 +290,57 @@ export function withParam(
   return buildQuery({ ...values, [key]: value });
 }
 
+/**
+ * The filter keys a cashbook page carries, for the trip back from a form.
+ *
+ * Recording or voiding an expense posts to a server action and lands back on
+ * the list. Without these the owner is returned to an unfiltered page, and the
+ * filter they were working in has to be rebuilt by hand every time they touch a
+ * row — which is exactly when they are least likely to want to.
+ */
+export const CASHBOOK_FILTER_KEYS = [
+  'period',
+  'from',
+  'to',
+  'q',
+  'category',
+  'account',
+  'staff',
+  'status',
+  'min',
+  'max',
+  'sort',
+  'direction',
+  'page',
+] as const;
+
+/**
+ * Rebuild a query string from a form field, keeping only keys we know.
+ *
+ * This takes a QUERY STRING and never a path, and returns a query string, so a
+ * redirect built from it cannot be pointed anywhere but the page that sent it.
+ * Anything unrecognised is dropped rather than escaped: a redirect target is
+ * not the place to be clever about untrusted input.
+ */
+export function sanitiseFilterQuery(
+  raw: unknown,
+  allowed: readonly string[] = CASHBOOK_FILTER_KEYS,
+): string {
+  if (typeof raw !== 'string' || raw === '') return '';
+
+  const source = new URLSearchParams(raw.startsWith('?') ? raw.slice(1) : raw);
+  const kept = new URLSearchParams();
+
+  for (const key of allowed) {
+    const value = source.get(key);
+    // The same cap the search parser uses, so a long value cannot be smuggled
+    // back in through the return trip.
+    if (value !== null && value !== '' && value.length <= 100) kept.set(key, value);
+  }
+
+  return kept.toString();
+}
+
 // --- sorting ---------------------------------------------------------------
 
 export type SortDirection = 'asc' | 'desc';
