@@ -61,6 +61,11 @@ const REPORTS = [
         title: 'Inventory report',
         description: 'Stock valuation, movement, low stock and out of stock.',
       },
+      {
+        href: '/reports/tax',
+        title: 'Tax return',
+        description: 'What you charged, what you can reclaim, and what you owe.',
+      },
     ],
   },
   {

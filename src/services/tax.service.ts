@@ -248,6 +248,16 @@ export function readSaleTaxes(tx: Tx, saleId: number) {
     .all();
 }
 
+/** What a purchase actually paid, component by component, as recorded. */
+export function readPurchaseTaxes(tx: Tx, purchaseId: number) {
+  return tx
+    .select()
+    .from(purchaseTaxes)
+    .where(eq(purchaseTaxes.purchaseId, purchaseId))
+    .orderBy(asc(purchaseTaxes.id))
+    .all();
+}
+
 // --- setup ----------------------------------------------------------------
 
 /**

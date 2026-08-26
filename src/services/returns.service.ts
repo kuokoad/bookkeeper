@@ -25,7 +25,13 @@ import { recordStockMovement } from './inventory.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { batchSplitBySaleItem, getSaleOutstanding } from './sale.service';
 import { batchSplitByPurchaseItem } from './purchase.service';
-import { readSaleTaxes, taxAccountFor, writeSaleTaxes } from './tax.service';
+import {
+  readPurchaseTaxes,
+  readSaleTaxes,
+  taxAccountFor,
+  writePurchaseTaxes,
+  writeSaleTaxes,
+} from './tax.service';
 import { taxShareOf } from '@/domain/tax/components';
 
 /**
@@ -553,10 +559,40 @@ export function createSupplierReturn(
      * same basis the line costs were prorated from.
      */
     const purchaseNet = subtract(minor(original.subtotalMinor), minor(original.discountMinor));
+
+    /**
+     * Apportioned COMPONENT BY COMPONENT, not as one figure.
+     *
+     * The total was already being mirrored onto the return document, but the
+     * per-component rows were not — so `purchase_taxes` still said the shop had
+     * paid, and could reclaim, tax on goods it had sent back. Nothing noticed,
+     * because the trial balance and every existing report read the total. Only
+     * a tax return reads these rows, and it did not exist until now.
+     *
+     * `isRecoverable` is carried across from the original row rather than read
+     * from settings: what the shop could reclaim is a fact about the day the
+     * goods were bought.
+     */
+    const paidLines = readPurchaseTaxes(tx, originalPurchaseId);
+    const returnedLines =
+      paidLines.length === 0 || purchaseNet === 0
+        ? []
+        : paidLines.map((row) => ({
+            code: row.code,
+            name: row.name,
+            rateBp: row.rateBp,
+            basis: row.basis,
+            componentId: row.componentId,
+            isRecoverable: row.isRecoverable,
+            amount: mulDiv(minor(row.amountMinor), totalCost, purchaseNet),
+          }));
+
     const taxShare =
-      isZero(minor(original.taxMinor)) || purchaseNet === 0
-        ? ZERO
-        : mulDiv(minor(original.taxMinor), totalCost, purchaseNet);
+      returnedLines.length > 0
+        ? sum(returnedLines.map((line) => line.amount))
+        : isZero(minor(original.taxMinor)) || purchaseNet === 0
+          ? ZERO
+          : mulDiv(minor(original.taxMinor), totalCost, purchaseNet);
 
     /** What the supplier owes back: the goods and the tax charged on them. */
     const returnedValue = add(totalCost, taxShare);
@@ -586,6 +622,19 @@ export function createSupplierReturn(
       .get();
 
     if (!returnPurchase) throw new ConflictError('Could not create the return.');
+
+    // Negative, mirroring the document, exactly as the customer side does.
+    writePurchaseTaxes(
+      tx,
+      returnPurchase.id,
+      returnedLines.map((line) => ({ ...line, amount: minor(-line.amount) })),
+      new Map(
+        returnedLines
+          .filter((line) => line.componentId !== null)
+          .map((line) => [line.code, line.componentId as number]),
+      ),
+      occurredAt,
+    );
 
     resolved.forEach((line, index) => {
       const product = tx

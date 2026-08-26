@@ -17,6 +17,7 @@ import {
 } from '@/services/reporting/operations.service';
 import { getReceivablesAgeing, getPayablesAgeing } from '@/services/reporting/ledger.service';
 import { listAllOpenBatches } from '@/services/inventory.service';
+import { getTaxReturn } from '@/services/reporting/tax-return.service';
 import { availableFinancialYears, getYearEndPack } from '@/services/reporting/year-end.service';
 import type { Minor } from '@/domain/money';
 import { qty as makeQty } from '@/domain/quantity';
@@ -254,6 +255,54 @@ function buildTable(report: string, request: NextRequest): Table | null {
           'Qty in (period)',
           'Qty out (period)',
           'Status',
+        ],
+        rows,
+      };
+    }
+
+    case 'tax': {
+      /**
+       * The return, laid out so it can be typed onto a form or handed to an
+       * accountant. One row per tax, because Ghana's three are three separate
+       * obligations and a single figure cannot be filed.
+       *
+       * The non-reclaimable column is here rather than hidden: it was paid,
+       * it is in the cost of the goods, and it must NOT go on the return. An
+       * owner who cannot see it will assume the report has lost it.
+       */
+      const taxReturn = getTaxReturn(db, range);
+
+      const rows: CsvValue[][] = taxReturn.components.map((component): CsvValue[] => [
+        component.name,
+        component.code,
+        csvMoney(component.outputMinor),
+        csvMoney(component.recoverableInputMinor),
+        csvMoney(component.nonRecoverableInputMinor),
+        csvMoney(component.netMinor),
+      ]);
+
+      rows.push([
+        'Total',
+        '',
+        csvMoney(taxReturn.totalOutput),
+        csvMoney(taxReturn.totalRecoverableInput),
+        csvMoney(taxReturn.totalNonRecoverableInput),
+        csvMoney(taxReturn.netPayable),
+      ]);
+      rows.push([]);
+      rows.push(['Sales the tax was charged on', '', csvMoney(taxReturn.taxableSalesMinor)]);
+      rows.push(['Purchases the tax was paid on', '', csvMoney(taxReturn.taxablePurchasesMinor)]);
+      rows.push(['Sales documents', '', String(taxReturn.saleCount)]);
+      rows.push(['Purchase documents', '', String(taxReturn.purchaseCount)]);
+
+      return {
+        headers: [
+          'Tax',
+          'Code',
+          'Charged on sales',
+          'Reclaimable on purchases',
+          'Not reclaimable',
+          'Net',
         ],
         rows,
       };
