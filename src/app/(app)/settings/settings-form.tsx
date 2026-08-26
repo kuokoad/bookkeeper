@@ -25,6 +25,8 @@ export interface SettingsFormValues {
   /** Whole units as typed, e.g. "5" or "2.5". */
   lowStock: string;
   allowNegativeStock: boolean;
+  expiryWarningDays: string;
+  expiryBlocksSales: boolean;
   allowOverpayment: boolean;
   defaultTermsDays: number;
   financialYearStartMonth: number;
@@ -305,6 +307,40 @@ export function SettingsForm({
             label="Allow selling stock you do not have"
             hint="Off is safer: a sale that would take stock below zero is refused, which catches mistakes at the till. Turn it on only if you regularly sell goods before recording the delivery."
             defaultChecked={values.allowNegativeStock}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-content">Expiry dates</h2>
+        <p className="mb-4 text-sm text-content-muted">
+          Only applies to stock you have given a date to. A shop that never enters one never sees
+          any of this.
+        </p>
+
+        <div className="space-y-4">
+          <Field
+            label="Tell me this many days before stock goes off"
+            htmlFor="expiryWarningDays"
+            hint="Thirty days suits tinned goods. A shop selling bread and milk wants far less — a warning that arrives a month early about something that lasts a week is noise."
+            required
+            error={state.fieldErrors?.['expiryWarningDays']}
+          >
+            <TextInput
+              id="expiryWarningDays"
+              name="expiryWarningDays"
+              inputMode="numeric"
+              defaultValue={values.expiryWarningDays}
+              className="tabular max-w-40"
+              invalid={Boolean(state.fieldErrors?.['expiryWarningDays'])}
+            />
+          </Field>
+
+          <Toggle
+            name="expiryBlocksSales"
+            label="Stop the till selling stock that has passed its date"
+            hint="On is safer, and it only fires when there is nothing else left — expired stock is passed over in silence while there is good stock to sell, so nobody is interrupted for a crate at the back of the shelf. Someone who can write stock off may approve the sale anyway, and that approval is recorded. Turn it off and dates become information only."
+            defaultChecked={values.expiryBlocksSales}
           />
         </div>
       </Card>

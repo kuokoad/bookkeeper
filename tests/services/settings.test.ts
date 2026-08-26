@@ -50,6 +50,8 @@ function currentAsInput(): SettingsInput {
     taxInclusive: settings.taxInclusive,
     lowStockThresholdMilli: settings.lowStockThresholdMilli,
     allowNegativeStock: settings.allowNegativeStock,
+    expiryWarningDays: settings.expiryWarningDays,
+    expiryBlocksSales: settings.expiryBlocksSales,
     allowOverpayment: settings.allowOverpayment,
     defaultTermsDays: settings.defaultTermsDays,
     financialYearStartMonth: settings.financialYearStartMonth,
@@ -331,5 +333,41 @@ describe('the shop logo', () => {
     const summary = getLogoSummary(context.db);
     expect(summary.mime).toBe('image/webp');
     expect(summary.bytes).toBe(other.length);
+  });
+});
+
+describe('the expiry settings', () => {
+  /**
+   * These two decide whether a till refuses a sale, so they had to become
+   * editable by the shop rather than by whoever can open the database. They
+   * existed as columns for several commits with no way to change them, which
+   * meant a shop selling bread was stuck with a thirty-day warning and no way
+   * to turn the block off.
+   */
+  it('round-trip through the form input', () => {
+    updateSettings(
+      context.db,
+      { ...currentAsInput(), expiryWarningDays: 7, expiryBlocksSales: false },
+      ACTOR,
+    );
+
+    const settings = getSettings(context.db);
+    expect(settings.expiryWarningDays).toBe(7);
+    expect(settings.expiryBlocksSales).toBe(false);
+  });
+
+  it('refuses a warning period that is not a period', () => {
+    expect(() =>
+      updateSettings(context.db, { ...currentAsInput(), expiryWarningDays: -1 }, ACTOR),
+    ).toThrow();
+  });
+
+  it('leaves the other stock settings alone', () => {
+    const before = getSettings(context.db);
+    updateSettings(context.db, { ...currentAsInput(), expiryWarningDays: 3 }, ACTOR);
+
+    const after = getSettings(context.db);
+    expect(after.lowStockThresholdMilli).toBe(before.lowStockThresholdMilli);
+    expect(after.allowNegativeStock).toBe(before.allowNegativeStock);
   });
 });

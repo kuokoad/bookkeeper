@@ -70,6 +70,10 @@ export interface SettingsInput {
 
   lowStockThresholdMilli: number;
   allowNegativeStock: boolean;
+  /** How many days ahead the shop wants warning that stock is going off. */
+  expiryWarningDays: number;
+  /** Whether the till refuses a sale that could only come from expired stock. */
+  expiryBlocksSales: boolean;
   allowOverpayment: boolean;
   defaultTermsDays: number;
 
@@ -208,6 +212,19 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
       );
     }
 
+    /**
+     * A negative warning period is not a smaller one — it puts the window in
+     * the past, so the "expiring soon" notice silently never fires again and
+     * the shop believes nothing is going off. Guarded here rather than only in
+     * the form, because this is where the value is written and the form is not
+     * the only caller.
+     */
+    if (!Number.isInteger(input.expiryWarningDays) || input.expiryWarningDays < 0) {
+      throw new ValidationError('The expiry warning period must be a whole number of days.', {
+        expiryWarningDays: input.expiryWarningDays,
+      });
+    }
+
     const now = new Date();
     tx.update(businessSettings)
       .set({
@@ -226,6 +243,8 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         lowStockThresholdMilli: input.lowStockThresholdMilli,
         allowNegativeStock: input.allowNegativeStock,
         allowOverpayment: input.allowOverpayment,
+        expiryWarningDays: input.expiryWarningDays,
+        expiryBlocksSales: input.expiryBlocksSales,
         defaultTermsDays: input.defaultTermsDays,
         financialYearStartMonth: input.financialYearStartMonth,
         updatedAt: now,

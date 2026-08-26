@@ -61,6 +61,8 @@ export default async function SettingsPage() {
     // is shown and what is saved cannot drift apart.
     taxSummary: `${formatBasisPoints(allInRateBp)}%`,
     lowStock: toQtyInputString(settings.lowStockThresholdMilli as Qty),
+    expiryWarningDays: String(settings.expiryWarningDays),
+    expiryBlocksSales: settings.expiryBlocksSales,
     allowNegativeStock: settings.allowNegativeStock,
     allowOverpayment: settings.allowOverpayment,
     defaultTermsDays: settings.defaultTermsDays,

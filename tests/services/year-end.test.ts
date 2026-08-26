@@ -74,6 +74,8 @@ function setStartMonth(month: number): void {
         taxInclusive: settings.taxInclusive,
         lowStockThresholdMilli: settings.lowStockThresholdMilli,
       allowNegativeStock: settings.allowNegativeStock,
+    expiryWarningDays: settings.expiryWarningDays,
+    expiryBlocksSales: settings.expiryBlocksSales,
     allowOverpayment: settings.allowOverpayment,
     defaultTermsDays: settings.defaultTermsDays,
       financialYearStartMonth: month,

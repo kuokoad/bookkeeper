@@ -62,6 +62,12 @@ const settingsSchema = z.object({
     .max(1_000_000_000),
   allowNegativeStock: z.boolean(),
   allowOverpayment: z.boolean(),
+  expiryWarningDays: z
+    .number()
+    .int()
+    .min(0, 'A warning period cannot be negative.')
+    .max(365, 'A warning further than a year ahead is not useful.'),
+  expiryBlocksSales: z.boolean(),
   defaultTermsDays: z
     .number()
     .int()
@@ -122,6 +128,8 @@ export async function updateSettingsAction(
     lowStockThresholdMilli,
     allowNegativeStock: checkbox(formData, 'allowNegativeStock'),
     allowOverpayment: checkbox(formData, 'allowOverpayment'),
+    expiryWarningDays: Number(formData.get('expiryWarningDays') ?? 30),
+    expiryBlocksSales: checkbox(formData, 'expiryBlocksSales'),
     defaultTermsDays: Number(formData.get('defaultTermsDays') ?? 30),
     financialYearStartMonth: Number(formData.get('financialYearStartMonth') ?? 1),
   });
