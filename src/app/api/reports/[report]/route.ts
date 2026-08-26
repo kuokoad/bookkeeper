@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { db } from '@/db/client';
 import { requirePermission } from '@/lib/auth/current-user';
+import { EXPORT_THROTTLE, throttleOrNull } from '@/lib/http-throttle';
 import { getBalanceSheet, getCashFlow, getProfitAndLoss } from '@/services/reporting/financial.service';
 import {
   getPurchasesByDay,
@@ -521,8 +522,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ report: string }> },
 ): Promise<Response> {
+  let actor;
   try {
-    await requirePermission('reports', 'view');
+    actor = await requirePermission('reports', 'view');
   } catch (error) {
     if (isDomainError(error) && error.code === 'UNAUTHENTICATED') {
       return new Response('Please sign in.', { status: 401 });
@@ -532,6 +534,13 @@ export async function GET(
     }
     throw error;
   }
+
+  // Keyed on the person, not the address: they are already authenticated, so
+  // there is an identity here that cannot be forged or rotated for a fresh
+  // allowance. Building a report scans the ledger, and a loop of them makes the
+  // till slow for everybody else on a machine under a shop counter.
+  const throttled = throttleOrNull(db, `export:${actor.id}`, EXPORT_THROTTLE);
+  if (throttled) return throttled;
 
   const { report } = await params;
   const table = buildTable(report, request);

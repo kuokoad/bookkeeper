@@ -4,6 +4,7 @@ import { basename, join } from 'node:path';
 
 import { db } from '@/db/client';
 import { requirePermission } from '@/lib/auth/current-user';
+import { BACKUP_THROTTLE, throttleOrNull } from '@/lib/http-throttle';
 import { createBackup } from '@/db/backup';
 import { writeAudit } from '@/services/audit.service';
 import { getSettings } from '@/services/settings.service';
@@ -42,6 +43,12 @@ export async function GET(): Promise<Response> {
     }
     throw error;
   }
+
+  // Each backup copies the whole database and verifies it, so a loop of them
+  // would make the shop's own machine unusable. Keyed on the person, who is
+  // already authenticated.
+  const throttled = throttleOrNull(db, `backup:${actor.id}`, BACKUP_THROTTLE);
+  if (throttled) return throttled;
 
   // Written to a throwaway directory and removed once read, so backups are not
   // left accumulating on a host whose disk the shop does not manage.

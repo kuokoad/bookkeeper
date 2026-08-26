@@ -22,6 +22,22 @@ const nextConfig: NextConfig = {
   // is ever needed, delete `.env`, `data/` and `backups/` from the output
   // before shipping it anywhere.
 
+  // THE SEVEN BUILD WARNINGS ARE EXPECTED. Leave them.
+  //
+  // `next build` reports "Dynamic filesystem access causes tracing of the whole
+  // project" seven times, all from `src/db/backup.ts` by way of the backup
+  // download route. They are TRUE: the backup directory and the database path
+  // are configurable, so the paths really are computed at runtime and tracing
+  // really cannot follow them.
+  //
+  // They cost nothing here, because that trace is only used to assemble a
+  // standalone folder and this app does not build one — see the note above. So
+  // there is nothing to fix, and silencing them would hide a correct statement
+  // about the code. What they DO cost is attention: a build that always prints
+  // warnings teaches people to skim past the one that matters. That is what
+  // this comment is for. If the count ever changes, something new started
+  // reading the filesystem dynamically and is worth a look.
+
   // Security headers. This app is local-first, but a shop WiFi is not a trusted
   // network, so we still lock the browser down.
   async headers() {
