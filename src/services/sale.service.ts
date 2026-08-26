@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
@@ -13,6 +13,7 @@ import {
   saleItems,
   salePayments,
   sales,
+  users,
 } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { dueDateFor } from '@/domain/business-date';
@@ -951,61 +952,295 @@ export function getOutstandingBySale(
   return outstanding;
 }
 
+export const SALE_PAYMENT_KINDS = ['CASH', 'MOBILE_MONEY', 'BANK', 'OTHER'] as const;
+export type SalePaymentKind = (typeof SALE_PAYMENT_KINDS)[number];
+
+export const SALE_SORTS = ['date', 'amount', 'profit', 'customer', 'receipt'] as const;
+export type SaleSort = (typeof SALE_SORTS)[number];
+
 export interface SaleListQuery {
   from?: string;
   to?: string;
   customerId?: number;
-  unpaidOnly?: boolean;
+  productId?: number;
+  categoryId?: number;
+  /** One specific till account: "Cash", "MTN MoMo". */
+  paymentAccountId?: number;
+  /** A whole class of account, for the "MoMo sales" quick filter. */
+  paymentKind?: SalePaymentKind;
+  /** Who rang it up. */
+  staffId?: number;
+  status?: 'POSTED' | 'VOIDED';
+  /** SALE, RETURN or VOID — separates real trade from corrections. */
+  kind?: 'SALE' | 'RETURN' | 'VOID';
+  /** Settled or still owing, from tender plus any later allocations. */
+  paymentState?: 'paid' | 'unpaid';
+  /** Receipt or invoice number, customer name or phone, product name or SKU. */
+  search?: string;
+  minAmount?: Minor;
+  maxAmount?: Minor;
+  sort?: SaleSort;
+  direction?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
+  /** @deprecated Use `paymentState: 'unpaid'`. Kept for existing callers. */
+  unpaidOnly?: boolean;
 }
 
-export function listSales(db: Db, query: SaleListQuery = {}) {
+/**
+ * The outer sale's own columns, written out with their table name.
+ *
+ * Drizzle omits the table qualifier for a query's primary table when the query
+ * has no joins, so `${sales.id}` can render as a bare `"id"`. Inside a
+ * correlated subquery SQLite then binds that to the SUBQUERY's table — turning
+ * "lines belonging to this sale" into "lines whose id happens to equal their own
+ * sale_id", which is not an error, returns the same plausible number for every
+ * row, and is invisible until somebody counts.
+ *
+ * It bit exactly that way: `itemCount` was correct on the list (which joins
+ * customers, so drizzle qualified everything) and wrong the moment the same
+ * fragment was reused in a count with no joins. Writing the qualifier out means
+ * the fragment cannot depend on the shape of the query it lands in.
+ */
+const SALE_ID = sql`sales.id`;
+const SALE_CUSTOMER_ID = sql`sales.customer_id`;
+
+/**
+ * What a sale still owes, as SQL.
+ *
+ * This has to be an expression rather than a number computed afterwards,
+ * because "show me the credit sales" must narrow the rows BEFORE the limit is
+ * applied. Filtering a page of results in JavaScript answers a different
+ * question — "which of the most recent hundred sales are unpaid" — and gets
+ * quietly wronger the more sales the shop makes.
+ *
+ * A voided sale owes nothing: its mirror document already took the money back
+ * out, so counting it again would show every correction as a debt.
+ */
+const outstandingSql = sql<number>`(CASE WHEN ${sales.status} = 'VOIDED' THEN 0 ELSE
+  ${sales.totalMinor}
+  - (SELECT COALESCE(SUM(sp.amount_minor), 0) FROM sale_payments sp WHERE sp.sale_id = ${SALE_ID})
+  - (
+      SELECT COALESCE(SUM(a.amount_minor), 0)
+      FROM customer_payment_allocations a
+      JOIN customer_payments p ON p.id = a.payment_id AND p.status = 'POSTED'
+      WHERE a.sale_id = ${SALE_ID}
+    )
+END)`;
+
+/**
+ * Every filter, as one set of conditions.
+ *
+ * The list, the row count and the totals all build from this, which is what
+ * makes the figures above a filtered table describe THAT table. A summary
+ * assembled from its own separate WHERE clause is how a page ends up showing
+ * twenty-seven cash sales under a revenue figure that includes the MoMo ones.
+ */
+function saleConditions(query: SaleListQuery): SQL[] {
   const conditions: SQL[] = [];
+
   if (query.from) conditions.push(gte(sales.businessDate, query.from));
   if (query.to) conditions.push(lte(sales.businessDate, query.to));
   if (query.customerId !== undefined) conditions.push(eq(sales.customerId, query.customerId));
+  if (query.staffId !== undefined) conditions.push(eq(sales.createdBy, query.staffId));
+  if (query.status !== undefined) conditions.push(eq(sales.status, query.status));
+  if (query.kind !== undefined) conditions.push(eq(sales.kind, query.kind));
+
+  if (query.productId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${saleItems} WHERE ${saleItems.saleId} = ${SALE_ID}
+                  AND ${saleItems.productId} = ${query.productId})`,
+    );
+  }
+
+  if (query.categoryId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${saleItems}
+                  JOIN ${products} ON ${products.id} = ${saleItems.productId}
+                  WHERE ${saleItems.saleId} = ${SALE_ID}
+                    AND ${products.categoryId} = ${query.categoryId})`,
+    );
+  }
+
+  if (query.paymentAccountId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM sale_payments sp
+                  WHERE sp.sale_id = ${SALE_ID}
+                    AND sp.payment_account_id = ${query.paymentAccountId})`,
+    );
+  }
+
+  if (query.paymentKind !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM sale_payments sp
+                  JOIN payment_accounts pa ON pa.id = sp.payment_account_id
+                  WHERE sp.sale_id = ${SALE_ID} AND pa.kind = ${query.paymentKind})`,
+    );
+  }
+
+  const paymentState = query.paymentState ?? (query.unpaidOnly ? 'unpaid' : undefined);
+  if (paymentState === 'unpaid') conditions.push(sql`${outstandingSql} > 0`);
+  if (paymentState === 'paid') conditions.push(sql`${outstandingSql} <= 0`);
+
+  /*
+    Amount bounds compare the ABSOLUTE total so a mirror document sits in the
+    same bracket as the sale it reverses. "Sales over 500" that hid the void of
+    a 600-cedi sale would make the correction impossible to find.
+  */
+  if (query.minAmount !== undefined) {
+    conditions.push(sql`ABS(${sales.totalMinor}) >= ${query.minAmount}`);
+  }
+  if (query.maxAmount !== undefined) {
+    conditions.push(sql`ABS(${sales.totalMinor}) <= ${query.maxAmount}`);
+  }
+
+  if (query.search) {
+    const term = `%${query.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        lower(${sales.receiptNo}) LIKE ${term}
+        OR lower(COALESCE(${sales.invoiceNo}, '')) LIKE ${term}
+        OR EXISTS (SELECT 1 FROM ${customers}
+                   WHERE ${customers.id} = ${SALE_CUSTOMER_ID}
+                     AND (lower(${customers.name}) LIKE ${term}
+                          OR lower(COALESCE(${customers.phone}, '')) LIKE ${term}))
+        OR EXISTS (SELECT 1 FROM ${saleItems}
+                   LEFT JOIN ${products} ON ${products.id} = ${saleItems.productId}
+                   WHERE ${saleItems.saleId} = ${SALE_ID}
+                     AND (lower(${saleItems.productName}) LIKE ${term}
+                          OR lower(COALESCE(${products.sku}, '')) LIKE ${term}
+                          OR lower(COALESCE(${products.barcode}, '')) LIKE ${term}))
+      )`,
+    );
+  }
+
+  return conditions;
+}
+
+function saleOrderBy(query: SaleListQuery): SQL[] {
+  const ascending = (query.direction ?? 'desc') === 'asc';
+  const dir = (column: SQL): SQL => (ascending ? sql`${column} ASC` : sql`${column} DESC`);
+
+  switch (query.sort) {
+    case 'amount':
+      return [dir(sql`${sales.totalMinor}`), sql`${sales.id} DESC`];
+    case 'profit':
+      return [dir(sql`(${sales.totalMinor} - ${sales.cogsMinor})`), sql`${sales.id} DESC`];
+    case 'customer':
+      return [dir(sql`lower(COALESCE(${customers.name}, 'zzzz'))`), sql`${sales.id} DESC`];
+    case 'receipt':
+      return [dir(sql`${sales.receiptNo}`), sql`${sales.id} DESC`];
+    default:
+      return [dir(sql`${sales.occurredAt}`), dir(sql`${sales.id}`)];
+  }
+}
+
+export function listSales(db: Db, query: SaleListQuery = {}) {
+  const conditions = saleConditions(query);
 
   const base = db
     .select({
       id: sales.id,
       receiptNo: sales.receiptNo,
+      invoiceNo: sales.invoiceNo,
+      kind: sales.kind,
       businessDate: sales.businessDate,
       occurredAt: sales.occurredAt,
       customerId: sales.customerId,
       customerName: customers.name,
       totalMinor: sales.totalMinor,
+      discountMinor: sales.discountMinor,
       cogsMinor: sales.cogsMinor,
       status: sales.status,
       voidsSaleId: sales.voidsSaleId,
-      itemCount: sql<number>`(SELECT COUNT(*) FROM ${saleItems} WHERE ${saleItems.saleId} = ${sales.id})`,
-      tenderedMinor: sql<number>`(SELECT COALESCE(SUM(${salePayments.amountMinor}), 0) FROM ${salePayments} WHERE ${salePayments.saleId} = ${sales.id})`,
-      settledMinor: sql<number>`(
-        SELECT COALESCE(SUM(a.amount_minor), 0)
-        FROM customer_payment_allocations a
-        JOIN customer_payments p ON p.id = a.payment_id AND p.status = 'POSTED'
-        WHERE a.sale_id = ${sales.id}
-      )`,
+      createdBy: sales.createdBy,
+      staffName: users.displayName,
+      itemCount: sql<number>`(SELECT COUNT(*) FROM ${saleItems} WHERE ${saleItems.saleId} = ${SALE_ID})`,
+      outstandingMinor: outstandingSql,
     })
     .from(sales)
-    .leftJoin(customers, eq(customers.id, sales.customerId));
+    .leftJoin(customers, eq(customers.id, sales.customerId))
+    .leftJoin(users, eq(users.id, sales.createdBy));
 
   const rows = (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(desc(sales.occurredAt), desc(sales.id))
+    .orderBy(...saleOrderBy(query))
     .limit(Math.min(query.limit ?? 100, 500))
     .offset(query.offset ?? 0)
     .all();
 
-  const mapped = rows.map((row) => ({
+  return rows.map((row) => ({
     ...row,
-    outstandingMinor:
-      row.status === 'VOIDED'
-        ? 0
-        : row.totalMinor - row.tenderedMinor - row.settledMinor,
     profitMinor: row.totalMinor - row.cogsMinor,
   }));
+}
 
-  return query.unpaidOnly ? mapped.filter((row) => row.outstandingMinor > 0) : mapped;
+/** How many sales match, ignoring the page. What the pager counts. */
+export function countSales(db: Db, query: SaleListQuery = {}): number {
+  const conditions = saleConditions(query);
+  const base = db.select({ total: sql<number>`COUNT(*)` }).from(sales);
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+  return row?.total ?? 0;
+}
+
+export interface FilteredSalesSummary {
+  /** Sale documents rung up. Corrections are not another customer served. */
+  count: number;
+  quantity: Qty;
+  revenue: Minor;
+  discount: Minor;
+  cogs: Minor;
+  grossProfit: Minor;
+  outstanding: Minor;
+}
+
+/**
+ * The totals for exactly the sales a filter selects.
+ *
+ * Built from `saleConditions`, the same clause the table is built from, so the
+ * figures above the rows always describe the rows. The money figures include
+ * every document in range, voided ones too, because that is what the ledger
+ * says happened — a revenue figure that contradicts the Profit & Loss is worse
+ * than no revenue figure at all.
+ */
+export function getFilteredSalesSummary(
+  db: Db,
+  query: SaleListQuery = {},
+): FilteredSalesSummary {
+  const conditions = saleConditions(query);
+
+  const base = db
+    .select({
+      count: sql<number>`COALESCE(SUM(CASE WHEN ${sales.kind} = 'SALE' THEN 1 ELSE 0 END), 0)`,
+      revenue: sql<number>`COALESCE(SUM(${sales.totalMinor}), 0)`,
+      discount: sql<number>`COALESCE(SUM(${sales.discountMinor}), 0)`,
+      cogs: sql<number>`COALESCE(SUM(${sales.cogsMinor}), 0)`,
+      outstanding: sql<number>`COALESCE(SUM(${outstandingSql}), 0)`,
+      /*
+        Quantity is summed through a correlated subquery rather than a join to
+        `sale_items`: joining would multiply every sale's total by its number of
+        lines, and a revenue figure inflated by line count is exactly the kind
+        of plausible-looking wrong number nobody catches.
+      */
+      quantity: sql<number>`COALESCE(SUM(
+        (SELECT COALESCE(SUM(si.qty_milli), 0) FROM ${saleItems} si WHERE si.sale_id = ${SALE_ID})
+      ), 0)`,
+    })
+    .from(sales);
+
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+
+  const revenue = minor(row?.revenue ?? 0);
+  const cogs = minor(row?.cogs ?? 0);
+
+  return {
+    count: row?.count ?? 0,
+    quantity: makeQty(row?.quantity ?? 0),
+    revenue,
+    discount: minor(row?.discount ?? 0),
+    cogs,
+    grossProfit: subtract(revenue, cogs),
+    outstanding: minor(row?.outstanding ?? 0),
+  };
 }
 
 export function getSale(db: Db, saleId: number) {

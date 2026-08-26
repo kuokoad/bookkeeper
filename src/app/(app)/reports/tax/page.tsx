@@ -8,7 +8,10 @@ import { money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
 import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
-import { describePeriod, PeriodFilter, resolvePeriod } from '@/components/shared/period-filter';
+import { describePeriod } from '@/components/shared/period-filter';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { buildQuery } from '@/lib/filters';
+import { parseReportPeriod, type SearchParams } from '@/lib/list-filters';
 import { ReportActions } from '@/components/shared/report-actions';
 
 export const metadata: Metadata = { title: 'Tax return' };
@@ -26,12 +29,12 @@ export const dynamic = 'force-dynamic';
 export default async function TaxReturnPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   await requirePageAccess('reports', 'view');
   const params = await searchParams;
 
-  const { period, preset } = resolvePeriod(params.period, params.from, params.to, toBusinessDate());
+  const { range: period, preset, carried } = parseReportPeriod(params, toBusinessDate());
   const taxReturn = getTaxReturn(db, period);
   const profile = getTaxProfile(db);
 
@@ -45,11 +48,11 @@ export default async function TaxReturnPage({
         title="Tax return"
         description={`What you owe, ${describePeriod(period, preset).toLowerCase()}`}
         actions={
-          <ReportActions csvHref={`/api/reports/tax?from=${period.from}&to=${period.to}`} />
+          <ReportActions csvHref={`/api/reports/tax${buildQuery(carried)}`} />
         }
       />
 
-      <PeriodFilter basePath="/reports/tax" active={preset} period={period} />
+      <FilterBar basePath="/reports/tax" dateRange={{ preset, from: period.from, to: period.to }} />
 
       {!profile.enabled && (
         <Alert tone="info" title="Tax is switched off" className="mb-4">

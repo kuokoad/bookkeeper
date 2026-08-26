@@ -28,9 +28,48 @@ import { getLowStockThreshold } from '../catalog.service';
  * revenue on the Profit & Loss for the same period.
  */
 
+/**
+ * The outer report row's own columns, written out with their table name.
+ *
+ * Drizzle omits the table qualifier for a query's primary table when the query
+ * has no joins, so a bare interpolation can render as an unqualified column
+ * name — which SQLite then binds to the SUBQUERY's table, quietly turning a
+ * correlated subquery into an uncorrelated one that returns the same plausible
+ * number for every row. See the note on listCategories in catalog.service.ts,
+ * which hit the same thing. Writing the qualifier out means these fragments
+ * cannot depend on the shape of the query they land in.
+ */
+const SALE_ID = sql`sales.id`;
+const PURCHASE_ID = sql`purchases.id`;
+const VALUATION_PRODUCT_ID = sql`products.id`;
+
 export interface Period {
   from: string;
   to: string;
+}
+
+/**
+ * What a sales report can be narrowed to, on top of its dates.
+ *
+ * Two of these behave differently depending on the table, and the difference is
+ * worth stating plainly because a reader will otherwise assume the tables add
+ * up to each other:
+ *
+ *   - `customerId` and `paymentAccountId` are properties of the SALE, so they
+ *     mean the same thing everywhere.
+ *   - `productId` and `categoryId` are properties of a LINE. On the by-product
+ *     and by-category tables they narrow to the matching lines, which is what
+ *     "sales of Coca-Cola" means there. On the sale-level tables — by day, by
+ *     customer, by payment method — they narrow to sales that CONTAIN that
+ *     product, and the figures remain whole-sale figures, because half a
+ *     receipt has no tax, no invoice discount and no tender of its own to
+ *     report. The report page says so above the tables.
+ */
+export interface SalesReportQuery extends Period {
+  customerId?: number;
+  productId?: number;
+  categoryId?: number;
+  paymentAccountId?: number;
 }
 
 /**
@@ -48,8 +87,61 @@ export interface Period {
  * errors cancelled. The docblock above promises these figures tie back to the
  * accounts; this is what keeps that promise true.
  */
-const salesDatedIn = (period: Period) =>
-  and(gte(sales.businessDate, period.from), lte(sales.businessDate, period.to));
+const salesDatedIn = (query: SalesReportQuery) => {
+  const conditions = [gte(sales.businessDate, query.from), lte(sales.businessDate, query.to)];
+
+  if (query.customerId !== undefined) conditions.push(eq(sales.customerId, query.customerId));
+
+  if (query.paymentAccountId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM sale_payments sp WHERE sp.sale_id = ${SALE_ID}
+                  AND sp.payment_account_id = ${query.paymentAccountId})`,
+    );
+  }
+
+  if (query.productId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${saleItems} WHERE ${saleItems.saleId} = ${SALE_ID}
+                  AND ${saleItems.productId} = ${query.productId})`,
+    );
+  }
+
+  if (query.categoryId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${saleItems}
+                  JOIN ${products} ON ${products.id} = ${saleItems.productId}
+                  WHERE ${saleItems.saleId} = ${SALE_ID}
+                    AND ${products.categoryId} = ${query.categoryId})`,
+    );
+  }
+
+  return and(...conditions);
+};
+
+/**
+ * The same window, narrowed to the LINES that match rather than the sales that
+ * contain them. Used by the by-product and by-category tables.
+ */
+const linesMatching = (query: SalesReportQuery) => {
+  const conditions = [
+    gte(sales.businessDate, query.from),
+    lte(sales.businessDate, query.to),
+  ];
+
+  if (query.customerId !== undefined) conditions.push(eq(sales.customerId, query.customerId));
+
+  if (query.paymentAccountId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM sale_payments sp WHERE sp.sale_id = ${SALE_ID}
+                  AND sp.payment_account_id = ${query.paymentAccountId})`,
+    );
+  }
+
+  if (query.productId !== undefined) conditions.push(eq(saleItems.productId, query.productId));
+  if (query.categoryId !== undefined) conditions.push(eq(products.categoryId, query.categoryId));
+
+  return and(...conditions);
+};
 
 /**
  * How many sales were rung up — corrections and returns are not sales made.
@@ -73,7 +165,7 @@ export interface SalesByDay {
   profit: Minor;
 }
 
-export function getSalesByDay(db: Db, period: Period): SalesByDay[] {
+export function getSalesByDay(db: Db, query: SalesReportQuery): SalesByDay[] {
   return db
     .select({
       businessDate: sales.businessDate,
@@ -83,7 +175,7 @@ export function getSalesByDay(db: Db, period: Period): SalesByDay[] {
       cogs: sql<number>`COALESCE(SUM(${sales.cogsMinor}), 0)`,
     })
     .from(sales)
-    .where(salesDatedIn(period))
+    .where(salesDatedIn(query))
     .groupBy(sales.businessDate)
     .orderBy(asc(sales.businessDate))
     .all()
@@ -116,7 +208,7 @@ export interface SalesByProduct {
   marginBp: number | null;
 }
 
-export function getSalesByProduct(db: Db, period: Period): SalesByProduct[] {
+export function getSalesByProduct(db: Db, query: SalesReportQuery): SalesByProduct[] {
   return db
     .select({
       productId: saleItems.productId,
@@ -131,7 +223,7 @@ export function getSalesByProduct(db: Db, period: Period): SalesByProduct[] {
     .innerJoin(sales, eq(sales.id, saleItems.saleId))
     .leftJoin(products, eq(products.id, saleItems.productId))
     .leftJoin(categories, eq(categories.id, products.categoryId))
-    .where(salesDatedIn(period))
+    .where(linesMatching(query))
     .groupBy(saleItems.productId)
     .orderBy(desc(sql`SUM(${saleItems.lineTotalMinor})`))
     .all()
@@ -161,7 +253,7 @@ export interface SalesByCategory {
   profit: Minor;
 }
 
-export function getSalesByCategory(db: Db, period: Period): SalesByCategory[] {
+export function getSalesByCategory(db: Db, query: SalesReportQuery): SalesByCategory[] {
   return db
     .select({
       categoryId: products.categoryId,
@@ -173,7 +265,7 @@ export function getSalesByCategory(db: Db, period: Period): SalesByCategory[] {
     .innerJoin(sales, eq(sales.id, saleItems.saleId))
     .leftJoin(products, eq(products.id, saleItems.productId))
     .leftJoin(categories, eq(categories.id, products.categoryId))
-    .where(salesDatedIn(period))
+    .where(linesMatching(query))
     .groupBy(products.categoryId)
     .orderBy(desc(sql`SUM(${saleItems.lineTotalMinor})`))
     .all()
@@ -194,7 +286,7 @@ export interface SalesByCustomer {
   profit: Minor;
 }
 
-export function getSalesByCustomer(db: Db, period: Period): SalesByCustomer[] {
+export function getSalesByCustomer(db: Db, query: SalesReportQuery): SalesByCustomer[] {
   return db
     .select({
       customerId: sales.customerId,
@@ -205,7 +297,7 @@ export function getSalesByCustomer(db: Db, period: Period): SalesByCustomer[] {
     })
     .from(sales)
     .leftJoin(customers, eq(customers.id, sales.customerId))
-    .where(salesDatedIn(period))
+    .where(salesDatedIn(query))
     .groupBy(sales.customerId)
     .orderBy(desc(sql`SUM(${sales.totalMinor})`))
     .all()
@@ -232,7 +324,7 @@ export interface SalesByPaymentMethod {
  * was actually handed over. The figures therefore tie to the money accounts,
  * not to revenue.
  */
-export function getSalesByPaymentMethod(db: Db, period: Period): SalesByPaymentMethod[] {
+export function getSalesByPaymentMethod(db: Db, query: SalesReportQuery): SalesByPaymentMethod[] {
   return db
     .select({
       paymentAccountId: salePayments.paymentAccountId,
@@ -246,7 +338,7 @@ export function getSalesByPaymentMethod(db: Db, period: Period): SalesByPaymentM
     // Voiding mirrors the tender as a negative, putting the money back into the
     // account it came from. Excluding the voided original while keeping that
     // mirror showed a till that had paid out money it never took in.
-    .where(salesDatedIn(period))
+    .where(salesDatedIn(query))
     .groupBy(salePayments.paymentAccountId)
     .orderBy(desc(sql`SUM(${salePayments.amountMinor})`))
     .all()
@@ -260,8 +352,90 @@ export function getSalesByPaymentMethod(db: Db, period: Period): SalesByPaymentM
 
 // --- purchases ------------------------------------------------------------
 
+/**
+ * What a purchase report can be narrowed to, on top of its dates.
+ *
+ * `productId` and `categoryId` behave the same way they do on the sales side:
+ * matching LINES on the by-product table, deliveries CONTAINING them on the
+ * sale-level tables. See `SalesReportQuery` for why.
+ */
+export interface PurchaseReportQuery extends Period {
+  supplierId?: number;
+  productId?: number;
+  categoryId?: number;
+  paymentAccountId?: number;
+}
+
 const postedPurchases = () =>
   and(eq(purchases.status, 'POSTED'), eq(purchases.kind, 'PURCHASE'));
+
+function purchasesDatedIn(query: PurchaseReportQuery) {
+  const conditions = [
+    postedPurchases(),
+    gte(purchases.businessDate, query.from),
+    lte(purchases.businessDate, query.to),
+  ];
+
+  if (query.supplierId !== undefined) conditions.push(eq(purchases.supplierId, query.supplierId));
+
+  if (query.paymentAccountId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM purchase_payments pp WHERE pp.purchase_id = ${PURCHASE_ID}
+                  AND pp.payment_account_id = ${query.paymentAccountId})`,
+    );
+  }
+
+  if (query.productId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${purchaseItems}
+                  WHERE ${purchaseItems.purchaseId} = ${PURCHASE_ID}
+                    AND ${purchaseItems.productId} = ${query.productId})`,
+    );
+  }
+
+  if (query.categoryId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${purchaseItems}
+                  JOIN ${products} ON ${products.id} = ${purchaseItems.productId}
+                  WHERE ${purchaseItems.purchaseId} = ${PURCHASE_ID}
+                    AND ${products.categoryId} = ${query.categoryId})`,
+    );
+  }
+
+  return and(...conditions);
+}
+
+/** The same window, narrowed to the matching purchase LINES. */
+function purchaseLinesMatching(query: PurchaseReportQuery) {
+  const conditions = [
+    postedPurchases(),
+    gte(purchases.businessDate, query.from),
+    lte(purchases.businessDate, query.to),
+  ];
+
+  if (query.supplierId !== undefined) conditions.push(eq(purchases.supplierId, query.supplierId));
+
+  if (query.paymentAccountId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM purchase_payments pp WHERE pp.purchase_id = ${PURCHASE_ID}
+                  AND pp.payment_account_id = ${query.paymentAccountId})`,
+    );
+  }
+
+  if (query.productId !== undefined) {
+    conditions.push(eq(purchaseItems.productId, query.productId));
+  }
+
+  if (query.categoryId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${products}
+                  WHERE ${products.id} = ${purchaseItems.productId}
+                    AND ${products.categoryId} = ${query.categoryId})`,
+    );
+  }
+
+  return and(...conditions);
+}
 
 export interface PurchasesBySupplier {
   supplierId: number | null;
@@ -270,7 +444,7 @@ export interface PurchasesBySupplier {
   total: Minor;
 }
 
-export function getPurchasesBySupplier(db: Db, period: Period): PurchasesBySupplier[] {
+export function getPurchasesBySupplier(db: Db, query: PurchaseReportQuery): PurchasesBySupplier[] {
   return db
     .select({
       supplierId: purchases.supplierId,
@@ -280,13 +454,7 @@ export function getPurchasesBySupplier(db: Db, period: Period): PurchasesBySuppl
     })
     .from(purchases)
     .leftJoin(suppliers, eq(suppliers.id, purchases.supplierId))
-    .where(
-      and(
-        postedPurchases(),
-        gte(purchases.businessDate, period.from),
-        lte(purchases.businessDate, period.to),
-      ),
-    )
+    .where(purchasesDatedIn(query))
     .groupBy(purchases.supplierId)
     .orderBy(desc(sql`SUM(${purchases.totalMinor})`))
     .all()
@@ -306,7 +474,7 @@ export interface PurchasesByProduct {
   total: Minor;
 }
 
-export function getPurchasesByProduct(db: Db, period: Period): PurchasesByProduct[] {
+export function getPurchasesByProduct(db: Db, query: PurchaseReportQuery): PurchasesByProduct[] {
   return db
     .select({
       productId: purchaseItems.productId,
@@ -317,13 +485,7 @@ export function getPurchasesByProduct(db: Db, period: Period): PurchasesByProduc
     })
     .from(purchaseItems)
     .innerJoin(purchases, eq(purchases.id, purchaseItems.purchaseId))
-    .where(
-      and(
-        postedPurchases(),
-        gte(purchases.businessDate, period.from),
-        lte(purchases.businessDate, period.to),
-      ),
-    )
+    .where(purchaseLinesMatching(query))
     .groupBy(purchaseItems.productId)
     .orderBy(desc(sql`SUM(${purchaseItems.lineTotalMinor})`))
     .all()
@@ -342,7 +504,7 @@ export interface PurchasesByDay {
   total: Minor;
 }
 
-export function getPurchasesByDay(db: Db, period: Period): PurchasesByDay[] {
+export function getPurchasesByDay(db: Db, query: PurchaseReportQuery): PurchasesByDay[] {
   return db
     .select({
       businessDate: purchases.businessDate,
@@ -350,13 +512,7 @@ export function getPurchasesByDay(db: Db, period: Period): PurchasesByDay[] {
       total: sql<number>`COALESCE(SUM(${purchases.totalMinor}), 0)`,
     })
     .from(purchases)
-    .where(
-      and(
-        postedPurchases(),
-        gte(purchases.businessDate, period.from),
-        lte(purchases.businessDate, period.to),
-      ),
-    )
+    .where(purchasesDatedIn(query))
     .groupBy(purchases.businessDate)
     .orderBy(asc(purchases.businessDate))
     .all()
@@ -396,8 +552,51 @@ export interface StockValuation {
   outOfStockCount: number;
 }
 
-export function getStockValuation(db: Db): StockValuation {
+export interface StockValuationQuery {
+  categoryId?: number;
+  /** Products this supplier has ever delivered. */
+  supplierId?: number;
+  stockStatus?: 'in-stock' | 'low' | 'out' | 'negative';
+}
+
+export function getStockValuation(db: Db, query: StockValuationQuery = {}): StockValuation {
   const fallbackMin = getLowStockThreshold(db);
+  const threshold = sql`COALESCE(${products.minStockMilli}, ${fallbackMin})`;
+
+  const conditions = [eq(products.isActive, true), eq(products.trackInventory, true)];
+
+  if (query.categoryId !== undefined) conditions.push(eq(products.categoryId, query.categoryId));
+
+  if (query.supplierId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${purchaseItems}
+                  JOIN ${purchases} ON ${purchases.id} = ${purchaseItems.purchaseId}
+                  WHERE ${purchaseItems.productId} = ${VALUATION_PRODUCT_ID}
+                    AND ${purchases.supplierId} = ${query.supplierId})`,
+    );
+  }
+
+  /*
+    Filtered in SQL, so the totals under the table are the totals OF the table.
+    Narrowing the rows in JavaScript afterwards would leave a stock valuation
+    that says one thing in its rows and another in its footer.
+  */
+  switch (query.stockStatus) {
+    case 'low':
+      conditions.push(sql`${products.qtyOnHandMilli} <= ${threshold}`);
+      break;
+    case 'out':
+      conditions.push(sql`${products.qtyOnHandMilli} <= 0`);
+      break;
+    case 'negative':
+      conditions.push(sql`${products.qtyOnHandMilli} < 0`);
+      break;
+    case 'in-stock':
+      conditions.push(sql`${products.qtyOnHandMilli} > ${threshold}`);
+      break;
+    default:
+      break;
+  }
 
   const rows = db
     .select({
@@ -413,7 +612,7 @@ export function getStockValuation(db: Db): StockValuation {
     })
     .from(products)
     .leftJoin(categories, eq(categories.id, products.categoryId))
-    .where(and(eq(products.isActive, true), eq(products.trackInventory, true)))
+    .where(and(...conditions))
     .orderBy(asc(products.name))
     .all()
     .map((row): StockValuationRow => {

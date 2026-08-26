@@ -13,8 +13,14 @@ import { formatDate, money, quantity, toBusinessDate } from '@/lib/format';
 import { mulDiv, sum } from '@/domain/money';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
-import { describePeriod, PeriodFilter, resolvePeriod } from '@/components/shared/period-filter';
+import { describePeriod } from '@/components/shared/period-filter';
 import { ReportActions } from '@/components/shared/report-actions';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { listCategories, listProductOptions } from '@/services/catalog.service';
+import { listCustomerOptions } from '@/services/customer.service';
+import { listPaymentAccountOptions } from '@/services/payment-account.service';
+import { buildQuery, type ActiveFilter } from '@/lib/filters';
+import { parseSalesReportFilters, type SearchParams } from '@/lib/list-filters';
 
 export const metadata: Metadata = { title: 'Sales report' };
 export const dynamic = 'force-dynamic';
@@ -26,34 +32,127 @@ function percent(bp: number | null): string {
 export default async function SalesReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   await requirePageAccess('reports', 'view');
   const params = await searchParams;
 
-  const { period, preset } = resolvePeriod(params.period, params.from, params.to, toBusinessDate());
+  const today = toBusinessDate();
+  const { filters, range: period, preset, carried } = parseSalesReportFilters(params, today);
 
-  const byDay = getSalesByDay(db, period);
-  const byProduct = getSalesByProduct(db, period);
-  const byCategory = getSalesByCategory(db, period);
-  const byCustomer = getSalesByCustomer(db, period);
-  const byMethod = getSalesByPaymentMethod(db, period);
+  const byDay = getSalesByDay(db, filters);
+  const byProduct = getSalesByProduct(db, filters);
+  const byCategory = getSalesByCategory(db, filters);
+  const byCustomer = getSalesByCustomer(db, filters);
+  const byMethod = getSalesByPaymentMethod(db, filters);
 
   const totalSales = sum(byDay.map((row) => row.total));
   const totalProfit = sum(byDay.map((row) => row.profit));
   const saleCount = byDay.reduce((total, row) => total + row.saleCount, 0);
+
+  const customers = listCustomerOptions(db, true);
+  const categories = listCategories(db);
+  const products = listProductOptions(db, true);
+  const accounts = listPaymentAccountOptions(db, true);
+
+  const nameOf = <T extends { id: number; name: string }>(
+    list: T[],
+    id: number | undefined,
+  ): string | undefined => (id === undefined ? undefined : list.find((item) => item.id === id)?.name);
+
+  const active: ActiveFilter[] = [];
+  if (filters.customerId !== undefined) {
+    active.push({
+      key: 'customer',
+      label: 'Customer',
+      value: nameOf(customers, filters.customerId) ?? String(filters.customerId),
+    });
+  }
+  if (filters.categoryId !== undefined) {
+    active.push({
+      key: 'category',
+      label: 'Category',
+      value: nameOf(categories, filters.categoryId) ?? String(filters.categoryId),
+    });
+  }
+  if (filters.productId !== undefined) {
+    active.push({
+      key: 'product',
+      label: 'Product',
+      value: nameOf(products, filters.productId) ?? String(filters.productId),
+    });
+  }
+  if (filters.paymentAccountId !== undefined) {
+    active.push({
+      key: 'account',
+      label: 'Payment method',
+      value: nameOf(accounts, filters.paymentAccountId) ?? String(filters.paymentAccountId),
+    });
+  }
+  if (preset !== 'month') {
+    active.push({
+      key: 'period',
+      label: 'Period',
+      value: describePeriod(period, preset),
+      alsoClears: ['from', 'to'],
+    });
+  }
+
+  const narrowedByLine = filters.productId !== undefined || filters.categoryId !== undefined;
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title="Sales report"
         description={describePeriod(period, preset)}
-        actions={
-          <ReportActions csvHref={`/api/reports/sales?from=${period.from}&to=${period.to}`} />
-        }
+        actions={<ReportActions csvHref={`/api/reports/sales${buildQuery(carried)}`} />}
       />
 
-      <PeriodFilter basePath="/reports/sales" active={preset} period={period} />
+      <FilterBar
+        basePath="/reports/sales"
+        dateRange={{ preset, from: period.from, to: period.to }}
+        active={active}
+        fields={[
+          {
+            kind: 'select',
+            key: 'customer',
+            label: 'Customer',
+            allLabel: 'All customers',
+            options: customers.map((item) => ({ value: String(item.id), label: item.name })),
+          },
+          {
+            kind: 'select',
+            key: 'category',
+            label: 'Category',
+            allLabel: 'All categories',
+            options: categories.map((item) => ({ value: String(item.id), label: item.name })),
+          },
+          {
+            kind: 'select',
+            key: 'product',
+            label: 'Product',
+            allLabel: 'All products',
+            options: products.map((item) => ({ value: String(item.id), label: item.name })),
+          },
+          {
+            kind: 'select',
+            key: 'account',
+            label: 'Payment method',
+            allLabel: 'All methods',
+            options: accounts.map((item) => ({ value: String(item.id), label: item.name })),
+          },
+        ]}
+      />
+
+      {narrowedByLine && (
+        <p className="mb-4 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-xs text-content-muted no-print">
+          Filtering by product or category means two slightly different things, and it is worth
+          knowing which is which. <strong>By product</strong> and <strong>by category</strong> below
+          count only the matching lines. The other tables count whole sales that CONTAINED the
+          product, because a receipt&rsquo;s tax, discount and tender belong to the receipt and
+          cannot be split across its lines.
+        </p>
+      )}
 
       {byDay.length === 0 ? (
         <EmptyState

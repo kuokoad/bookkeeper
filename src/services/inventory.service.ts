@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 
 import type { Db, Tx } from '@/db/types';
 import {
@@ -1516,19 +1516,101 @@ export function getInventoryValueFromLedger(db: Db): Minor {
 
 // --- reads ----------------------------------------------------------------
 
+/**
+ * The outer ledger row's own columns, written out with their table name.
+ *
+ * Drizzle omits the table qualifier for a query's primary table when the query
+ * has no joins, so a bare interpolation can render as an unqualified column
+ * name — which SQLite then binds to the SUBQUERY's table, quietly turning a
+ * correlated subquery into an uncorrelated one that returns the same plausible
+ * number for every row. See the note on listCategories in catalog.service.ts,
+ * which hit the same thing. Writing the qualifier out means these fragments
+ * cannot depend on the shape of the query they land in.
+ */
+const LEDGER_PRODUCT_ID = sql`stock_ledger.product_id`;
+const LEDGER_SOURCE_ID = sql`stock_ledger.source_id`;
+
 export interface LedgerQuery {
   productId?: number;
+  categoryId?: number;
   from?: string;
   to?: string;
+  /** PURCHASE, SALE, SALE_RETURN, ADJUSTMENT_IN and so on. */
+  movementType?: MovementType;
+  /**
+   * Who caused the movement.
+   *
+   * The ledger itself records no user — it records what moved and why. The
+   * person is on the DOCUMENT behind the movement, so this reaches through
+   * `sourceType`/`sourceId` to the sale, the delivery or the adjustment. That is
+   * the honest answer: a stock movement has no author of its own, only a cause.
+   */
+  userId?: number;
+  /** Product name, SKU, source reference or the movement's note. */
+  search?: string;
   limit?: number;
   offset?: number;
 }
 
-export function getStockLedger(db: Db, query: LedgerQuery = {}) {
-  const conditions = [];
+/**
+ * Filters for the stock ledger.
+ *
+ * Read-only, and it has to stay that way: the ledger is the source of truth for
+ * inventory, and `balanceQtyMilli` on each row is the running position AFTER
+ * that movement, recorded when it happened. Nothing here recomputes a balance
+ * from a filtered subset, so narrowing the view to one product or one week can
+ * never change what the shop is told it holds.
+ */
+function ledgerConditions(query: LedgerQuery): SQL[] {
+  const conditions: SQL[] = [];
+
   if (query.productId !== undefined) conditions.push(eq(stockLedger.productId, query.productId));
   if (query.from !== undefined) conditions.push(sql`${stockLedger.businessDate} >= ${query.from}`);
   if (query.to !== undefined) conditions.push(sql`${stockLedger.businessDate} <= ${query.to}`);
+  if (query.movementType !== undefined) {
+    conditions.push(eq(stockLedger.movementType, query.movementType));
+  }
+
+  if (query.categoryId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${products} p WHERE p.id = ${LEDGER_PRODUCT_ID}
+                  AND p.category_id = ${query.categoryId})`,
+    );
+  }
+
+  if (query.userId !== undefined) {
+    conditions.push(
+      sql`(
+        (${stockLedger.sourceType} IN ('SALE', 'SALE_RETURN', 'SALE_VOID')
+         AND EXISTS (SELECT 1 FROM sales s
+                     WHERE s.id = ${LEDGER_SOURCE_ID} AND s.created_by = ${query.userId}))
+        OR (${stockLedger.sourceType} IN ('PURCHASE', 'PURCHASE_RETURN', 'PURCHASE_VOID')
+            AND EXISTS (SELECT 1 FROM purchases pu
+                        WHERE pu.id = ${LEDGER_SOURCE_ID} AND pu.created_by = ${query.userId}))
+        OR (${stockLedger.sourceType} IN ('STOCK_ADJUSTMENT', 'STOCK_ADJUSTMENT_VOID')
+            AND EXISTS (SELECT 1 FROM stock_adjustments sa
+                        WHERE sa.id = ${LEDGER_SOURCE_ID} AND sa.created_by = ${query.userId}))
+      )`,
+    );
+  }
+
+  if (query.search) {
+    const term = `%${query.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        lower(COALESCE(${stockLedger.sourceRef}, '')) LIKE ${term}
+        OR lower(COALESCE(${stockLedger.note}, '')) LIKE ${term}
+        OR EXISTS (SELECT 1 FROM ${products} p WHERE p.id = ${LEDGER_PRODUCT_ID}
+                   AND (lower(p.name) LIKE ${term} OR lower(COALESCE(p.sku, '')) LIKE ${term}))
+      )`,
+    );
+  }
+
+  return conditions;
+}
+
+export function getStockLedger(db: Db, query: LedgerQuery = {}) {
+  const conditions = ledgerConditions(query);
 
   const base = db
     .select({
@@ -1536,10 +1618,12 @@ export function getStockLedger(db: Db, query: LedgerQuery = {}) {
       productId: stockLedger.productId,
       productName: products.name,
       productUnit: products.unit,
+      categoryId: products.categoryId,
       businessDate: stockLedger.businessDate,
       occurredAt: stockLedger.occurredAt,
       movementType: stockLedger.movementType,
       sourceType: stockLedger.sourceType,
+      sourceId: stockLedger.sourceId,
       sourceRef: stockLedger.sourceRef,
       qtyIn: stockLedger.qtyInMilli,
       qtyOut: stockLedger.qtyOutMilli,
@@ -1552,13 +1636,19 @@ export function getStockLedger(db: Db, query: LedgerQuery = {}) {
     .from(stockLedger)
     .innerJoin(products, eq(products.id, stockLedger.productId));
 
-  const filtered = conditions.length > 0 ? base.where(sql.join(conditions, sql` AND `)) : base;
-
-  return filtered
+  return (conditions.length > 0 ? base.where(and(...conditions)) : base)
     .orderBy(sql`${stockLedger.occurredAt} DESC`, sql`${stockLedger.id} DESC`)
     .limit(Math.min(query.limit ?? 100, 500))
     .offset(query.offset ?? 0)
     .all();
+}
+
+/** How many movements match, ignoring the page. */
+export function countStockLedger(db: Db, query: LedgerQuery = {}): number {
+  const conditions = ledgerConditions(query);
+  const base = db.select({ total: sql<number>`COUNT(*)` }).from(stockLedger);
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+  return row?.total ?? 0;
 }
 
 /** Display-only average unit cost for a product. */

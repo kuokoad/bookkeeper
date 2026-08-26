@@ -7,8 +7,12 @@ import { money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
 import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
-import { describePeriod, PeriodFilter, resolvePeriod } from '@/components/shared/period-filter';
+import { describePeriod } from '@/components/shared/period-filter';
 import { ReportActions } from '@/components/shared/report-actions';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { listPaymentAccountOptions } from '@/services/payment-account.service';
+import { buildQuery, type ActiveFilter } from '@/lib/filters';
+import { parseCashFlowFilters, type SearchParams } from '@/lib/list-filters';
 
 export const metadata: Metadata = { title: 'Cash flow' };
 export const dynamic = 'force-dynamic';
@@ -16,28 +20,66 @@ export const dynamic = 'force-dynamic';
 export default async function CashFlowPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   await requirePageAccess('reports', 'view');
   const params = await searchParams;
 
-  const { period, preset } = resolvePeriod(params.period, params.from, params.to, toBusinessDate());
-  const flow = getCashFlow(db, period);
+  const { range: period, preset, accountId, carried } = parseCashFlowFilters(
+    params,
+    toBusinessDate(),
+  );
 
+  /*
+    The opening balance comes from every entry dated before the window, not from
+    today's balance worked backwards — which is what makes "last month's cash
+    flow" a statement about last month rather than about now.
+  */
+  const flow = getCashFlow(db, period, accountId);
+
+  const accounts = listPaymentAccountOptions(db, true);
   const moneyIn = flow.lines.filter((line) => line.inMinor > 0);
   const moneyOut = flow.lines.filter((line) => line.outMinor > 0);
+
+  const active: ActiveFilter[] = [];
+  if (accountId !== undefined) {
+    active.push({
+      key: 'account',
+      label: 'Account',
+      value: accounts.find((item) => item.id === accountId)?.name ?? String(accountId),
+    });
+  }
+  if (preset !== 'month') {
+    active.push({
+      key: 'period',
+      label: 'Period',
+      value: describePeriod(period, preset),
+      alsoClears: ['from', 'to'],
+    });
+  }
 
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Cash flow"
         description={describePeriod(period, preset)}
-        actions={
-          <ReportActions csvHref={`/api/reports/cash-flow?from=${period.from}&to=${period.to}`} />
-        }
+        actions={<ReportActions csvHref={`/api/reports/cash-flow${buildQuery(carried)}`} />}
       />
 
-      <PeriodFilter basePath="/reports/cash-flow" active={preset} period={period} />
+      <FilterBar
+        basePath="/reports/cash-flow"
+        dateRange={{ preset, from: period.from, to: period.to }}
+        active={active}
+        fields={[
+          {
+            kind: 'select',
+            key: 'account',
+            label: 'Account',
+            allLabel: 'All accounts',
+            options: accounts.map((item) => ({ value: String(item.id), label: item.name })),
+          },
+        ]}
+      />
 
       {!flow.reconciles && (
         <Alert tone="danger" title="Cash flow does not reconcile" className="mb-4">

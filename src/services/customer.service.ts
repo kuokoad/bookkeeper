@@ -1,4 +1,4 @@
-import { and, asc, eq, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, or, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
@@ -213,30 +213,96 @@ export interface CustomerListItem {
   isActive: boolean;
 }
 
+/**
+ * The outer customer's id, written out with its table name.
+ *
+ * Drizzle omits the table qualifier for a query's primary table when the query
+ * has no joins, so a bare interpolation renders as an unqualified column name —
+ * which SQLite binds to the SUBQUERY's table instead, quietly making the
+ * subquery uncorrelated. See the note on listCategories in catalog.service.ts.
+ */
+const CUSTOMER_ID = sql`customers.id`;
+
+export const CUSTOMER_SORTS = ['name', 'balance'] as const;
+export type CustomerSort = (typeof CUSTOMER_SORTS)[number];
+
 export interface CustomerQuery {
   search?: string;
   includeInactive?: boolean;
+  /** 'active' or 'archived'. Narrower than `includeInactive`, which widens. */
+  customerStatus?: 'active' | 'archived';
+  /**
+   * What the customer owes.
+   *
+   * `owing` is a real receivable balance read from the ledger, not a flag
+   * somebody set on the record — so "customers who owe" can never drift from
+   * what the accounts say is owed.
+   */
+  balanceState?: 'owing' | 'zero' | 'credit';
+  /** @deprecated Use `balanceState: 'owing'`. Kept for existing callers. */
   owingOnly?: boolean;
+  sort?: CustomerSort;
+  direction?: 'asc' | 'desc';
   limit?: number;
+  offset?: number;
 }
 
-export function listCustomers(db: Db, query: CustomerQuery = {}): CustomerListItem[] {
+/**
+ * A customer's receivable balance, as SQL.
+ *
+ * The same sum `getAllCustomerBalances` performs, expressed where the database
+ * can filter and sort on it. Without this, "who owes me" was answered by
+ * fetching a page of customers and dropping the ones that did not owe — so a
+ * shop with more customers than a page saw only part of its own debt.
+ */
+const customerBalanceSql = sql<number>`(
+  SELECT COALESCE(SUM(jl.debit_minor - jl.credit_minor), 0)
+  FROM journal_lines jl
+  JOIN accounts a ON a.id = jl.account_id
+  WHERE jl.customer_id = ${CUSTOMER_ID}
+    AND a.code = ${ACCOUNT_CODES.ACCOUNTS_RECEIVABLE}
+)`;
+
+function customerConditions(query: CustomerQuery): SQL[] {
   const conditions: SQL[] = [];
-  if (!query.includeInactive) conditions.push(eq(customers.isActive, true));
+
+  if (query.customerStatus === 'active') conditions.push(eq(customers.isActive, true));
+  else if (query.customerStatus === 'archived') conditions.push(eq(customers.isActive, false));
+  else if (!query.includeInactive) conditions.push(eq(customers.isActive, true));
+
+  const state = query.balanceState ?? (query.owingOnly ? 'owing' : undefined);
+  if (state === 'owing') conditions.push(sql`${customerBalanceSql} > 0`);
+  if (state === 'zero') conditions.push(sql`${customerBalanceSql} = 0`);
+  if (state === 'credit') conditions.push(sql`${customerBalanceSql} < 0`);
 
   if (query.search) {
     const term = `%${query.search.trim().toLowerCase()}%`;
     const match = or(
       sql`lower(${customers.name}) LIKE ${term}`,
       sql`lower(COALESCE(${customers.phone}, '')) LIKE ${term}`,
+      sql`lower(COALESCE(${customers.email}, '')) LIKE ${term}`,
     );
     if (match) conditions.push(match);
   }
 
+  return conditions;
+}
+
+export function listCustomers(db: Db, query: CustomerQuery = {}): CustomerListItem[] {
+  const conditions = customerConditions(query);
+
+  const ascending = (query.direction ?? 'asc') === 'asc';
+  const orderBy =
+    query.sort === 'balance'
+      ? [ascending ? sql`${customerBalanceSql} ASC` : sql`${customerBalanceSql} DESC`,
+         sql`lower(${customers.name}) ASC`]
+      : [ascending ? sql`lower(${customers.name}) ASC` : sql`lower(${customers.name}) DESC`];
+
   const base = db.select().from(customers);
   const rows = (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(asc(customers.name))
+    .orderBy(...orderBy)
     .limit(Math.min(query.limit ?? 200, 500))
+    .offset(query.offset ?? 0)
     .all();
 
   const balances = getAllCustomerBalances(db);
@@ -259,7 +325,40 @@ export function listCustomers(db: Db, query: CustomerQuery = {}): CustomerListIt
     };
   });
 
-  return query.owingOnly ? items.filter((item) => item.balance > 0) : items;
+  return items;
+}
+
+/** How many customers match, ignoring the page. */
+export function countCustomers(db: Db, query: CustomerQuery = {}): number {
+  const conditions = customerConditions(query);
+  const base = db.select({ total: sql<number>`COUNT(*)` }).from(customers);
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+  return row?.total ?? 0;
+}
+
+/**
+ * Just enough to fill a filter dropdown.
+ *
+ * `listCustomers` does real work per row — a receivable balance read from the ledger — which is right for
+ * the table and wasted on a `<select>` that needs a name and an id. It also
+ * makes the cap matter: a list function truncated at its page size would leave
+ * entries missing from the dropdown with nothing to say so, and a filter that
+ * cannot offer a value the shop actually has is a dead end.
+ */
+export interface PartyOption {
+  id: number;
+  name: string;
+  isActive: boolean;
+}
+
+export function listCustomerOptions(db: Db, includeInactive = false): PartyOption[] {
+  const base = db
+    .select({ id: customers.id, name: customers.name, isActive: customers.isActive })
+    .from(customers);
+
+  return (includeInactive ? base : base.where(eq(customers.isActive, true)))
+    .orderBy(sql`lower(${customers.name}) ASC`)
+    .all();
 }
 
 export function getCustomer(db: Db, id: number): CustomerListItem {

@@ -5,22 +5,39 @@ import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import {
+  countStockLedger,
   getStockLedger,
   listProductBatches,
   verifyStockAgainstLedger,
   getInventoryValue,
 } from '@/services/inventory.service';
-import { getStockSummary, listProducts } from '@/services/catalog.service';
+import {
+  getStockSummary,
+  listCategories,
+  listProductOptions,
+  listProducts,
+} from '@/services/catalog.service';
+import { listUsers } from '@/services/user.service';
 import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
+import { MOVEMENT_TYPES } from '@/db/schema/inventory';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { formatDate, formatDateTime, money, quantity, toBusinessDate } from '@/lib/format';
 import { qty as makeQty } from '@/domain/quantity';
 import { minor } from '@/domain/money';
+import {
+  buildQuery,
+  clampPage,
+  describeDateRange,
+  type ActiveFilter,
+} from '@/lib/filters';
+import { parseStockMovementFilters, type SearchParams } from '@/lib/list-filters';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { EmptyRow, TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { Pagination } from '@/components/shared/pagination';
 
 export const metadata: Metadata = { title: 'Inventory' };
 export const dynamic = 'force-dynamic';
@@ -38,29 +55,41 @@ const MOVEMENT_LABELS: Record<string, string> = {
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ product?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const user = await requirePageAccess('inventory', 'view');
   const params = await searchParams;
 
-  const productId = params.product ? Number(params.product) : undefined;
-  const filterProductId = Number.isInteger(productId) && productId! > 0 ? productId : undefined;
+  const today = toBusinessDate();
+  const { filters, range, preset, page: requestedPage, pageSize, carried } =
+    parseStockMovementFilters(params, today);
 
-  const ledger = getStockLedger(db, {
-    ...(filterProductId !== undefined ? { productId: filterProductId } : {}),
-    limit: 100,
-  });
+  /*
+    Filtering the LEDGER cannot change the stock it records. Every row already
+    carries the running balance that was true when the movement happened, so
+    narrowing the view to one product or one week shows fewer rows and the same
+    balances. Nothing on this page recomputes a position from what is on screen.
+  */
+  const total = countStockLedger(db, filters);
+  const page = clampPage(requestedPage, total, pageSize);
+  const ledger = getStockLedger(db, { ...filters, limit: pageSize, offset: (page - 1) * pageSize });
 
   const summary = getStockSummary(db);
-  const lowStock = listProducts(db, { lowStockOnly: true });
+  const lowStock = listProducts(db, { stockStatus: 'low', sort: 'quantity', direction: 'asc', limit: 50 });
+
+  const categories = listCategories(db);
+  const products = listProductOptions(db, true);
+  const staff = listUsers(db);
 
   // The crates behind the running balance, when the page is showing one product.
+  const filterProductId = filters.productId;
   const batches =
-    filterProductId === undefined ? [] : listProductBatches(db, filterProductId, toBusinessDate());
-  const batchUnit =
+    filterProductId === undefined ? [] : listProductBatches(db, filterProductId, today);
+  const focusProduct =
     filterProductId === undefined
-      ? ''
-      : (listProducts(db, { id: filterProductId })[0]?.unit ?? '');
+      ? undefined
+      : listProducts(db, { includeInactive: true, id: filterProductId, limit: 1 })[0];
+  const batchUnit = focusProduct?.unit ?? '';
 
   // The headline integrity check, computed live rather than assumed — but from
   // the ledger's last recorded balance, not by replaying every movement the shop
@@ -73,10 +102,49 @@ export default async function InventoryPage({
   const inventoryGl = getAccountBalanceByCode(db, ACCOUNT_CODES.INVENTORY);
   const ledgerMatchesGl = inventoryCache === inventoryGl;
 
-  // One product by id, not the whole catalogue filtered in JavaScript.
-  const focusProduct = filterProductId
-    ? listProducts(db, { includeInactive: true, id: filterProductId, limit: 1 })[0]
-    : undefined;
+  const active: ActiveFilter[] = [];
+  if (filters.search) active.push({ key: 'q', label: 'Search', value: filters.search });
+  if (filterProductId !== undefined) {
+    active.push({
+      key: 'product',
+      label: 'Product',
+      value: focusProduct?.name ?? String(filterProductId),
+    });
+  }
+  if (filters.categoryId !== undefined) {
+    active.push({
+      key: 'category',
+      label: 'Category',
+      value:
+        categories.find((item) => item.id === filters.categoryId)?.name ??
+        String(filters.categoryId),
+    });
+  }
+  if (filters.movementType !== undefined) {
+    active.push({
+      key: 'movement',
+      label: 'Movement',
+      value: MOVEMENT_LABELS[filters.movementType] ?? filters.movementType,
+    });
+  }
+  if (filters.userId !== undefined) {
+    active.push({
+      key: 'user',
+      label: 'By',
+      value: staff.find((item) => item.id === filters.userId)?.displayName ?? String(filters.userId),
+    });
+  }
+  if (preset !== 'all') {
+    active.push({
+      key: 'period',
+      label: 'Period',
+      value: describeDateRange(range, preset, today),
+      alsoClears: ['from', 'to'],
+    });
+  }
+
+  const isFiltered = active.length > 0;
+  const exportHref = `/api/exports/stock-movements${buildQuery(carried)}`;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -84,24 +152,23 @@ export default async function InventoryPage({
         title="Inventory"
         description="Every movement of stock, and why it moved."
         actions={
-          can(user, 'inventory', 'create') ? (
-            <>
-              <Link href="/inventory/adjustments">
-                <Button variant="secondary" size="sm">
-                  Adjustments
-                </Button>
-              </Link>
-              <Link href="/inventory/adjustments/new">
-                <Button size="sm">New adjustment</Button>
-              </Link>
-            </>
-          ) : (
+          <>
+            <a href={exportHref} download>
+              <Button variant="secondary" size="sm" type="button">
+                Download CSV
+              </Button>
+            </a>
             <Link href="/inventory/adjustments">
               <Button variant="secondary" size="sm">
                 Adjustments
               </Button>
             </Link>
-          )
+            {can(user, 'inventory', 'create') ? (
+              <Link href="/inventory/adjustments/new">
+                <Button size="sm">New adjustment</Button>
+              </Link>
+            ) : null}
+          </>
         }
       />
 
@@ -173,9 +240,7 @@ export default async function InventoryPage({
                       formatDate(batch.expiryDate)
                     )}
                   </TD>
-                  <TD>
-                    {batch.supplierName ?? <span className="text-content-subtle">—</span>}
-                  </TD>
+                  <TD>{batch.supplierName ?? <span className="text-content-subtle">—</span>}</TD>
                   <TD numeric>{quantity(makeQty(batch.qtyMilli), batchUnit)}</TD>
                   <TD numeric>
                     {batch.daysLeft === null ? (
@@ -216,7 +281,11 @@ export default async function InventoryPage({
                   <TD numeric>
                     <span className="inline-flex items-center gap-2">
                       {quantity(item.qtyOnHand, item.unit)}
-                      {item.outOfStock ? <Badge tone="danger">Out</Badge> : <Badge tone="warning">Low</Badge>}
+                      {item.outOfStock ? (
+                        <Badge tone="danger">Out</Badge>
+                      ) : (
+                        <Badge tone="warning">Low</Badge>
+                      )}
                     </span>
                   </TD>
                   <TD numeric>
@@ -244,26 +313,83 @@ export default async function InventoryPage({
       )}
 
       <section aria-labelledby="ledger-heading">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 id="ledger-heading" className="text-sm font-semibold text-content">
-            Stock ledger
-            {focusProduct && (
-              <span className="ml-2 font-normal text-content-muted">— {focusProduct.name}</span>
-            )}
-          </h2>
-          {filterProductId !== undefined && (
-            <Link href="/inventory" className="text-xs font-medium text-accent hover:underline">
-              Show all products
-            </Link>
+        <h2 id="ledger-heading" className="mb-3 text-sm font-semibold text-content">
+          Stock ledger
+          {focusProduct && (
+            <span className="ml-2 font-normal text-content-muted">— {focusProduct.name}</span>
           )}
-        </div>
+        </h2>
+
+        <FilterBar
+          basePath="/inventory"
+          dateRange={{ preset, from: range.from, to: range.to }}
+          active={active}
+          quick={[
+            { label: 'Sales', params: { movement: 'SALE' }, match: { movement: 'SALE' } },
+            { label: 'Purchases', params: { movement: 'PURCHASE' }, match: { movement: 'PURCHASE' } },
+            {
+              label: 'Customer returns',
+              params: { movement: 'SALE_RETURN' },
+              match: { movement: 'SALE_RETURN' },
+            },
+            {
+              label: 'Adjustments out',
+              params: { movement: 'ADJUSTMENT_OUT' },
+              match: { movement: 'ADJUSTMENT_OUT' },
+            },
+          ]}
+          fields={[
+            {
+              kind: 'search',
+              key: 'q',
+              label: 'Search',
+              placeholder: 'Product, SKU, reference or note',
+              wide: true,
+            },
+            {
+              kind: 'select',
+              key: 'product',
+              label: 'Product',
+              allLabel: 'All products',
+              options: products.map((item) => ({ value: String(item.id), label: item.name })),
+            },
+            {
+              kind: 'select',
+              key: 'category',
+              label: 'Category',
+              allLabel: 'All categories',
+              options: categories.map((item) => ({ value: String(item.id), label: item.name })),
+            },
+            {
+              kind: 'select',
+              key: 'movement',
+              label: 'Movement type',
+              allLabel: 'All movements',
+              options: MOVEMENT_TYPES.map((type) => ({
+                value: type,
+                label: MOVEMENT_LABELS[type] ?? type,
+              })),
+            },
+            {
+              kind: 'select',
+              key: 'user',
+              label: 'Recorded by',
+              allLabel: 'Anyone',
+              options: staff.map((item) => ({ value: String(item.id), label: item.displayName })),
+            },
+          ]}
+        />
 
         {ledger.length === 0 ? (
           <EmptyState
-            title="No stock movements yet"
-            description="Once you record opening stock, a purchase or a sale, every change will appear here with its running balance."
+            title={isFiltered ? 'No movements match these filters' : 'No stock movements yet'}
+            description={
+              isFiltered
+                ? 'Try widening the dates, or clear a filter to see more.'
+                : 'Once you record opening stock, a purchase or a sale, every change will appear here with its running balance.'
+            }
             action={
-              can(user, 'inventory', 'create') ? (
+              can(user, 'inventory', 'create') && !isFiltered ? (
                 <Link href="/inventory/adjustments/new">
                   <Button>Record opening stock</Button>
                 </Link>
@@ -271,58 +397,69 @@ export default async function InventoryPage({
             }
           />
         ) : (
-          <TableWrap>
-            <THead>
-              <TH>When</TH>
-              <TH>Product</TH>
-              <TH>Movement</TH>
-              <TH>Reference</TH>
-              <TH numeric>In</TH>
-              <TH numeric>Out</TH>
-              <TH numeric>Value</TH>
-              <TH numeric>Balance</TH>
-              <TH numeric>Stock value</TH>
-            </THead>
-            <tbody>
-              {ledger.length === 0 && <EmptyRow colSpan={9}>Nothing to show.</EmptyRow>}
-              {ledger.map((row) => (
-                <TR key={row.id}>
-                  <TD>
-                    <span className="whitespace-nowrap text-content-muted">
-                      {formatDateTime(row.occurredAt)}
-                    </span>
-                  </TD>
-                  <TD>
-                    <span className="font-medium text-content">{row.productName}</span>
-                  </TD>
-                  <TD>
-                    <Badge tone={row.qtyIn > 0 ? 'success' : 'warning'}>
-                      {MOVEMENT_LABELS[row.movementType] ?? row.movementType}
-                    </Badge>
-                  </TD>
-                  <TD>
-                    <span className="text-xs text-content-subtle">{row.sourceRef ?? '—'}</span>
-                  </TD>
-                  <TD numeric>
-                    {row.qtyIn > 0 ? quantity(makeQty(row.qtyIn), row.productUnit) : '—'}
-                  </TD>
-                  <TD numeric>
-                    {row.qtyOut > 0 ? quantity(makeQty(row.qtyOut), row.productUnit) : '—'}
-                  </TD>
-                  <TD numeric>{money(minor(row.totalCost), { bare: true })}</TD>
-                  <TD numeric>{quantity(makeQty(row.balanceQty), row.productUnit)}</TD>
-                  <TD numeric>{money(minor(row.balanceValue), { bare: true })}</TD>
-                </TR>
-              ))}
-            </tbody>
-          </TableWrap>
+          <>
+            <TableWrap>
+              <THead>
+                <TH>When</TH>
+                <TH>Product</TH>
+                <TH>Movement</TH>
+                <TH>Reference</TH>
+                <TH numeric>In</TH>
+                <TH numeric>Out</TH>
+                <TH numeric>Value</TH>
+                <TH numeric>Balance</TH>
+                <TH numeric>Stock value</TH>
+              </THead>
+              <tbody>
+                {ledger.length === 0 && <EmptyRow colSpan={9}>Nothing to show.</EmptyRow>}
+                {ledger.map((row) => (
+                  <TR key={row.id}>
+                    <TD>
+                      <span className="whitespace-nowrap text-content-muted">
+                        {formatDateTime(row.occurredAt)}
+                      </span>
+                    </TD>
+                    <TD>
+                      <span className="font-medium text-content">{row.productName}</span>
+                    </TD>
+                    <TD>
+                      <Badge tone={row.qtyIn > 0 ? 'success' : 'warning'}>
+                        {MOVEMENT_LABELS[row.movementType] ?? row.movementType}
+                      </Badge>
+                    </TD>
+                    <TD>
+                      <span className="text-xs text-content-subtle">{row.sourceRef ?? '—'}</span>
+                    </TD>
+                    <TD numeric>
+                      {row.qtyIn > 0 ? quantity(makeQty(row.qtyIn), row.productUnit) : '—'}
+                    </TD>
+                    <TD numeric>
+                      {row.qtyOut > 0 ? quantity(makeQty(row.qtyOut), row.productUnit) : '—'}
+                    </TD>
+                    <TD numeric>{money(minor(row.totalCost), { bare: true })}</TD>
+                    <TD numeric>{quantity(makeQty(row.balanceQty), row.productUnit)}</TD>
+                    <TD numeric>{money(minor(row.balanceValue), { bare: true })}</TD>
+                  </TR>
+                ))}
+              </tbody>
+            </TableWrap>
+
+            <Pagination
+              basePath="/inventory"
+              values={carried}
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              noun="movement"
+            />
+          </>
         )}
       </section>
 
       <p className="mt-4 text-xs text-content-subtle">
         This ledger is the source of truth for stock. The balance shown on each row is the position
         immediately after that movement, so any figure on the Products page can be traced back to
-        the exact line that produced it.
+        the exact line that produced it. Filtering changes what you see, never what the shop holds.
       </p>
     </div>
   );

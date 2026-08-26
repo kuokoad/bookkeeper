@@ -22,6 +22,13 @@ import { getTaxReturn } from '@/services/reporting/tax-return.service';
 import { availableFinancialYears, getYearEndPack } from '@/services/reporting/year-end.service';
 import type { Minor } from '@/domain/money';
 import { qty as makeQty } from '@/domain/quantity';
+import {
+  parseCashFlowFilters,
+  parseInventoryReportFilters,
+  parsePurchaseReportFilters,
+  parseSalesReportFilters,
+  type SearchParams,
+} from '@/lib/list-filters';
 import { csvFilename, csvMoney, csvQty, csvResponse, toCsv, type CsvValue } from '@/lib/csv';
 import { toBusinessDate, isValidBusinessDate } from '@/lib/format';
 import { isDomainError } from '@/domain/errors';
@@ -52,8 +59,23 @@ function period(request: NextRequest): { from: string; to: string } {
   return { from, to };
 }
 
+/** The query string as the report parsers expect it. First value per key wins. */
+function searchParamsOf(request: NextRequest): SearchParams {
+  const params: SearchParams = {};
+  for (const [key, value] of request.nextUrl.searchParams.entries()) {
+    if (params[key] === undefined) params[key] = value;
+  }
+  return params;
+}
+
 function buildTable(report: string, request: NextRequest): Table | null {
   const range = period(request);
+  /*
+    Reports take their filters through the SAME parser the report page uses, so
+    a downloaded file can never hold a different set of rows from the screen it
+    was downloaded from.
+  */
+  const params = searchParamsOf(request);
 
   switch (report) {
     case 'profit-and-loss': {
@@ -113,7 +135,7 @@ function buildTable(report: string, request: NextRequest): Table | null {
     }
 
     case 'cash-flow': {
-      const flow = getCashFlow(db, range);
+      const flow = getCashFlow(db, range, parseCashFlowFilters(params, range.to).accountId);
       const rows: CsvValue[][] = [
         ['Opening balance', '', '', csvMoney(flow.openingBalance)],
         ...flow.lines.map((line): CsvValue[] => [
@@ -129,11 +151,12 @@ function buildTable(report: string, request: NextRequest): Table | null {
     }
 
     case 'sales': {
-      const byProduct = getSalesByProduct(db, range);
-      const byDay = getSalesByDay(db, range);
-      const byCategory = getSalesByCategory(db, range);
-      const byCustomer = getSalesByCustomer(db, range);
-      const byMethod = getSalesByPaymentMethod(db, range);
+      const salesQuery = parseSalesReportFilters(params, range.to).filters;
+      const byProduct = getSalesByProduct(db, salesQuery);
+      const byDay = getSalesByDay(db, salesQuery);
+      const byCategory = getSalesByCategory(db, salesQuery);
+      const byCustomer = getSalesByCustomer(db, salesQuery);
+      const byMethod = getSalesByPaymentMethod(db, salesQuery);
 
       // One flat file with a "section" column, so a spreadsheet can filter it.
       const rows: CsvValue[][] = [
@@ -191,9 +214,10 @@ function buildTable(report: string, request: NextRequest): Table | null {
     }
 
     case 'purchases': {
-      const byDay = getPurchasesByDay(db, range);
-      const bySupplier = getPurchasesBySupplier(db, range);
-      const byProduct = getPurchasesByProduct(db, range);
+      const purchaseQuery = parsePurchaseReportFilters(params, range.to).filters;
+      const byDay = getPurchasesByDay(db, purchaseQuery);
+      const bySupplier = getPurchasesBySupplier(db, purchaseQuery);
+      const byProduct = getPurchasesByProduct(db, purchaseQuery);
 
       const rows: CsvValue[][] = [
         ...byDay.map((row): CsvValue[] => [
@@ -220,7 +244,7 @@ function buildTable(report: string, request: NextRequest): Table | null {
     }
 
     case 'inventory': {
-      const valuation = getStockValuation(db);
+      const valuation = getStockValuation(db, parseInventoryReportFilters(params).filters);
       const movement = getStockMovementSummary(db, range);
       const movementByProduct = new Map(movement.map((row) => [row.productId, row]));
 

@@ -1,0 +1,560 @@
+'use client';
+
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useTransition, type FormEvent, type ReactNode } from 'react';
+
+import { Button } from '@/components/ui/button';
+import { TextInput } from '@/components/ui/field';
+import { cn } from '@/lib/cn';
+import { DATE_PRESET_LABELS, type ActiveFilter, type DatePreset } from '@/lib/filters';
+
+/**
+ * One filter bar for the whole shop.
+ *
+ * Every list page describes the filters that make sense for ITS data and this
+ * renders them the same way, so a shop owner learns the controls once. Nothing
+ * here knows what a sale or an expense is — it moves values in and out of the
+ * URL, and the page's server component turns the URL into a query.
+ *
+ * Three rules it enforces for every page at once:
+ *
+ *   - Changing any filter resets the page number. Landing on page 4 of a result
+ *     set that now has one page is the classic filtering bug, and it is fixed
+ *     here rather than in eleven places.
+ *   - One-shot flash keys (`created=1`, `voided=1`) are dropped on every change,
+ *     so a success banner cannot follow the owner around the filters.
+ *   - Filters compose. Nothing clears another filter; each key is set or unset
+ *     on top of what is already there.
+ */
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export type FilterField =
+  | {
+      kind: 'search';
+      key: string;
+      label: string;
+      placeholder?: string;
+      /** Widen the box for a field people type sentences into. */
+      wide?: boolean;
+    }
+  | {
+      kind: 'select';
+      key: string;
+      label: string;
+      options: SelectOption[];
+      /** Label for the empty option, e.g. "All categories". */
+      allLabel: string;
+    }
+  | {
+      kind: 'amount-range';
+      minKey: string;
+      maxKey: string;
+      label: string;
+      currency?: string;
+    }
+  /** A single date, for a report asked "as at" a day rather than over a range. */
+  | { kind: 'date'; key: string; label: string; max?: string };
+
+export interface QuickFilter {
+  label: string;
+  /** Params this quick filter sets. `null` clears a key. */
+  params: Record<string, string | null>;
+  /** Params that must ALL match for the chip to read as on. */
+  match: Record<string, string | null>;
+}
+
+export interface DateRangeConfig {
+  preset: DatePreset;
+  from: string;
+  to: string;
+  /** Which presets to offer. Defaults to the full set bar `custom`. */
+  presets?: DatePreset[];
+  /** Query keys, so a page with two ranges can use its own names. */
+  presetKey?: string;
+  fromKey?: string;
+  toKey?: string;
+}
+
+export interface FilterBarProps {
+  basePath: string;
+  fields?: FilterField[];
+  quick?: QuickFilter[];
+  dateRange?: DateRangeConfig;
+  /** Chips for what is currently on, computed on the server. */
+  active?: ActiveFilter[];
+  /** Extra keys wiped on any change, on top of the built-in flash keys. */
+  resetKeys?: string[];
+  children?: ReactNode;
+}
+
+/**
+ * The periods offered by default.
+ *
+ * `custom` is absent because it has its own pair of date boxes rather than a
+ * button. Everything else a shop owner asks for is here, `last-week` included:
+ * "how did last week go" is a question people ask on a Monday, and leaving it
+ * out makes them work out two dates for the commonest comparison they make.
+ */
+const DEFAULT_PRESETS: DatePreset[] = [
+  'today',
+  'yesterday',
+  'week',
+  'last-week',
+  'month',
+  'last-month',
+  'year',
+  'all',
+];
+
+/** Keys that describe a one-off event, never a filter. Dropped on any change. */
+const FLASH_KEYS = ['created', 'updated', 'voided', 'deleted', 'restored', 'error'];
+
+const CONTROL_CLASS =
+  'h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content ' +
+  'focus:outline-none focus-visible:outline-2 focus-visible:outline-accent';
+
+export function FilterBar({
+  basePath,
+  fields = [],
+  quick = [],
+  dateRange,
+  active = [],
+  resetKeys = [],
+  children,
+}: FilterBarProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const presetKey = dateRange?.presetKey ?? 'period';
+  const fromKey = dateRange?.fromKey ?? 'from';
+  const toKey = dateRange?.toKey ?? 'to';
+
+  /*
+    Text and amount boxes are drafts until submitted. Selects and quick filters
+    navigate the moment they change, which is what a pointer expects; typing
+    must not, or every keystroke would be a round trip to the database.
+
+
+    A draft belongs to the URL it was typed against, so the URL it was typed
+    against is stored with it. Following a chip, the back button, or a link to
+    a filtered view then shows THAT view's values rather than leaving somebody's
+    half-typed search sitting over a different set of filters — and it happens
+    during render, with no effect and no extra pass.
+  */
+  const signature = searchParams.toString();
+  const [drafts, setDrafts] = useState<{ signature: string; values: Record<string, string> }>({
+    signature,
+    values: {},
+  });
+  const values = drafts.signature === signature ? drafts.values : {};
+
+  function setDraft(key: string, value: string) {
+    setDrafts({ signature, values: { ...values, [key]: value } });
+  }
+
+  function clearDrafts() {
+    setDrafts({ signature, values: {} });
+  }
+
+  function valueOf(key: string): string {
+    return values[key] ?? searchParams.get(key) ?? '';
+  }
+
+  function apply(next: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    for (const [key, value] of Object.entries(next)) {
+      if (value === null || value === '') params.delete(key);
+      else params.set(key, value);
+    }
+
+    // Any change to what is being asked puts the owner back at the first page.
+    params.delete('page');
+    for (const key of [...FLASH_KEYS, ...resetKeys]) params.delete(key);
+
+    const query = params.toString();
+    clearDrafts();
+    setDrawerOpen(false);
+    startTransition(() => router.push(query === '' ? basePath : `${basePath}?${query}`));
+  }
+
+  function submitDrafts(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    const next: Record<string, string | null> = {};
+    for (const [key, value] of Object.entries(values)) {
+      next[key] = value.trim() === '' ? null : value.trim();
+    }
+    apply(next);
+  }
+
+  function clearAll() {
+    clearDrafts();
+    setDrawerOpen(false);
+    startTransition(() => router.push(basePath));
+  }
+
+  function isQuickOn(filter: QuickFilter): boolean {
+    return Object.entries(filter.match).every(([key, value]) =>
+      value === null ? !searchParams.has(key) : searchParams.get(key) === value,
+    );
+  }
+
+  function toggleQuick(filter: QuickFilter) {
+    if (!isQuickOn(filter)) {
+      apply(filter.params);
+      return;
+    }
+    // Pressing an active quick filter again turns it off, rather than making it
+    // a one-way door the owner has to find "Clear all" to escape.
+    const off: Record<string, string | null> = {};
+    for (const key of Object.keys(filter.params)) off[key] = null;
+    apply(off);
+  }
+
+  const activeCount = active.length;
+  const hasControls = fields.length > 0 || dateRange !== undefined;
+
+  // --- pieces --------------------------------------------------------------
+
+  function renderDatePresets() {
+    if (!dateRange) return null;
+    const presets = dateRange.presets ?? DEFAULT_PRESETS;
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((preset) => (
+          <Button
+            key={preset}
+            type="button"
+            size="sm"
+            variant={dateRange.preset === preset ? 'primary' : 'secondary'}
+            aria-pressed={dateRange.preset === preset}
+            onClick={() => apply({ [presetKey]: preset, [fromKey]: null, [toKey]: null })}
+          >
+            {DATE_PRESET_LABELS[preset]}
+          </Button>
+        ))}
+      </div>
+    );
+  }
+
+  function renderCustomRange() {
+    if (!dateRange) return null;
+    const fromValue = valueOf(fromKey) || (dateRange.from.startsWith('0000') ? '' : dateRange.from);
+    const toValue = valueOf(toKey) || dateRange.to;
+    return (
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label htmlFor={`${fromKey}-input`} className="mb-1 block text-xs text-content-muted">
+            From
+          </label>
+          <input
+            id={`${fromKey}-input`}
+            type="date"
+            value={fromValue}
+            max={toValue || undefined}
+            onChange={(event) => setDraft(fromKey, event.target.value)}
+            className={CONTROL_CLASS}
+          />
+        </div>
+        <div>
+          <label htmlFor={`${toKey}-input`} className="mb-1 block text-xs text-content-muted">
+            To
+          </label>
+          <input
+            id={`${toKey}-input`}
+            type="date"
+            value={toValue}
+            min={fromValue || undefined}
+            onChange={(event) => setDraft(toKey, event.target.value)}
+            className={CONTROL_CLASS}
+          />
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant={dateRange.preset === 'custom' ? 'primary' : 'secondary'}
+          onClick={() =>
+            apply({
+              [presetKey]: 'custom',
+              [fromKey]: valueOf(fromKey) || dateRange.from,
+              [toKey]: valueOf(toKey) || dateRange.to,
+            })
+          }
+        >
+          Apply dates
+        </Button>
+      </div>
+    );
+  }
+
+  function renderFields(idPrefix: string) {
+    return (
+      <>
+        {fields.map((field) => {
+          if (field.kind === 'search') {
+            const id = `${idPrefix}-${field.key}`;
+            return (
+              <div key={field.key}>
+                <label htmlFor={id} className="mb-1 block text-xs text-content-muted">
+                  {field.label}
+                </label>
+                <TextInput
+                  id={id}
+                  type="search"
+                  autoComplete="off"
+                  placeholder={field.placeholder ?? field.label}
+                  value={valueOf(field.key)}
+                  onChange={(event) =>
+                    setDraft(field.key, event.target.value)
+                  }
+                  className={cn('h-10', field.wide ? 'w-full sm:w-72' : 'w-full sm:w-56')}
+                />
+              </div>
+            );
+          }
+
+          if (field.kind === 'select') {
+            const id = `${idPrefix}-${field.key}`;
+            return (
+              <div key={field.key}>
+                <label htmlFor={id} className="mb-1 block text-xs text-content-muted">
+                  {field.label}
+                </label>
+                <select
+                  id={id}
+                  value={searchParams.get(field.key) ?? ''}
+                  onChange={(event) => apply({ [field.key]: event.target.value || null })}
+                  className={cn(CONTROL_CLASS, 'w-full sm:w-auto')}
+                >
+                  <option value="">{field.allLabel}</option>
+                  {field.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          }
+
+          if (field.kind === 'date') {
+            const id = `${idPrefix}-${field.key}`;
+            return (
+              <div key={field.key}>
+                <label htmlFor={id} className="mb-1 block text-xs text-content-muted">
+                  {field.label}
+                </label>
+                <input
+                  id={id}
+                  type="date"
+                  max={field.max}
+                  value={valueOf(field.key)}
+                  onChange={(event) => apply({ [field.key]: event.target.value || null })}
+                  className={cn(CONTROL_CLASS, 'w-full sm:w-auto')}
+                />
+              </div>
+            );
+          }
+
+          const minId = `${idPrefix}-${field.minKey}`;
+          const maxId = `${idPrefix}-${field.maxKey}`;
+          return (
+            <div key={field.minKey}>
+              <span className="mb-1 block text-xs text-content-muted">
+                {field.label}
+                {field.currency ? ` (${field.currency})` : ''}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor={minId} className="sr-only">
+                  {field.label} from
+                </label>
+                <TextInput
+                  id={minId}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="Min"
+                  value={valueOf(field.minKey)}
+                  onChange={(event) =>
+                    setDraft(field.minKey, event.target.value)
+                  }
+                  className="tabular h-10 w-24 text-right"
+                />
+                <span aria-hidden="true" className="text-content-subtle">
+                  –
+                </span>
+                <label htmlFor={maxId} className="sr-only">
+                  {field.label} to
+                </label>
+                <TextInput
+                  id={maxId}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="Max"
+                  value={valueOf(field.maxKey)}
+                  onChange={(event) =>
+                    setDraft(field.maxKey, event.target.value)
+                  }
+                  className="tabular h-10 w-24 text-right"
+                />
+              </div>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  // --- render --------------------------------------------------------------
+
+  return (
+    <section aria-label="Filters" className="mb-4 space-y-3 no-print">
+      {quick.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {quick.map((filter) => {
+            const on = isQuickOn(filter);
+            return (
+              <Button
+                key={filter.label}
+                type="button"
+                size="sm"
+                variant={on ? 'primary' : 'secondary'}
+                aria-pressed={on}
+                onClick={() => toggleQuick(filter)}
+              >
+                {filter.label}
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Phone: one button that opens the controls, so a filter bar never eats
+          the screen above a table people came to read. */}
+      {hasControls && (
+        <div className="flex items-center gap-2 md:hidden">
+          <Button
+            type="button"
+            size="sm"
+            variant={activeCount > 0 ? 'primary' : 'secondary'}
+            onClick={() => setDrawerOpen(true)}
+            aria-expanded={drawerOpen}
+            aria-haspopup="dialog"
+          >
+            Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+          </Button>
+          {pending && <span className="text-xs text-content-subtle">Loading…</span>}
+        </div>
+      )}
+
+      {/* Desktop: everything inline above the table. */}
+      {hasControls && (
+        <form onSubmit={submitDrafts} className="hidden md:block">
+          <div className="flex flex-wrap items-end gap-3">
+            {renderFields('filter')}
+            {/* Only the typed fields need submitting; selects and dates go on change. */}
+            {fields.some(
+              (field) => field.kind === 'search' || field.kind === 'amount-range',
+            ) && (
+              <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+                {pending ? 'Applying…' : 'Apply'}
+              </Button>
+            )}
+            {children}
+          </div>
+          {dateRange && (
+            <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-3">
+              {renderDatePresets()}
+              {renderCustomRange()}
+            </div>
+          )}
+        </form>
+      )}
+
+      {active.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-content-subtle">Showing:</span>
+          {active.map((chip) => (
+            <button
+              key={`${chip.key}-${chip.value}`}
+              type="button"
+              onClick={() => {
+                const off: Record<string, string | null> = { [chip.key]: null };
+                for (const key of chip.alsoClears ?? []) off[key] = null;
+                apply(off);
+              }}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full border border-line-strong',
+                'bg-surface-sunken px-2.5 py-1 text-xs text-content',
+                'hover:bg-surface-raised focus:outline-none focus-visible:outline-2 focus-visible:outline-accent',
+              )}
+            >
+              <span className="text-content-muted">{chip.label}:</span>
+              <span className="font-medium">{chip.value}</span>
+              <span aria-hidden="true" className="text-content-subtle">
+                ✕
+              </span>
+              <span className="sr-only">Remove this filter</span>
+            </button>
+          ))}
+          <Button type="button" size="sm" variant="ghost" onClick={clearAll}>
+            Clear all
+          </Button>
+        </div>
+      )}
+
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end md:hidden">
+          <button
+            type="button"
+            aria-label="Close filters"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Filters"
+            className="relative max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-line bg-surface-raised p-4 pb-6"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-content">Filters</h2>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setDrawerOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+
+            <form onSubmit={submitDrafts} className="space-y-4">
+              {renderFields('drawer')}
+              {dateRange && (
+                <div className="space-y-3">
+                  <span className="block text-xs text-content-muted">Period</span>
+                  {renderDatePresets()}
+                  {renderCustomRange()}
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button type="submit" fullWidth disabled={pending}>
+                  {pending ? 'Loading…' : 'Show results'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={clearAll}>
+                  Clear all
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
