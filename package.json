@@ -43,6 +43,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.14",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "24.6.2",
     "@types/react": "19.1.16",
@@ -50,6 +52,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "9.36.0",
     "eslint-config-next": "^16.3.1",
+    "happy-dom": "^20.11.6",
     "tailwindcss": "4.1.14",
     "tsx": "4.20.6",
     "typescript": "5.9.3",
