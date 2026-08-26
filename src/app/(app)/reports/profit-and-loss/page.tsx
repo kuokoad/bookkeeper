@@ -8,7 +8,10 @@ import { getProfitAndLoss } from '@/services/reporting/financial.service';
 import { money, toBusinessDate } from '@/lib/format';
 import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
-import { describePeriod, PeriodFilter, resolvePeriod } from '@/components/shared/period-filter';
+import { describePeriod } from '@/components/shared/period-filter';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { buildQuery } from '@/lib/filters';
+import { parseReportPeriod, type SearchParams } from '@/lib/list-filters';
 import { ReportActions } from '@/components/shared/report-actions';
 
 export const metadata: Metadata = { title: 'Profit & Loss' };
@@ -21,16 +24,16 @@ function percent(bp: number | null): string {
 export default async function ProfitAndLossPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   await requirePageAccess('reports', 'view');
   const params = await searchParams;
 
-  const { period, preset } = resolvePeriod(params.period, params.from, params.to, toBusinessDate());
+  const { range: period, preset, carried } = parseReportPeriod(params, toBusinessDate());
   const pl = getProfitAndLoss(db, period);
 
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
-  const csvHref = `/api/reports/profit-and-loss?from=${period.from}&to=${period.to}`;
+  const csvHref = `/api/reports/profit-and-loss${buildQuery(carried)}`;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -40,7 +43,7 @@ export default async function ProfitAndLossPage({
         actions={<ReportActions csvHref={csvHref} />}
       />
 
-      <PeriodFilter basePath="/reports/profit-and-loss" active={preset} period={period} />
+      <FilterBar basePath="/reports/profit-and-loss" dateRange={{ preset, from: period.from, to: period.to }} />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat label="Net sales" value={money(pl.netSales)} />

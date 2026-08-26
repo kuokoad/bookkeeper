@@ -323,6 +323,40 @@ export function listPaymentAccounts(db: Db, includeInactive = false): PaymentAcc
     }));
 }
 
+export interface PaymentAccountOption {
+  id: number;
+  name: string;
+  kind: string;
+  isActive: boolean;
+}
+
+/**
+ * Just enough to fill a dropdown.
+ *
+ * `listPaymentAccounts` computes a live balance for every account, which is one
+ * ledger query each. That is right for the Accounts page, which shows the
+ * balances, and wasteful on the eight filter bars that only need names — those
+ * were paying for a full balance sweep on every page load to render a `<select>`
+ * nobody had opened.
+ */
+export function listPaymentAccountOptions(
+  db: Db,
+  includeInactive = false,
+): PaymentAccountOption[] {
+  const base = db
+    .select({
+      id: paymentAccounts.id,
+      name: paymentAccounts.name,
+      kind: paymentAccounts.kind,
+      isActive: paymentAccounts.isActive,
+    })
+    .from(paymentAccounts);
+
+  return (includeInactive ? base : base.where(eq(paymentAccounts.isActive, true)))
+    .orderBy(asc(paymentAccounts.sortOrder))
+    .all();
+}
+
 export function getPaymentAccount(db: Db, id: number): PaymentAccountSummary {
   const found = listPaymentAccounts(db, true).find((account) => account.id === id);
   if (!found) throw new NotFoundError('Payment account', id);
@@ -343,23 +377,137 @@ export interface AccountMovement {
   runningBalance: number;
 }
 
+export interface AccountMovementQuery {
+  from?: string;
+  to?: string;
+  /** SALE, EXPENSE, CUSTOMER_PAYMENT and so on — what caused the movement. */
+  sourceType?: string;
+  /** 'in' for money received, 'out' for money paid. */
+  flow?: 'in' | 'out';
+  /** Entry number, memo or line description. */
+  search?: string;
+  minAmount?: Minor;
+  maxAmount?: Minor;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AccountStatement {
+  /**
+   * What the account held before the first day of the window.
+   *
+   * Read from the ledger — every entry dated earlier — and NOT worked backwards
+   * from today's balance. Those two agree only when the window ends today; ask
+   * for last month and a subtraction from the current balance would hand the
+   * shop a figure that has this month's trading baked into it.
+   */
+  opening: Minor;
+  moneyIn: Minor;
+  moneyOut: Minor;
+  /** opening + in − out. What the account held at the end of the window. */
+  closing: Minor;
+  /** Movements in the window, newest first, page-limited. */
+  movements: AccountMovement[];
+  /** Movements in the whole window, for the pager. */
+  total: number;
+}
+
+function movementConditions(glAccountId: number, query: AccountMovementQuery): SQL[] {
+  const conditions: SQL[] = [eq(journalLines.accountId, glAccountId)];
+
+  if (query.from) conditions.push(gte(journalEntries.entryDate, query.from));
+  if (query.to) conditions.push(lte(journalEntries.entryDate, query.to));
+  if (query.sourceType) {
+    conditions.push(sql`${journalEntries.sourceType} = ${query.sourceType}`);
+  }
+  if (query.flow === 'in') conditions.push(sql`${journalLines.debitMinor} > 0`);
+  if (query.flow === 'out') conditions.push(sql`${journalLines.creditMinor} > 0`);
+
+  if (query.minAmount !== undefined) {
+    conditions.push(
+      sql`(${journalLines.debitMinor} + ${journalLines.creditMinor}) >= ${query.minAmount}`,
+    );
+  }
+  if (query.maxAmount !== undefined) {
+    conditions.push(
+      sql`(${journalLines.debitMinor} + ${journalLines.creditMinor}) <= ${query.maxAmount}`,
+    );
+  }
+
+  if (query.search) {
+    const term = `%${query.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        lower(${journalEntries.entryNo}) LIKE ${term}
+        OR lower(COALESCE(${journalEntries.memo}, '')) LIKE ${term}
+        OR lower(COALESCE(${journalLines.description}, '')) LIKE ${term}
+      )`,
+    );
+  }
+
+  return conditions;
+}
+
 /**
- * Every movement through one account, with a running balance.
+ * A statement for one account: opening balance, the movements, closing balance.
  *
- * This is what answers "why is cash GHS 5,240?" — the figure on the dashboard
- * and the lines that produced it, side by side.
+ * This is what answers "show me everything that touched my MTN MoMo account
+ * this month" — and answers it in a form that adds up, which is the whole
+ * point. Opening plus money in less money out equals closing, and the running
+ * balance on the last row equals the closing figure, whatever window is asked
+ * for.
+ *
+ * The running balance is a SQL window function rather than a loop in
+ * JavaScript. That is not a micro-optimisation: the window is computed over
+ * every row the filter selects, BEFORE the page limit is applied, so page two
+ * of a statement carries on from where page one stopped instead of restarting
+ * at zero.
  */
-export function getAccountMovements(
+export function getAccountStatement(
   db: Db,
   id: number,
-  query: { from?: string; to?: string; limit?: number } = {},
-): AccountMovement[] {
+  query: AccountMovementQuery = {},
+): AccountStatement {
   const account = db.select().from(paymentAccounts).where(eq(paymentAccounts.id, id)).get();
   if (!account) throw new NotFoundError('Payment account', id);
 
-  const conditions: SQL[] = [eq(journalLines.accountId, account.glAccountId)];
-  if (query.from) conditions.push(gte(journalEntries.entryDate, query.from));
-  if (query.to) conditions.push(lte(journalEntries.entryDate, query.to));
+  // --- opening -------------------------------------------------------------
+  // Deliberately ignores every filter except the account and the start date: an
+  // opening balance is what the account HELD, not a subtotal of the rows that
+  // happen to match a search box.
+  const openingConditions: SQL[] = [eq(journalLines.accountId, account.glAccountId)];
+  if (query.from) {
+    openingConditions.push(sql`${journalEntries.entryDate} < ${query.from}`);
+  } else {
+    // No start date means the window opens at the beginning of the records, and
+    // an account holds nothing before its first entry.
+    openingConditions.push(sql`1 = 0`);
+  }
+
+  const openingRow = db
+    .select({
+      net: sql<number>`COALESCE(SUM(${journalLines.debitMinor} - ${journalLines.creditMinor}), 0)`,
+    })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
+    .where(and(...openingConditions))
+    .get();
+
+  const opening = minor(openingRow?.net ?? 0);
+
+  // --- the window ----------------------------------------------------------
+  const conditions = movementConditions(account.glAccountId, query);
+
+  const totals = db
+    .select({
+      count: sql<number>`COUNT(*)`,
+      moneyIn: sql<number>`COALESCE(SUM(${journalLines.debitMinor}), 0)`,
+      moneyOut: sql<number>`COALESCE(SUM(${journalLines.creditMinor}), 0)`,
+    })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
+    .where(and(...conditions))
+    .get();
 
   const rows = db
     .select({
@@ -373,18 +521,37 @@ export function getAccountMovements(
       description: journalLines.description,
       debit: journalLines.debitMinor,
       credit: journalLines.creditMinor,
+      /*
+        SQLite computes window functions after WHERE and before ORDER BY and
+        LIMIT, so this accumulates across the whole filtered window even though
+        only one page of rows comes back.
+      */
+      runningBalance: sql<number>`(${opening} + SUM(${journalLines.debitMinor} - ${journalLines.creditMinor})
+        OVER (ORDER BY ${journalEntries.occurredAt} ASC, ${journalEntries.id} ASC, ${journalLines.id} ASC
+              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))`,
     })
     .from(journalLines)
     .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
     .where(and(...conditions))
-    .orderBy(asc(journalEntries.occurredAt), asc(journalEntries.id))
+    .orderBy(
+      sql`${journalEntries.occurredAt} DESC`,
+      sql`${journalEntries.id} DESC`,
+      sql`${journalLines.id} DESC`,
+    )
+    .limit(Math.min(query.limit ?? 200, 500))
+    .offset(query.offset ?? 0)
     .all();
 
-  // Running balance is computed oldest-first, then presented newest-first.
-  let running = 0;
-  const withBalance = rows.map((row) => {
-    running += row.debit - row.credit;
-    return {
+  const moneyIn = minor(totals?.moneyIn ?? 0);
+  const moneyOut = minor(totals?.moneyOut ?? 0);
+
+  return {
+    opening,
+    moneyIn,
+    moneyOut,
+    closing: minor(opening + moneyIn - moneyOut),
+    total: totals?.count ?? 0,
+    movements: rows.map((row) => ({
       entryId: row.entryId,
       entryNo: row.entryNo,
       entryDate: row.entryDate,
@@ -395,11 +562,64 @@ export function getAccountMovements(
       description: row.description,
       inMinor: row.debit,
       outMinor: row.credit,
-      runningBalance: running,
-    };
-  });
+      runningBalance: row.runningBalance,
+    })),
+  };
+}
 
-  return withBalance.reverse().slice(0, Math.min(query.limit ?? 200, 500));
+/**
+ * Every movement through one account, newest first.
+ *
+ * Kept as the narrow read for callers that only want the rows. New code should
+ * ask for `getAccountStatement`, which also says what the account opened and
+ * closed at — a list of movements without those two figures cannot be checked.
+ */
+export function getAccountMovements(
+  db: Db,
+  id: number,
+  query: AccountMovementQuery = {},
+): AccountMovement[] {
+  return getAccountStatement(db, id, query).movements;
+}
+
+/**
+ * How many movements match, ignoring the page.
+ *
+ * Separate from `getAccountStatement` so a page can clamp its page number
+ * before asking for rows, rather than fetching one page to learn the total and
+ * then fetching another.
+ */
+export function countAccountMovements(
+  db: Db,
+  id: number,
+  query: AccountMovementQuery = {},
+): number {
+  const account = db.select().from(paymentAccounts).where(eq(paymentAccounts.id, id)).get();
+  if (!account) throw new NotFoundError('Payment account', id);
+
+  const row = db
+    .select({ total: sql<number>`COUNT(*)` })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
+    .where(and(...movementConditions(account.glAccountId, query)))
+    .get();
+
+  return row?.total ?? 0;
+}
+
+/** The transaction kinds an account has actually seen, for the filter list. */
+export function listAccountSourceTypes(db: Db, id: number): string[] {
+  const account = db.select().from(paymentAccounts).where(eq(paymentAccounts.id, id)).get();
+  if (!account) throw new NotFoundError('Payment account', id);
+
+  return db
+    .selectDistinct({ sourceType: journalEntries.sourceType })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
+    .where(eq(journalLines.accountId, account.glAccountId))
+    .orderBy(asc(journalEntries.sourceType))
+    .all()
+    .map((row) => row.sourceType);
 }
 
 // --- categories (which are accounts) --------------------------------------

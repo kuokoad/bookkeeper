@@ -1,4 +1,4 @@
-import { and, asc, eq, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, or, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
@@ -195,30 +195,101 @@ export interface SupplierListItem {
   isActive: boolean;
 }
 
-export function listSuppliers(
-  db: Db,
-  query: { search?: string; includeInactive?: boolean; owingOnly?: boolean } = {},
-): SupplierListItem[] {
+/**
+ * The outer supplier's id, written out with its table name.
+ *
+ * Drizzle omits the table qualifier for a query's primary table when the query
+ * has no joins, so a bare interpolation renders as an unqualified column name —
+ * which SQLite binds to the SUBQUERY's table instead, quietly making the
+ * subquery uncorrelated. See the note on listCategories in catalog.service.ts.
+ */
+const SUPPLIER_ID = sql`suppliers.id`;
+
+export const SUPPLIER_SORTS = ['name', 'balance'] as const;
+export type SupplierSort = (typeof SUPPLIER_SORTS)[number];
+
+export interface SupplierQuery {
+  search?: string;
+  includeInactive?: boolean;
+  /** 'active' or 'archived'. Narrower than `includeInactive`, which widens. */
+  supplierStatus?: 'active' | 'archived';
+  /**
+   * What the shop owes them.
+   *
+   * `owing` is a real payable balance read from the ledger, so "suppliers we
+   * owe" is derived from the accounts rather than from a flag on the record.
+   */
+  balanceState?: 'owing' | 'zero' | 'credit';
+  /** @deprecated Use `balanceState: 'owing'`. Kept for existing callers. */
+  owingOnly?: boolean;
+  sort?: SupplierSort;
+  direction?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * What the shop owes one supplier, as SQL.
+ *
+ * Accounts Payable is credit-normal, so a positive balance here is money owed:
+ * credits minus debits, the mirror of the customer-side expression.
+ */
+const supplierBalanceSql = sql<number>`(
+  SELECT COALESCE(SUM(jl.credit_minor - jl.debit_minor), 0)
+  FROM journal_lines jl
+  JOIN accounts a ON a.id = jl.account_id
+  WHERE jl.supplier_id = ${SUPPLIER_ID}
+    AND a.code = ${ACCOUNT_CODES.ACCOUNTS_PAYABLE}
+)`;
+
+function supplierConditions(query: SupplierQuery): SQL[] {
   const conditions: SQL[] = [];
-  if (!query.includeInactive) conditions.push(eq(suppliers.isActive, true));
+
+  if (query.supplierStatus === 'active') conditions.push(eq(suppliers.isActive, true));
+  else if (query.supplierStatus === 'archived') conditions.push(eq(suppliers.isActive, false));
+  else if (!query.includeInactive) conditions.push(eq(suppliers.isActive, true));
+
+  const state = query.balanceState ?? (query.owingOnly ? 'owing' : undefined);
+  if (state === 'owing') conditions.push(sql`${supplierBalanceSql} > 0`);
+  if (state === 'zero') conditions.push(sql`${supplierBalanceSql} = 0`);
+  if (state === 'credit') conditions.push(sql`${supplierBalanceSql} < 0`);
 
   if (query.search) {
     const term = `%${query.search.trim().toLowerCase()}%`;
     const match = or(
       sql`lower(${suppliers.name}) LIKE ${term}`,
       sql`lower(COALESCE(${suppliers.phone}, '')) LIKE ${term}`,
+      sql`lower(COALESCE(${suppliers.contactPerson}, '')) LIKE ${term}`,
+      sql`lower(COALESCE(${suppliers.email}, '')) LIKE ${term}`,
     );
     if (match) conditions.push(match);
   }
 
+  return conditions;
+}
+
+export function listSuppliers(db: Db, query: SupplierQuery = {}): SupplierListItem[] {
+  const conditions = supplierConditions(query);
+
+  const ascending = (query.direction ?? 'asc') === 'asc';
+  const orderBy =
+    query.sort === 'balance'
+      ? [
+          ascending ? sql`${supplierBalanceSql} ASC` : sql`${supplierBalanceSql} DESC`,
+          sql`lower(${suppliers.name}) ASC`,
+        ]
+      : [ascending ? sql`lower(${suppliers.name}) ASC` : sql`lower(${suppliers.name}) DESC`];
+
   const base = db.select().from(suppliers);
   const rows = (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(asc(suppliers.name))
+    .orderBy(...orderBy)
+    .limit(Math.min(query.limit ?? 200, 500))
+    .offset(query.offset ?? 0)
     .all();
 
   const balances = getAllSupplierBalances(db);
 
-  const items = rows.map((row) => ({
+  return rows.map((row) => ({
     id: row.id,
     name: row.name,
     contactPerson: row.contactPerson,
@@ -229,8 +300,39 @@ export function listSuppliers(
     balance: balances.get(row.id) ?? minor(0),
     isActive: row.isActive,
   }));
+}
 
-  return query.owingOnly ? items.filter((item) => item.balance > 0) : items;
+/** How many suppliers match, ignoring the page. */
+export function countSuppliers(db: Db, query: SupplierQuery = {}): number {
+  const conditions = supplierConditions(query);
+  const base = db.select({ total: sql<number>`COUNT(*)` }).from(suppliers);
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+  return row?.total ?? 0;
+}
+
+/**
+ * Just enough to fill a filter dropdown.
+ *
+ * `listSuppliers` does real work per row — a payable balance read from the ledger — which is right for
+ * the table and wasted on a `<select>` that needs a name and an id. It also
+ * makes the cap matter: a list function truncated at its page size would leave
+ * entries missing from the dropdown with nothing to say so, and a filter that
+ * cannot offer a value the shop actually has is a dead end.
+ */
+export interface SupplierOption {
+  id: number;
+  name: string;
+  isActive: boolean;
+}
+
+export function listSupplierOptions(db: Db, includeInactive = false): SupplierOption[] {
+  const base = db
+    .select({ id: suppliers.id, name: suppliers.name, isActive: suppliers.isActive })
+    .from(suppliers);
+
+  return (includeInactive ? base : base.where(eq(suppliers.isActive, true)))
+    .orderBy(sql`lower(${suppliers.name}) ASC`)
+    .all();
 }
 
 export function getSupplier(db: Db, id: number): SupplierListItem {

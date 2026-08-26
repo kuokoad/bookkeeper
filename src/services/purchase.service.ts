@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
@@ -840,19 +840,185 @@ export function getOutstandingByPurchase(
   return outstanding;
 }
 
+/**
+ * The outer purchase's own columns, written out with their table name.
+ *
+ * Drizzle omits the table qualifier for a query's primary table when the query
+ * has no joins, so a bare interpolation can render as an unqualified column
+ * name — which SQLite then binds to the SUBQUERY's table, quietly turning a
+ * correlated subquery into an uncorrelated one that returns the same plausible
+ * number for every row. See the note on listCategories in catalog.service.ts,
+ * which hit the same thing. Writing the qualifier out means these fragments
+ * cannot depend on the shape of the query they land in.
+ */
+const PURCHASE_ID = sql`purchases.id`;
+const PURCHASE_SUPPLIER_ID = sql`purchases.supplier_id`;
+
+export const PURCHASE_SORTS = ['date', 'amount', 'supplier', 'outstanding', 'reference'] as const;
+export type PurchaseSort = (typeof PURCHASE_SORTS)[number];
+
 export interface PurchaseListQuery {
   from?: string;
   to?: string;
   supplierId?: number;
-  unpaidOnly?: boolean;
+  productId?: number;
+  categoryId?: number;
+  paymentAccountId?: number;
+  paymentKind?: 'CASH' | 'MOBILE_MONEY' | 'BANK' | 'OTHER';
+  status?: 'POSTED' | 'VOIDED';
+  kind?: 'PURCHASE' | 'RETURN' | 'VOID';
+  /**
+   * How much of the delivery has been settled.
+   *
+   * `outstanding` is anything still owed, `partial` is part-paid but not
+   * finished, `paid` is settled in full. A shop chasing its own credit needs
+   * "partially paid" separated from "not paid at all" — they are different
+   * conversations with the supplier.
+   */
+  paymentState?: 'paid' | 'partial' | 'outstanding' | 'unpaid';
+  /** Purchase or invoice number, supplier name or phone, product name or SKU. */
+  search?: string;
+  minAmount?: Minor;
+  maxAmount?: Minor;
+  sort?: PurchaseSort;
+  direction?: 'asc' | 'desc';
   limit?: number;
+  offset?: number;
+  /** @deprecated Use `paymentState: 'outstanding'`. Kept for existing callers. */
+  unpaidOnly?: boolean;
 }
 
-export function listPurchases(db: Db, query: PurchaseListQuery = {}) {
+/**
+ * What a delivery still owes the supplier, as SQL.
+ *
+ * The mirror of the sales-side expression, and it exists for the same reason:
+ * "who am I behind with" has to narrow the rows before the page limit, not
+ * after, or the answer is only ever about the most recent hundred deliveries.
+ */
+const purchaseOutstandingSql = sql<number>`(CASE WHEN ${purchases.status} = 'VOIDED' THEN 0 ELSE
+  ${purchases.totalMinor}
+  - (SELECT COALESCE(SUM(pp.amount_minor), 0) FROM purchase_payments pp
+     WHERE pp.purchase_id = ${PURCHASE_ID})
+  - (
+      SELECT COALESCE(SUM(a.amount_minor), 0)
+      FROM supplier_payment_allocations a
+      JOIN supplier_payments p ON p.id = a.payment_id AND p.status = 'POSTED'
+      WHERE a.purchase_id = ${PURCHASE_ID}
+    )
+END)`;
+
+const purchasePaidSql = sql<number>`(
+  (SELECT COALESCE(SUM(pp.amount_minor), 0) FROM purchase_payments pp
+   WHERE pp.purchase_id = ${PURCHASE_ID})
+  + (
+      SELECT COALESCE(SUM(a.amount_minor), 0)
+      FROM supplier_payment_allocations a
+      JOIN supplier_payments p ON p.id = a.payment_id AND p.status = 'POSTED'
+      WHERE a.purchase_id = ${PURCHASE_ID}
+    )
+)`;
+
+/** Every purchase filter as one clause, shared by the list, count and totals. */
+function purchaseConditions(query: PurchaseListQuery): SQL[] {
   const conditions: SQL[] = [];
+
   if (query.from) conditions.push(gte(purchases.businessDate, query.from));
   if (query.to) conditions.push(lte(purchases.businessDate, query.to));
   if (query.supplierId !== undefined) conditions.push(eq(purchases.supplierId, query.supplierId));
+  if (query.status !== undefined) conditions.push(eq(purchases.status, query.status));
+  if (query.kind !== undefined) conditions.push(eq(purchases.kind, query.kind));
+
+  if (query.productId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${purchaseItems}
+                  WHERE ${purchaseItems.purchaseId} = ${PURCHASE_ID}
+                    AND ${purchaseItems.productId} = ${query.productId})`,
+    );
+  }
+
+  if (query.categoryId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${purchaseItems}
+                  JOIN ${products} ON ${products.id} = ${purchaseItems.productId}
+                  WHERE ${purchaseItems.purchaseId} = ${PURCHASE_ID}
+                    AND ${products.categoryId} = ${query.categoryId})`,
+    );
+  }
+
+  if (query.paymentAccountId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM purchase_payments pp
+                  WHERE pp.purchase_id = ${PURCHASE_ID}
+                    AND pp.payment_account_id = ${query.paymentAccountId})`,
+    );
+  }
+
+  if (query.paymentKind !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM purchase_payments pp
+                  JOIN payment_accounts pa ON pa.id = pp.payment_account_id
+                  WHERE pp.purchase_id = ${PURCHASE_ID} AND pa.kind = ${query.paymentKind})`,
+    );
+  }
+
+  const state = query.paymentState ?? (query.unpaidOnly ? 'outstanding' : undefined);
+  if (state === 'outstanding' || state === 'unpaid') {
+    conditions.push(sql`${purchaseOutstandingSql} > 0`);
+  }
+  if (state === 'paid') conditions.push(sql`${purchaseOutstandingSql} <= 0`);
+  if (state === 'partial') {
+    conditions.push(sql`${purchaseOutstandingSql} > 0 AND ${purchasePaidSql} > 0`);
+  }
+
+  if (query.minAmount !== undefined) {
+    conditions.push(sql`ABS(${purchases.totalMinor}) >= ${query.minAmount}`);
+  }
+  if (query.maxAmount !== undefined) {
+    conditions.push(sql`ABS(${purchases.totalMinor}) <= ${query.maxAmount}`);
+  }
+
+  if (query.search) {
+    const term = `%${query.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        lower(${purchases.purchaseNo}) LIKE ${term}
+        OR lower(COALESCE(${purchases.invoiceNo}, '')) LIKE ${term}
+        OR EXISTS (SELECT 1 FROM ${suppliers}
+                   WHERE ${suppliers.id} = ${PURCHASE_SUPPLIER_ID}
+                     AND (lower(${suppliers.name}) LIKE ${term}
+                          OR lower(COALESCE(${suppliers.phone}, '')) LIKE ${term}))
+        OR EXISTS (SELECT 1 FROM ${purchaseItems}
+                   LEFT JOIN ${products} ON ${products.id} = ${purchaseItems.productId}
+                   WHERE ${purchaseItems.purchaseId} = ${PURCHASE_ID}
+                     AND (lower(${purchaseItems.productName}) LIKE ${term}
+                          OR lower(COALESCE(${products.sku}, '')) LIKE ${term}))
+      )`,
+    );
+  }
+
+  return conditions;
+}
+
+function purchaseOrderBy(query: PurchaseListQuery): SQL[] {
+  const ascending = (query.direction ?? 'desc') === 'asc';
+  const dir = (column: SQL): SQL => (ascending ? sql`${column} ASC` : sql`${column} DESC`);
+
+  switch (query.sort) {
+    case 'amount':
+      return [dir(sql`${purchases.totalMinor}`), sql`${PURCHASE_ID} DESC`];
+    case 'outstanding':
+      return [dir(purchaseOutstandingSql), sql`${PURCHASE_ID} DESC`];
+    case 'supplier':
+      return [dir(sql`lower(COALESCE(${suppliers.name}, 'zzzz'))`), sql`${PURCHASE_ID} DESC`];
+    case 'reference':
+      return [dir(sql`${purchases.purchaseNo}`), sql`${PURCHASE_ID} DESC`];
+    default:
+      return [dir(sql`${purchases.occurredAt}`), dir(sql`${PURCHASE_ID}`)];
+  }
+}
+
+export function listPurchases(db: Db, query: PurchaseListQuery = {}) {
+  const conditions = purchaseConditions(query);
 
   const base = db
     .select({
@@ -866,23 +1032,64 @@ export function listPurchases(db: Db, query: PurchaseListQuery = {}) {
       supplierName: suppliers.name,
       totalMinor: purchases.totalMinor,
       status: purchases.status,
-      itemCount: sql<number>`(SELECT COUNT(*) FROM ${purchaseItems} WHERE ${purchaseItems.purchaseId} = ${purchases.id})`,
+      itemCount: sql<number>`(SELECT COUNT(*) FROM ${purchaseItems} WHERE ${purchaseItems.purchaseId} = ${PURCHASE_ID})`,
+      outstandingMinor: purchaseOutstandingSql,
+      paidMinor: purchasePaidSql,
     })
     .from(purchases)
     .leftJoin(suppliers, eq(suppliers.id, purchases.supplierId));
 
-  const rows = (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(desc(purchases.occurredAt), desc(purchases.id))
+  return (conditions.length > 0 ? base.where(and(...conditions)) : base)
+    .orderBy(...purchaseOrderBy(query))
     .limit(Math.min(query.limit ?? 100, 500))
+    .offset(query.offset ?? 0)
     .all();
+}
 
-  const outstanding = getOutstandingByPurchase(db);
-  const mapped = rows.map((row) => ({
-    ...row,
-    outstandingMinor: (outstanding.get(row.id) ?? 0) as number,
-  }));
+/** How many purchases match, ignoring the page. */
+export function countPurchases(db: Db, query: PurchaseListQuery = {}): number {
+  const conditions = purchaseConditions(query);
+  const base = db.select({ total: sql<number>`COUNT(*)` }).from(purchases);
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+  return row?.total ?? 0;
+}
 
-  return query.unpaidOnly ? mapped.filter((row) => row.outstandingMinor > 0) : mapped;
+export interface FilteredPurchasesSummary {
+  count: number;
+  total: Minor;
+  paid: Minor;
+  outstanding: Minor;
+}
+
+/**
+ * Totals for exactly the purchases a filter selects.
+ *
+ * Same clause as the table, so "credit purchases in August" is totalled from
+ * the credit purchases in August and nothing else.
+ */
+export function getFilteredPurchasesSummary(
+  db: Db,
+  query: PurchaseListQuery = {},
+): FilteredPurchasesSummary {
+  const conditions = purchaseConditions(query);
+
+  const base = db
+    .select({
+      count: sql<number>`COALESCE(SUM(CASE WHEN ${purchases.kind} = 'PURCHASE' THEN 1 ELSE 0 END), 0)`,
+      total: sql<number>`COALESCE(SUM(${purchases.totalMinor}), 0)`,
+      paid: sql<number>`COALESCE(SUM(${purchasePaidSql}), 0)`,
+      outstanding: sql<number>`COALESCE(SUM(${purchaseOutstandingSql}), 0)`,
+    })
+    .from(purchases);
+
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+
+  return {
+    count: row?.count ?? 0,
+    total: minor(row?.total ?? 0),
+    paid: minor(row?.paid ?? 0),
+    outstanding: minor(row?.outstanding ?? 0),
+  };
 }
 
 export function getPurchase(db: Db, purchaseId: number) {

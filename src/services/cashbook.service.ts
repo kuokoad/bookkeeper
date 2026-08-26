@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db, Tx } from '@/db/types';
@@ -455,20 +455,90 @@ function toBusinessDateString(date: Date): string {
 
 // --- reads ----------------------------------------------------------------
 
+export const CASHBOOK_SORTS = ['date', 'amount', 'category', 'reference'] as const;
+export type CashbookSort = (typeof CASHBOOK_SORTS)[number];
+
 export interface CashbookQuery {
   from?: string;
   to?: string;
   categoryAccountId?: number;
+  /** Which pot the money moved through — Cash, MTN MoMo, the bank. */
+  paymentAccountId?: number;
+  /** Who recorded it. */
+  staffId?: number;
+  status?: 'POSTED' | 'VOIDED';
+  /** Description, document number or reference. */
+  search?: string;
+  minAmount?: Minor;
+  maxAmount?: Minor;
+  sort?: CashbookSort;
+  direction?: 'asc' | 'desc';
   limit?: number;
+  offset?: number;
+}
+
+/**
+ * Expenses and other income are the same shape, so they take the same filters.
+ *
+ * The table is passed in rather than the two being written twice: a filter that
+ * exists for expenses and quietly does nothing for income is the sort of bug
+ * that survives review because both pages look right on their own.
+ */
+type CashbookTable = typeof expenses | typeof incomes;
+
+function cashbookConditions(table: CashbookTable, query: CashbookQuery): SQL[] {
+  const conditions: SQL[] = [];
+
+  if (query.from) conditions.push(gte(table.businessDate, query.from));
+  if (query.to) conditions.push(lte(table.businessDate, query.to));
+  if (query.categoryAccountId !== undefined) {
+    conditions.push(eq(table.categoryAccountId, query.categoryAccountId));
+  }
+  if (query.paymentAccountId !== undefined) {
+    conditions.push(eq(table.paymentAccountId, query.paymentAccountId));
+  }
+  if (query.staffId !== undefined) conditions.push(eq(table.createdBy, query.staffId));
+  if (query.status !== undefined) conditions.push(eq(table.status, query.status));
+
+  if (query.minAmount !== undefined) {
+    conditions.push(sql`${table.amountMinor} >= ${query.minAmount}`);
+  }
+  if (query.maxAmount !== undefined) {
+    conditions.push(sql`${table.amountMinor} <= ${query.maxAmount}`);
+  }
+
+  if (query.search) {
+    const term = `%${query.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        lower(${table.description}) LIKE ${term}
+        OR lower(COALESCE(${table.reference}, '')) LIKE ${term}
+        OR lower(COALESCE(${table.note}, '')) LIKE ${term}
+      )`,
+    );
+  }
+
+  return conditions;
+}
+
+function cashbookOrderBy(table: CashbookTable, query: CashbookQuery): SQL[] {
+  const ascending = (query.direction ?? 'desc') === 'asc';
+  const dir = (column: SQL): SQL => (ascending ? sql`${column} ASC` : sql`${column} DESC`);
+
+  switch (query.sort) {
+    case 'amount':
+      return [dir(sql`${table.amountMinor}`), sql`${table.id} DESC`];
+    case 'category':
+      return [dir(sql`lower(${accounts.name})`), sql`${table.id} DESC`];
+    case 'reference':
+      return [dir(sql`COALESCE(${table.reference}, '')`), sql`${table.id} DESC`];
+    default:
+      return [dir(sql`${table.businessDate}`), dir(sql`${table.id}`)];
+  }
 }
 
 export function listExpenses(db: Db, query: CashbookQuery = {}) {
-  const conditions: SQL[] = [];
-  if (query.from) conditions.push(gte(expenses.businessDate, query.from));
-  if (query.to) conditions.push(lte(expenses.businessDate, query.to));
-  if (query.categoryAccountId !== undefined) {
-    conditions.push(eq(expenses.categoryAccountId, query.categoryAccountId));
-  }
+  const conditions = cashbookConditions(expenses, query);
 
   const base = db
     .select({
@@ -480,27 +550,25 @@ export function listExpenses(db: Db, query: CashbookQuery = {}) {
       amountMinor: expenses.amountMinor,
       categoryName: accounts.name,
       categoryAccountId: expenses.categoryAccountId,
+      paymentAccountId: expenses.paymentAccountId,
       paymentAccountName: paymentAccounts.name,
       reference: expenses.reference,
       status: expenses.status,
+      createdBy: expenses.createdBy,
     })
     .from(expenses)
     .innerJoin(accounts, eq(accounts.id, expenses.categoryAccountId))
     .innerJoin(paymentAccounts, eq(paymentAccounts.id, expenses.paymentAccountId));
 
   return (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(desc(expenses.businessDate), desc(expenses.id))
+    .orderBy(...cashbookOrderBy(expenses, query))
     .limit(Math.min(query.limit ?? 200, 500))
+    .offset(query.offset ?? 0)
     .all();
 }
 
 export function listIncomes(db: Db, query: CashbookQuery = {}) {
-  const conditions: SQL[] = [];
-  if (query.from) conditions.push(gte(incomes.businessDate, query.from));
-  if (query.to) conditions.push(lte(incomes.businessDate, query.to));
-  if (query.categoryAccountId !== undefined) {
-    conditions.push(eq(incomes.categoryAccountId, query.categoryAccountId));
-  }
+  const conditions = cashbookConditions(incomes, query);
 
   const base = db
     .select({
@@ -512,18 +580,85 @@ export function listIncomes(db: Db, query: CashbookQuery = {}) {
       amountMinor: incomes.amountMinor,
       categoryName: accounts.name,
       categoryAccountId: incomes.categoryAccountId,
+      paymentAccountId: incomes.paymentAccountId,
       paymentAccountName: paymentAccounts.name,
       reference: incomes.reference,
       status: incomes.status,
+      createdBy: incomes.createdBy,
     })
     .from(incomes)
     .innerJoin(accounts, eq(accounts.id, incomes.categoryAccountId))
     .innerJoin(paymentAccounts, eq(paymentAccounts.id, incomes.paymentAccountId));
 
   return (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(desc(incomes.businessDate), desc(incomes.id))
+    .orderBy(...cashbookOrderBy(incomes, query))
     .limit(Math.min(query.limit ?? 200, 500))
+    .offset(query.offset ?? 0)
     .all();
+}
+
+function countCashbook(db: Db, table: CashbookTable, query: CashbookQuery): number {
+  const conditions = cashbookConditions(table, query);
+  const base = db
+    .select({ total: sql<number>`COUNT(*)` })
+    .from(table)
+    .innerJoin(accounts, eq(accounts.id, table.categoryAccountId));
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+  return row?.total ?? 0;
+}
+
+export function countExpenses(db: Db, query: CashbookQuery = {}): number {
+  return countCashbook(db, expenses, query);
+}
+
+export function countIncomes(db: Db, query: CashbookQuery = {}): number {
+  return countCashbook(db, incomes, query);
+}
+
+export interface CashbookSummary {
+  /** Entries that still stand. A voided expense is not money the shop spent. */
+  count: number;
+  total: Minor;
+  average: Minor;
+}
+
+/**
+ * Totals for exactly the rows a filter selects.
+ *
+ * VOIDED rows are excluded from both the count and the total, matching
+ * `getExpensesTotal`. They stay visible in the table — the shop should be able
+ * to see a correction was made — but a voided expense is not money that left,
+ * and averaging it in would understate every expense that did.
+ */
+function summariseCashbook(db: Db, table: CashbookTable, query: CashbookQuery): CashbookSummary {
+  const conditions = [...cashbookConditions(table, query), eq(table.status, 'POSTED')];
+
+  const row = db
+    .select({
+      count: sql<number>`COUNT(*)`,
+      total: sql<number>`COALESCE(SUM(${table.amountMinor}), 0)`,
+    })
+    .from(table)
+    .innerJoin(accounts, eq(accounts.id, table.categoryAccountId))
+    .where(and(...conditions))
+    .get();
+
+  const count = row?.count ?? 0;
+  const total = minor(row?.total ?? 0);
+
+  return {
+    count,
+    total,
+    average: count === 0 ? minor(0) : minor(Math.round(total / count)),
+  };
+}
+
+export function getFilteredExpensesSummary(db: Db, query: CashbookQuery = {}): CashbookSummary {
+  return summariseCashbook(db, expenses, query);
+}
+
+export function getFilteredIncomesSummary(db: Db, query: CashbookQuery = {}): CashbookSummary {
+  return summariseCashbook(db, incomes, query);
 }
 
 export function getExpensesTotal(db: Db, from: string, to: string): Minor {
@@ -571,6 +706,36 @@ export interface ExpenseCategoryTotal {
  * unbranded number is exactly what the brand exists to catch before it reaches
  * a formatter or an arithmetic operation.
  */
+/**
+ * The category split for exactly the expenses a filter selects.
+ *
+ * The breakdown under a filtered table has to move with it. "Where the money
+ * went" showing the whole month under a table narrowed to one week is the same
+ * class of error as an unfiltered total: two figures on one screen answering
+ * two different questions, with nothing saying so.
+ */
+export function getFilteredExpensesByCategory(
+  db: Db,
+  query: CashbookQuery = {},
+): ExpenseCategoryTotal[] {
+  const conditions = [...cashbookConditions(expenses, query), eq(expenses.status, 'POSTED')];
+
+  return db
+    .select({
+      categoryAccountId: expenses.categoryAccountId,
+      categoryName: accounts.name,
+      total: sql<number>`COALESCE(SUM(${expenses.amountMinor}), 0)`,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(expenses)
+    .innerJoin(accounts, eq(accounts.id, expenses.categoryAccountId))
+    .where(and(...conditions))
+    .groupBy(expenses.categoryAccountId)
+    .orderBy(sql`SUM(${expenses.amountMinor}) DESC`)
+    .all()
+    .map((row) => ({ ...row, total: minor(row.total) }));
+}
+
 export function getExpensesByCategory(db: Db, from: string, to: string): ExpenseCategoryTotal[] {
   return db
     .select({

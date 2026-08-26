@@ -2,7 +2,15 @@ import { and, asc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
-import { businessSettings, categories, productBatches, products, stockLedger } from '@/db/schema';
+import {
+  businessSettings,
+  categories,
+  productBatches,
+  products,
+  purchaseItems,
+  purchases,
+  stockLedger,
+} from '@/db/schema';
 import { minor, type Minor } from '@/domain/money';
 import { qty as makeQty, type Qty } from '@/domain/quantity';
 import { averageUnitCost, isLowStock, isOutOfStock } from '@/domain/inventory/costing';
@@ -407,6 +415,25 @@ export interface ProductListItem {
   outOfStock: boolean;
 }
 
+/**
+ * The outer product's own columns, written out with their table name.
+ *
+ * Drizzle omits the table qualifier for a query's primary table when the query
+ * has no joins, so a bare interpolation can render as an unqualified column
+ * name — which SQLite then binds to the SUBQUERY's table, quietly turning a
+ * correlated subquery into an uncorrelated one that returns the same plausible
+ * number for every row. See the note on listCategories in catalog.service.ts,
+ * which hit the same thing. Writing the qualifier out means these fragments
+ * cannot depend on the shape of the query they land in.
+ */
+const PRODUCT_ID = sql`products.id`;
+
+export const STOCK_STATUSES = ['in-stock', 'low', 'out', 'negative'] as const;
+export type StockStatus = (typeof STOCK_STATUSES)[number];
+
+export const PRODUCT_SORTS = ['name', 'quantity', 'cost', 'price', 'value', 'category'] as const;
+export type ProductSort = (typeof PRODUCT_SORTS)[number];
+
 export interface ProductQuery {
   /**
    * One product by id. Present so a single product can be fetched as an INDEXED
@@ -416,7 +443,22 @@ export interface ProductQuery {
   id?: number;
   search?: string;
   categoryId?: number;
+  /** Products this supplier has ever delivered. */
+  supplierId?: number;
   includeInactive?: boolean;
+  /** 'active' or 'archived'. Narrower than `includeInactive`, which widens. */
+  productStatus?: 'active' | 'archived';
+  /**
+   * What is on the shelf.
+   *
+   * `low` INCLUDES what has run out, because a product at zero is the most
+   * urgent case of "below its minimum" and hiding it from the low-stock list
+   * would be the one thing that list must never do. `out` and `negative`
+   * narrow further. A negative figure is not a stock level, it is a sign
+   * something was recorded wrongly, so it gets its own filter.
+   */
+  stockStatus?: StockStatus;
+  /** @deprecated Use `stockStatus: 'low'`. Kept for existing callers. */
   lowStockOnly?: boolean;
   /**
    * Products holding dated stock: `'expired'` for what has already turned,
@@ -425,6 +467,8 @@ export interface ProductQuery {
   expiring?: 'expired' | 'soon';
   /** The day the window is measured from. Defaults to today. */
   asAt?: string;
+  sort?: ProductSort;
+  direction?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
@@ -438,13 +482,62 @@ export function getLowStockThreshold(db: Db): Qty {
   return makeQty(settings?.threshold ?? 0);
 }
 
-export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[] {
+/**
+ * Every product filter as one clause, shared by the list and the count.
+ *
+ * Stock status is the one that has to be here rather than in JavaScript. It
+ * used to be applied after the query came back, which meant "low stock" showed
+ * the low-stock products among the first five hundred by name — a shop whose
+ * reorder list stops at the letter M does not know it is missing anything.
+ */
+function productConditions(db: Db, query: ProductQuery): SQL[] {
   const fallbackMin = getLowStockThreshold(db);
   const conditions: SQL[] = [];
 
   if (query.id !== undefined) conditions.push(eq(products.id, query.id));
-  if (!query.includeInactive) conditions.push(eq(products.isActive, true));
+
+  if (query.productStatus === 'active') conditions.push(eq(products.isActive, true));
+  else if (query.productStatus === 'archived') conditions.push(eq(products.isActive, false));
+  else if (!query.includeInactive) conditions.push(eq(products.isActive, true));
+
   if (query.categoryId !== undefined) conditions.push(eq(products.categoryId, query.categoryId));
+
+  if (query.supplierId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${purchaseItems}
+                  JOIN ${purchases} ON ${purchases.id} = ${purchaseItems.purchaseId}
+                  WHERE ${purchaseItems.productId} = ${PRODUCT_ID}
+                    AND ${purchases.supplierId} = ${query.supplierId})`,
+    );
+  }
+
+  const stockStatus: StockStatus | undefined =
+    query.stockStatus ?? (query.lowStockOnly ? 'low' : undefined);
+
+  if (stockStatus !== undefined) {
+    // Products that do not track stock have no shelf to be low on, so they are
+    // out of every stock-status answer rather than showing as "out of stock".
+    conditions.push(eq(products.trackInventory, true));
+
+    // The threshold is the product's own minimum where it has one, and the
+    // shop-wide default where it does not — the same rule `isLowStock` applies.
+    const threshold = sql`COALESCE(${products.minStockMilli}, ${fallbackMin})`;
+
+    switch (stockStatus) {
+      case 'low':
+        conditions.push(sql`${products.qtyOnHandMilli} <= ${threshold}`);
+        break;
+      case 'out':
+        conditions.push(sql`${products.qtyOnHandMilli} <= 0`);
+        break;
+      case 'negative':
+        conditions.push(sql`${products.qtyOnHandMilli} < 0`);
+        break;
+      case 'in-stock':
+        conditions.push(sql`${products.qtyOnHandMilli} > ${threshold}`);
+        break;
+    }
+  }
 
   /**
    * Products whose batches carry a date worth looking at.
@@ -468,7 +561,7 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
     conditions.push(
       sql`EXISTS (
         SELECT 1 FROM ${productBatches}
-        WHERE ${productBatches.productId} = ${products.id}
+        WHERE ${productBatches.productId} = ${PRODUCT_ID}
           AND ${productBatches.isClosed} = 0
           AND ${productBatches.qtyMilli} > 0
           AND ${productBatches.expiryDate} IS NOT NULL
@@ -486,6 +579,13 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
     );
     if (match) conditions.push(match);
   }
+
+  return conditions;
+}
+
+export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[] {
+  const fallbackMin = getLowStockThreshold(db);
+  const conditions = productConditions(db, query);
 
   const base = db
     .select({
@@ -509,12 +609,12 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
     .leftJoin(categories, eq(categories.id, products.categoryId));
 
   const rows = (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(asc(products.name))
+    .orderBy(...productOrderBy(query))
     .limit(Math.min(query.limit ?? 200, 500))
     .offset(query.offset ?? 0)
     .all();
 
-  const items = rows.map((row): ProductListItem => {
+  return rows.map((row): ProductListItem => {
     const qtyOnHand = makeQty(row.qtyOnHandMilli);
     const stockValue = minor(row.stockValueMinor);
     const minStock = row.minStockMilli === null ? null : makeQty(row.minStockMilli);
@@ -540,8 +640,39 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
       outOfStock: row.trackInventory && isOutOfStock(qtyOnHand),
     };
   });
+}
 
-  return query.lowStockOnly ? items.filter((item) => item.lowStock) : items;
+function productOrderBy(query: ProductQuery): SQL[] {
+  const ascending = (query.direction ?? 'asc') === 'asc';
+  const dir = (column: SQL): SQL => (ascending ? sql`${column} ASC` : sql`${column} DESC`);
+  const byName = sql`lower(${products.name}) ASC`;
+
+  switch (query.sort) {
+    case 'quantity':
+      return [dir(sql`${products.qtyOnHandMilli}`), byName];
+    case 'cost':
+      return [dir(sql`${products.costPriceMinor}`), byName];
+    case 'price':
+      return [dir(sql`${products.sellingPriceMinor}`), byName];
+    case 'value':
+      return [dir(sql`${products.stockValueMinor}`), byName];
+    case 'category':
+      return [dir(sql`lower(COALESCE(${categories.name}, 'zzzz'))`), byName];
+    default:
+      return [dir(sql`lower(${products.name})`)];
+  }
+}
+
+/** How many products match, ignoring the page. What the pager counts. */
+export function countProducts(db: Db, query: ProductQuery = {}): number {
+  const conditions = productConditions(db, query);
+
+  const base = db
+    .select({ total: sql<number>`COUNT(*)` })
+    .from(products)
+    .leftJoin(categories, eq(categories.id, products.categoryId));
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+  return row?.total ?? 0;
 }
 
 /**
@@ -554,6 +685,32 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
  * NotFoundError for a product that plainly existed. That reached the till,
  * because scanning a barcode resolves an id and then comes through here.
  */
+/**
+ * Just enough to fill a filter dropdown.
+ *
+ * `listProducts` does real work per row — stock levels, average cost, low-stock flags — which is right for
+ * the table and wasted on a `<select>` that needs a name and an id. It also
+ * makes the cap matter: a list function truncated at its page size would leave
+ * entries missing from the dropdown with nothing to say so, and a filter that
+ * cannot offer a value the shop actually has is a dead end.
+ */
+export interface ProductOption {
+  id: number;
+  name: string;
+  sku: string | null;
+  isActive: boolean;
+}
+
+export function listProductOptions(db: Db, includeInactive = false): ProductOption[] {
+  const base = db
+    .select({ id: products.id, name: products.name, sku: products.sku, isActive: products.isActive })
+    .from(products);
+
+  return (includeInactive ? base : base.where(eq(products.isActive, true)))
+    .orderBy(asc(products.name))
+    .all();
+}
+
 export function getProduct(db: Db, id: number): ProductListItem {
   const found = listProducts(db, { includeInactive: true, id, limit: 1 })[0];
   if (!found) throw new NotFoundError('Product', id);
@@ -590,14 +747,52 @@ export interface StockSummary {
   outOfStockCount: number;
 }
 
-export function getStockSummary(db: Db): StockSummary {
-  const items = listProducts(db, { limit: 500 });
+/**
+ * The headline stock figures, for whatever set of products a filter selects.
+ *
+ * Aggregated in SQL. This used to fetch the first five hundred products by name
+ * and count them in JavaScript, which meant a shop with more than five hundred
+ * products was shown a stock value, a low-stock count and an out-of-stock count
+ * that silently excluded everything sorted after the five hundredth — and gave
+ * no hint it had done so. A reorder list that stops at the letter M is worse
+ * than no reorder list, because the owner trusts it.
+ *
+ * Called with no query it describes the whole active catalogue, which is what
+ * the dashboard wants; called with the page's filters it describes the table
+ * underneath it.
+ */
+export function getStockSummary(db: Db, query: ProductQuery = {}): StockSummary {
+  const fallbackMin = getLowStockThreshold(db);
+  const conditions = productConditions(db, query);
+  const threshold = sql`COALESCE(${products.minStockMilli}, ${fallbackMin})`;
+
+  const base = db
+    .select({
+      productCount: sql<number>`COUNT(*)`,
+      trackedCount: sql<number>`COALESCE(SUM(CASE WHEN ${products.trackInventory} THEN 1 ELSE 0 END), 0)`,
+      totalStockValue: sql<number>`COALESCE(SUM(${products.stockValueMinor}), 0)`,
+      // "Low" here EXCLUDES what has run out, because the two are shown side by
+      // side and a product counted in both would be reported twice.
+      lowStockCount: sql<number>`COALESCE(SUM(CASE
+        WHEN ${products.trackInventory}
+         AND ${products.qtyOnHandMilli} <= ${threshold}
+         AND ${products.qtyOnHandMilli} > 0
+        THEN 1 ELSE 0 END), 0)`,
+      outOfStockCount: sql<number>`COALESCE(SUM(CASE
+        WHEN ${products.trackInventory} AND ${products.qtyOnHandMilli} <= 0
+        THEN 1 ELSE 0 END), 0)`,
+    })
+    .from(products)
+    .leftJoin(categories, eq(categories.id, products.categoryId));
+
+  const row = (conditions.length > 0 ? base.where(and(...conditions)) : base).get();
+
   return {
-    productCount: items.length,
-    trackedCount: items.filter((item) => item.trackInventory).length,
-    totalStockValue: minor(items.reduce((total, item) => total + item.stockValue, 0)),
-    lowStockCount: items.filter((item) => item.lowStock && !item.outOfStock).length,
-    outOfStockCount: items.filter((item) => item.outOfStock).length,
+    productCount: row?.productCount ?? 0,
+    trackedCount: row?.trackedCount ?? 0,
+    totalStockValue: minor(row?.totalStockValue ?? 0),
+    lowStockCount: row?.lowStockCount ?? 0,
+    outOfStockCount: row?.outOfStockCount ?? 0,
   };
 }
 

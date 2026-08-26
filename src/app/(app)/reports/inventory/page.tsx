@@ -16,7 +16,12 @@ import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
 import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
-import { describePeriod, PeriodFilter, resolvePeriod } from '@/components/shared/period-filter';
+import { describePeriod } from '@/components/shared/period-filter';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { listCategories } from '@/services/catalog.service';
+import { listSupplierOptions } from '@/services/supplier.service';
+import { buildQuery, type ActiveFilter } from '@/lib/filters';
+import { parseInventoryReportFilters, parseReportPeriod, type SearchParams } from '@/lib/list-filters';
 import { ReportActions } from '@/components/shared/report-actions';
 
 export const metadata: Metadata = { title: 'Inventory report' };
@@ -25,28 +30,131 @@ export const dynamic = 'force-dynamic';
 export default async function InventoryReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   await requirePageAccess('reports', 'view');
   const params = await searchParams;
 
-  const { period, preset } = resolvePeriod(params.period, params.from, params.to, toBusinessDate());
+  const today = toBusinessDate();
+  const { range: period, preset, carried: periodCarried } = parseReportPeriod(params, today);
+  const { filters, carried: stockCarried } = parseInventoryReportFilters(params);
+  const carried = { ...periodCarried, ...stockCarried };
 
-  const valuation = getStockValuation(db);
-  const ageing = getExpiryAgeing(db, toBusinessDate());
+  const valuation = getStockValuation(db, filters);
+  const ageing = getExpiryAgeing(db, today);
   const movement = getStockMovementSummary(db, period);
   const inventoryGl = getAccountBalanceByCode(db, ACCOUNT_CODES.INVENTORY);
-  const matchesLedger = valuation.totalCostValue === inventoryGl;
+
+  /*
+    The ledger check compares the WHOLE shop's stock value with the Inventory
+    account, so it is computed unfiltered. Comparing a filtered subset against
+    the full ledger balance would raise a false alarm the moment somebody looked
+    at one category.
+  */
+  const wholeShop = getStockValuation(db);
+  const matchesLedger = wholeShop.totalCostValue === inventoryGl;
+  const isFiltered =
+    filters.categoryId !== undefined ||
+    filters.supplierId !== undefined ||
+    filters.stockStatus !== undefined;
+
+  const categories = listCategories(db);
+  const suppliers = listSupplierOptions(db, true);
+
+  const active: ActiveFilter[] = [];
+  if (filters.categoryId !== undefined) {
+    active.push({
+      key: 'category',
+      label: 'Category',
+      value:
+        categories.find((item) => item.id === filters.categoryId)?.name ??
+        String(filters.categoryId),
+    });
+  }
+  if (filters.supplierId !== undefined) {
+    active.push({
+      key: 'supplier',
+      label: 'Supplier',
+      value:
+        suppliers.find((item) => item.id === filters.supplierId)?.name ??
+        String(filters.supplierId),
+    });
+  }
+  if (filters.stockStatus !== undefined) {
+    active.push({
+      key: 'stock',
+      label: 'Stock',
+      value:
+        filters.stockStatus === 'in-stock'
+          ? 'In stock'
+          : filters.stockStatus === 'low'
+            ? 'Low or out'
+            : filters.stockStatus === 'out'
+              ? 'Out of stock'
+              : 'Negative stock',
+    });
+  }
+  if (preset !== 'month') {
+    active.push({
+      key: 'period',
+      label: 'Movement period',
+      value: describePeriod(period, preset),
+      alsoClears: ['from', 'to'],
+    });
+  }
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title="Inventory report"
         description={`Valuation as at today · movement ${describePeriod(period, preset).toLowerCase()}`}
-        actions={
-          <ReportActions csvHref={`/api/reports/inventory?from=${period.from}&to=${period.to}`} />
-        }
+        actions={<ReportActions csvHref={`/api/reports/inventory${buildQuery(carried)}`} />}
       />
+
+      <FilterBar
+        basePath="/reports/inventory"
+        dateRange={{ preset, from: period.from, to: period.to }}
+        active={active}
+        quick={[
+          { label: 'Low stock', params: { stock: 'low' }, match: { stock: 'low' } },
+          { label: 'Out of stock', params: { stock: 'out' }, match: { stock: 'out' } },
+        ]}
+        fields={[
+          {
+            kind: 'select',
+            key: 'category',
+            label: 'Category',
+            allLabel: 'All categories',
+            options: categories.map((item) => ({ value: String(item.id), label: item.name })),
+          },
+          {
+            kind: 'select',
+            key: 'supplier',
+            label: 'Supplier',
+            allLabel: 'All suppliers',
+            options: suppliers.map((item) => ({ value: String(item.id), label: item.name })),
+          },
+          {
+            kind: 'select',
+            key: 'stock',
+            label: 'Stock status',
+            allLabel: 'Any stock level',
+            options: [
+              { value: 'in-stock', label: 'In stock' },
+              { value: 'low', label: 'Low or out' },
+              { value: 'out', label: 'Out of stock' },
+              { value: 'negative', label: 'Negative stock' },
+            ],
+          },
+        ]}
+      />
+
+      {isFiltered && (
+        <p className="mb-4 text-xs text-content-subtle no-print">
+          The valuation below covers only the products matching these filters. The stock-movement
+          table underneath is not narrowed by them — it reads the ledger for the whole shop.
+        </p>
+      )}
 
       {!matchesLedger && (
         <Alert tone="danger" title="Stock value does not match the accounts" className="mb-4">
@@ -186,7 +294,6 @@ export default async function InventoryReportPage({
         </tbody>
       </TableWrap>
 
-      <PeriodFilter basePath="/reports/inventory" active={preset} period={period} />
 
       <h2 className="mb-3 text-sm font-semibold text-content">
         Stock movement — {describePeriod(period, preset).toLowerCase()}
