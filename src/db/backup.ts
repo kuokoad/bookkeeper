@@ -67,8 +67,11 @@ function stamp(now: Date): string {
  * The balance check is the important one. Structural integrity only says SQLite
  * can read the file; that debits still equal credits says the *accounts* in it
  * survived, which is what the shop actually needs from a backup.
+ *
+ * Exported because `restore.ts` asks the same question of the same file, from
+ * the other direction — and "is this database usable?" must have one answer.
  */
-function verifyBackup(path: string): number {
+export function verifyBackup(path: string): number {
   const copy = new Database(path, { readonly: true });
   try {
     // Deliberately NOT `configureConnection`: that switches the database into

@@ -139,6 +139,25 @@ one that way clears the warning.
 
 Nothing takes a backup for you. Do it at the end of each trading day.
 
+## Putting a backup back
+
+If the computer is replaced, or a day's records go wrong and you want the shop
+as it was, stop the app and run:
+
+```bash
+npm run db:restore -- ./backups/bookkeeper-2026-08-26T18-00-00.db --force
+```
+
+**Do not copy the backup file over `data/bookkeeper.db` yourself.** After a
+power cut there is a second file beside the database holding the last
+transactions, and copying only the main file leaves it there to be read back in
+— so the records you were trying to undo come straight back, and nothing tells
+you. The command removes it properly.
+
+It also refuses if the app is still running, checks the backup opens and its
+books balance *before* replacing anything, and keeps what it replaced as
+`bookkeeper.db.replaced-<date>` in case you picked the wrong file.
+
 ---
 
 ## Before you trade on it

@@ -338,13 +338,34 @@ it can be copied on its own and still be whole.
 | `npm run backup`               | Verified backup, keeping the newest 14    |
 | `npm run backup -- --keep=30`  | Keep 30 instead                           |
 | `npm run backup -- --dir=D:/x` | Write straight to a USB stick             |
+| `npm run db:restore -- <file>` | Put one back (see below)                  |
 
 **Copy them off the machine.** A backup sitting on the same computer does not
 survive that computer being stolen, dropped, or having its disk fail. Pointing
 `--dir` at a USB stick, and running it at close of business, is the whole
 routine.
 
-To restore, stop the app and copy a backup file over `data/bookkeeper.db`.
+### Putting a backup back
+
+```bash
+npm run db:restore -- ./backups/bookkeeper-2026-08-26T18-00-00.db --force
+```
+
+**Do not copy the file over `data/bookkeeper.db` by hand.** That was the
+instruction here for a long time and it is wrong in the one situation restoring
+is for.
+
+With WAL enabled the newest transactions live in `bookkeeper.db-wal`. Shutting
+down cleanly folds them into the main file and deletes it — but a **power cut
+does not**, which is the whole point of `synchronous = FULL`. Copy a backup over
+the main file with that `-wal` still beside it and SQLite replays it into the
+file that was supposed to be free of it, putting back the very transactions you
+were undoing. The books still balance afterwards, so nothing warns you.
+
+The command does it properly: it verifies the backup **before** touching
+anything, refuses while the app is still running, copies the database it is
+about to replace to `bookkeeper.db.replaced-<timestamp>` so a wrong restore is
+undoable, removes `-wal` and `-shm`, and verifies the result.
 
 The database is configured with `synchronous = FULL`, which is slower on purpose:
 it survives a power cut without losing the last transactions committed.

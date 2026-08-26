@@ -19,6 +19,7 @@
     "db:seed": "tsx src/db/seed/index.ts",
     "db:reset": "tsx src/db/reset.ts",
     "backup": "tsx src/db/backup.ts",
+    "db:restore": "tsx src/db/restore.ts",
     "preflight": "tsx src/db/preflight.ts",
     "benchmark": "tsx scripts/benchmark.ts",
     "db:studio": "drizzle-kit studio",
