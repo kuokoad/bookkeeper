@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { businessSettings, productBatches, products } from '@/db/schema';
 import { seedDemo } from '@/db/seed/demo';
+import { countRealRecords } from '@/db/seed';
 import { verifyBatchCoverage, verifyProductStock } from '@/services/inventory.service';
 import { getTrialBalance } from '@/services/reporting/balances.service';
 
@@ -77,5 +78,94 @@ describe('the demo seed', () => {
     expect(batches.length).toBeGreaterThan(0);
     expect(batches.every((batch) => batch.expiryDate === null)).toBe(true);
     expect(batches.every((batch) => batch.isDemo)).toBe(true);
+  });
+});
+
+describe('what the seed refuses to overwrite', () => {
+  /**
+   * A shop name somebody typed is a decision, and the seed does not get to
+   * overrule it.
+   *
+   * This cost a real shop its name twice in one afternoon: the database was
+   * reset and re-seeded to clear test data, and `db:seed` renamed the shop to
+   * its own demo identity both times. Nothing warned, because renaming was
+   * exactly what the code said to do.
+   */
+  it('leaves a shop name that somebody chose', async () => {
+    context.db
+      .update(businessSettings)
+      .set({ businessName: 'Nuna Trading & Co.', tagline: 'Where Quality meets Affordability' })
+      .where(eq(businessSettings.id, 1))
+      .run();
+
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+
+    const settings = context.db
+      .select()
+      .from(businessSettings)
+      .where(eq(businessSettings.id, 1))
+      .get()!;
+
+    expect(settings.businessName).toBe('Nuna Trading & Co.');
+    expect(settings.tagline).toBe('Where Quality meets Affordability');
+    // The demo data itself still arrived.
+    expect(settings.hasDemoData).toBe(true);
+  });
+
+  it('still names an unnamed shop, so a fresh demo looks like a shop', async () => {
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+
+    const settings = context.db
+      .select()
+      .from(businessSettings)
+      .where(eq(businessSettings.id, 1))
+      .get()!;
+
+    expect(settings.businessName).toBe('Adom Provisions');
+    expect(settings.address).toContain('Madina Market');
+  });
+
+  it('writes over its own previous demo name, which nobody chose', async () => {
+    context.db
+      .update(businessSettings)
+      .set({ businessName: 'Adom Provisions' })
+      .where(eq(businessSettings.id, 1))
+      .run();
+
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+
+    expect(
+      context.db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()!
+        .businessName,
+    ).toBe('Adom Provisions');
+  });
+});
+
+describe('counting what is real', () => {
+  /**
+   * `NODE_ENV=production` already stops demo data reaching a live shop, but
+   * plenty of databases that matter are not in production mode — one being set
+   * up, or a copy somebody is checking a figure against. This is the count the
+   * seed runner refuses on.
+   */
+  it('is zero for a database holding only demo data', async () => {
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+    expect(countRealRecords(context.connection)).toBe(0);
+  });
+
+  it('counts a real sale, even beside demo data', async () => {
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+
+    // One sale the demo seed did not write — a shop that has started trading.
+    context.connection
+      .prepare(
+        `INSERT INTO sales (receipt_no, kind, business_date, occurred_at, subtotal_minor,
+                            discount_minor, tax_minor, total_minor, cogs_minor, status,
+                            is_demo, created_at, updated_at)
+         VALUES ('RCP-REAL', 'SALE', '2026-08-26', 0, 100, 0, 0, 100, 0, 'POSTED', 0, 0, 0)`,
+      )
+      .run();
+
+    expect(countRealRecords(context.connection)).toBe(1);
   });
 });

@@ -22,6 +22,12 @@ import { openOpeningBatches } from './opening-batches';
  * a real shop's machine.
  */
 
+/** What `seedCore` creates the settings row with — i.e. nobody has named the shop. */
+const DEFAULT_BUSINESS_NAME = 'My Shop';
+
+/** The demo shop's own name, safe to write over because a previous seed set it. */
+const DEMO_BUSINESS_NAME = 'Adom Provisions';
+
 export const DEMO_OWNER = {
   username: 'owner',
   displayName: 'Demo Owner',
@@ -107,11 +113,36 @@ export async function seedDemo(db: Db, now: Date = new Date()): Promise<void> {
   }
 
   writeTransaction(db, (tx) => {
+    /**
+     * The demo shop's own name and address, but ONLY if nobody has chosen one.
+     *
+     * A name somebody typed is a decision, and the seed does not get to
+     * overrule it — a person who has named their shop and then runs `db:seed`
+     * to get some sample trading should not find it renamed underneath them.
+     * `DEFAULT_BUSINESS_NAME` is what the settings row is created with, and
+     * this demo name is what a previous run of this seed left, so both are
+     * safe to write over.
+     */
+    const current = tx
+      .select({ businessName: businessSettings.businessName })
+      .from(businessSettings)
+      .where(eq(businessSettings.id, 1))
+      .get();
+
+    const named =
+      current !== undefined &&
+      current.businessName !== DEFAULT_BUSINESS_NAME &&
+      current.businessName !== DEMO_BUSINESS_NAME;
+
     tx.update(businessSettings)
       .set({
-        businessName: 'Adom Provisions',
-        address: 'Shop 4, Madina Market, Accra',
-        phone: '+233 24 000 0000',
+        ...(named
+          ? {}
+          : {
+              businessName: DEMO_BUSINESS_NAME,
+              address: 'Shop 4, Madina Market, Accra',
+              phone: '+233 24 000 0000',
+            }),
         hasDemoData: true,
         setupCompletedAt: now,
         updatedAt: now,
