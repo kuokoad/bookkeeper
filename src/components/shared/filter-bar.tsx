@@ -336,8 +336,23 @@ export function FilterBar({
 
   function renderCustomRange() {
     if (!dateRange) return null;
-    const fromValue = valueOf(fromKey) || (dateRange.from.startsWith('0000') ? '' : dateRange.from);
-    const toValue = valueOf(toKey) || dateRange.to;
+
+    /*
+      The boxes show the range the SERVER resolved, not the raw query string.
+
+      Those differ whenever the URL is junk — a hand-edited `?from=2026-13-45`
+      is thrown away by the parser and the page falls back to this month. Echoing
+      the raw value back put "2026-13-45" into a `<input type="date">`, which the
+      browser rejects: the box rendered EMPTY while the table showed a month
+      nobody had asked for, and nothing on the page said the dates had been
+      ignored. Reading the resolved range means the controls always describe the
+      data underneath them.
+
+      A draft still wins, because that is the owner mid-edit.
+    */
+    const resolved = dateRange.from.startsWith('0000') ? '' : dateRange.from;
+    const fromValue = values[fromKey] ?? resolved;
+    const toValue = values[toKey] ?? dateRange.to;
     return (
       <div className="flex flex-wrap items-end gap-2">
         <div>
@@ -373,8 +388,11 @@ export function FilterBar({
           onClick={() =>
             apply({
               [presetKey]: 'custom',
-              [fromKey]: valueOf(fromKey) || dateRange.from,
-              [toKey]: valueOf(toKey) || dateRange.to,
+              // An emptied box means "open at that end", which the parser
+              // supports — so it is sent as a cleared key rather than being
+              // quietly refilled with the value the owner just deleted.
+              [fromKey]: fromValue === '' ? null : fromValue,
+              [toKey]: toValue === '' ? null : toValue,
             })
           }
         >
