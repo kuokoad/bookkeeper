@@ -1,7 +1,15 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, useTransition, type FormEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react';
 
 import { Button } from '@/components/ui/button';
 import { TextInput } from '@/components/ui/field';
@@ -113,6 +121,28 @@ const DEFAULT_PRESETS: DatePreset[] = [
 /** Keys that describe a one-off event, never a filter. Dropped on any change. */
 const FLASH_KEYS = ['created', 'updated', 'voided', 'deleted', 'restored', 'error'];
 
+/**
+ * What can hold focus inside the drawer, in tab order.
+ *
+ * Read fresh on every keystroke rather than cached: the controls change as the
+ * owner types — the Apply button appears, a chip goes — and a stale list would
+ * trap focus against an element that is no longer there.
+ *
+ * `disabled` controls are excluded because the browser skips them anyway, and
+ * the "Show results" button IS disabled while a filter is being applied, which
+ * would otherwise leave the trap pinned to something unreachable.
+ */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function focusableWithin(container: HTMLElement | null): HTMLElement[] {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (element) => element.offsetParent !== null || element === document.activeElement,
+  );
+}
+
 const CONTROL_CLASS =
   'h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content ' +
   'focus:outline-none focus-visible:outline-2 focus-visible:outline-accent';
@@ -130,6 +160,7 @@ export function FilterBar({
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const presetKey = dateRange?.presetKey ?? 'period';
   const fromKey = dateRange?.fromKey ?? 'from';
@@ -219,6 +250,66 @@ export function FilterBar({
 
   const activeCount = active.length;
   const hasControls = fields.length > 0 || dateRange !== undefined;
+
+  // --- the drawer is a modal, so it behaves like one ------------------------
+
+  /**
+   * Focus moves into the drawer when it opens and back where it came from when
+   * it closes.
+   *
+   * Without this, opening the filters on a phone leaves focus behind on the
+   * button underneath: a screen reader goes on announcing the page while a
+   * sheet covers it, and the first Tab walks into the table rather than into
+   * the controls that just appeared. Restoring focus on the way out matters
+   * just as much — closing a drawer should put somebody back where they were,
+   * not at the top of the document.
+   *
+   * The element to return to is read at open time rather than tracked, so it is
+   * whatever actually had focus, however the drawer was opened.
+   */
+  useEffect(() => {
+    if (!drawerOpen) return;
+
+    const returnTo = document.activeElement as HTMLElement | null;
+    focusableWithin(dialogRef.current)[0]?.focus();
+
+    return () => {
+      // Guard the call: the trigger can be gone by now if a filter change
+      // re-rendered the bar, and focus then simply stays where the browser put it.
+      if (returnTo?.isConnected) returnTo.focus();
+    };
+  }, [drawerOpen]);
+
+  /**
+   * Tab stays inside the drawer, and Escape gets out of it.
+   *
+   * A trap without an escape hatch is a keyboard prison, so the two belong in
+   * the same place: whatever holds focus in, Escape lets out.
+   */
+  function onDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      setDrawerOpen(false);
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const focusable = focusableWithin(dialogRef.current);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+
+    // Only the two ends need handling; everything between them is the
+    // browser's own tab order, which is the order to keep.
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   // --- pieces --------------------------------------------------------------
 
@@ -510,16 +601,25 @@ export function FilterBar({
 
       {drawerOpen && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end md:hidden">
-          <button
-            type="button"
-            aria-label="Close filters"
+          {/*
+            The scrim closes the drawer on a tap but is deliberately NOT a
+            button. It sits outside the dialog, so as a focusable element it
+            would be a tab stop the trap below cannot reach — the one place
+            keyboard focus could leak out of a modal. Keyboard and screen-reader
+            users close with Escape or the Close button, both of which are
+            inside the dialog.
+          */}
+          <div
+            aria-hidden="true"
             className="absolute inset-0 bg-black/40"
             onClick={() => setDrawerOpen(false)}
           />
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Filters"
+            onKeyDown={onDialogKeyDown}
             className="relative max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-line bg-surface-raised p-4 pb-6"
           >
             <div className="mb-4 flex items-center justify-between">
