@@ -40,6 +40,7 @@ export function CashbookForm({
   amountLabel,
   descriptionPlaceholder,
   emptyCategoriesHint,
+  returnTo,
 }: {
   action: (previous: FormState, formData: FormData) => Promise<FormState>;
   categories: Option[];
@@ -52,12 +53,18 @@ export function CashbookForm({
   amountLabel: string;
   descriptionPlaceholder: string;
   emptyCategoriesHint: string;
+  /**
+   * The filters the list was showing, so recording an entry comes back to
+   * them. Without it every entry throws the owner back to an unfiltered page.
+   */
+  returnTo?: string;
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(action, {});
   const [amount, setAmount] = useState('');
 
   return (
     <form action={formAction} className="space-y-4" noValidate>
+      <input type="hidden" name="returnTo" value={returnTo ?? ''} />
       {state.error && <Alert tone="danger">{state.error}</Alert>}
 
       <div className="rounded-xl border border-line bg-surface-raised p-4">

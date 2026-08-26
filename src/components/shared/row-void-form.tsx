@@ -33,11 +33,14 @@ export function RowVoidForm({
   action,
   what,
   placeholder,
+  returnTo,
 }: {
   action: (previous: FormState, formData: FormData) => Promise<FormState>;
   /** What is being voided, for the confirmation line. e.g. "RCV-00002". */
   what: string;
   placeholder: string;
+  /** The filters the list was showing, so voiding a row comes back to them. */
+  returnTo?: string;
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(action, {});
   const [confirming, setConfirming] = useState(false);
@@ -58,6 +61,7 @@ export function RowVoidForm({
 
   return (
     <form action={formAction} noValidate className="min-w-56">
+      <input type="hidden" name="returnTo" value={returnTo ?? ''} />
       <p className="mb-1.5 text-xs text-content-muted">
         Void {what}? Nothing is deleted — a reversing entry is posted.
       </p>

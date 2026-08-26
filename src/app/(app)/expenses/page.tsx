@@ -137,6 +137,9 @@ export default async function ExpensesPage({
   const canCreate = can(user, 'expenses', 'create');
   const canVoid = can(user, 'expenses', 'void');
   const isFiltered = active.length > 0;
+  // buildQuery returns '' or '?a=b', so dropping the leading '?' gives the bare
+  // query string the action rebuilds its redirect from.
+  const returnTo = buildQuery(carried).slice(1);
   const exportHref = `/api/exports/expenses${buildQuery(carried)}`;
 
   return (
@@ -325,6 +328,7 @@ export default async function ExpensesPage({
                           canVoid && (
                             <RowVoidForm
                               action={voidExpenseAction.bind(null, row.id)}
+                              returnTo={returnTo}
                               what={row.description}
                               placeholder="e.g. Entered twice"
                             />
@@ -385,6 +389,7 @@ export default async function ExpensesPage({
               <h2 className="mb-3 text-sm font-semibold text-content">Record an expense</h2>
               <CashbookForm
                 action={recordExpenseAction}
+                returnTo={returnTo}
                 categories={categories}
                 accounts={accounts}
                 today={today}

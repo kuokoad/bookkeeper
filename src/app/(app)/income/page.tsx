@@ -122,6 +122,9 @@ export default async function IncomePage({
   const canCreate = can(user, 'income', 'create');
   const canVoid = can(user, 'income', 'void');
   const isFiltered = active.length > 0;
+  // buildQuery returns '' or '?a=b', so dropping the leading '?' gives the bare
+  // query string the action rebuilds its redirect from.
+  const returnTo = buildQuery(carried).slice(1);
   const exportHref = `/api/exports/income${buildQuery(carried)}`;
 
   return (
@@ -296,6 +299,7 @@ export default async function IncomePage({
                           canVoid && (
                             <RowVoidForm
                               action={voidIncomeAction.bind(null, row.id)}
+                              returnTo={returnTo}
                               what={row.description}
                               placeholder="e.g. Entered twice"
                             />
@@ -326,6 +330,7 @@ export default async function IncomePage({
               <h2 className="mb-3 text-sm font-semibold text-content">Record income</h2>
               <CashbookForm
                 action={recordIncomeAction}
+                returnTo={returnTo}
                 categories={categories}
                 accounts={accounts}
                 today={today}

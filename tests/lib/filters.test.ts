@@ -15,6 +15,7 @@ import {
   parseSearch,
   parseSort,
   resolveDateRange,
+  sanitiseFilterQuery,
   withParam,
 } from '@/lib/filters';
 
@@ -237,6 +238,61 @@ describe('pagination', () => {
     expect(clampPage(4, 260, 50)).toBe(4);
     expect(clampPage(9, 260, 50)).toBe(6);
     expect(clampPage(1, 0, 50)).toBe(1);
+  });
+});
+
+describe('the return trip from a form', () => {
+  /**
+   * Recording or voiding a cashbook row posts to a server action and lands back
+   * on the list. The query string comes back through a hidden form field, which
+   * makes it untrusted input on the way to a redirect.
+   */
+  it('keeps the filters the list was showing', () => {
+    expect(sanitiseFilterQuery('period=last-month&q=rent&category=5')).toBe(
+      'period=last-month&q=rent&category=5',
+    );
+  });
+
+  it('drops anything that is not a filter key', () => {
+    expect(sanitiseFilterQuery('q=rent&evil=1&__proto__=x&created=1')).toBe('q=rent');
+  });
+
+  /**
+   * The defence that matters: this takes a query string and returns a query
+   * string, so a redirect built from it cannot be pointed at another host or
+   * another path however the field is stuffed.
+   */
+  it('cannot be turned into an open redirect', () => {
+    for (const attack of [
+      'https://evil.example.com',
+      '//evil.example.com',
+      '/../../admin',
+      'q=x&next=https://evil.example.com',
+      'javascript:alert(1)',
+    ]) {
+      const result = sanitiseFilterQuery(attack);
+      expect(result).not.toContain('evil.example.com');
+      expect(result).not.toContain('javascript:');
+      expect(result.startsWith('/')).toBe(false);
+      expect(result.startsWith('http')).toBe(false);
+    }
+  });
+
+  it('shrugs off a missing or non-string field', () => {
+    expect(sanitiseFilterQuery(undefined)).toBe('');
+    expect(sanitiseFilterQuery(null)).toBe('');
+    expect(sanitiseFilterQuery(42)).toBe('');
+    expect(sanitiseFilterQuery(new File([], 'x'))).toBe('');
+  });
+
+  it('refuses a value long enough to be a payload rather than a filter', () => {
+    expect(sanitiseFilterQuery(`q=${'x'.repeat(500)}`)).toBe('');
+    expect(sanitiseFilterQuery(`q=${'x'.repeat(100)}`)).not.toBe('');
+  });
+
+  it('accepts the string with or without its leading question mark', () => {
+    expect(sanitiseFilterQuery('?q=rent')).toBe('q=rent');
+    expect(sanitiseFilterQuery('q=rent')).toBe('q=rent');
   });
 });
 
