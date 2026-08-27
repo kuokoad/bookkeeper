@@ -10,7 +10,7 @@ import {
   listPurchases,
 } from '@/services/purchase.service';
 import { listCategories, listProductOptions } from '@/services/catalog.service';
-import { listSupplierOptions } from '@/services/supplier.service';
+import { getTotalPayables, listSupplierOptions } from '@/services/supplier.service';
 import { listPaymentAccountOptions } from '@/services/payment-account.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
@@ -52,6 +52,8 @@ export default async function PurchasesPage({
     parsePurchaseFilters(params, today);
 
   const suppliers = listSupplierOptions(db, true);
+  // Shop-wide, deliberately outside the filter. See the note by the stats.
+  const payables = getTotalPayables(db);
   const categories = listCategories(db);
   const products = listProductOptions(db, true);
   const accounts = listPaymentAccountOptions(db, true);
@@ -169,7 +171,15 @@ export default async function PurchasesPage({
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/*
+        Four figures for the deliveries this filter selects, and one for the
+        shop. "You owe suppliers" is the whole payable balance and must NOT move
+        with the filter: narrowing to one month cannot reduce what the shop
+        actually owes, and an owner who looks here to decide whether they can
+        afford something needs the real number. The same split as the Products
+        page — the shop on top, the selection beside it.
+      */}
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat
           label="Deliveries"
           value={String(summary.count)}
@@ -178,9 +188,15 @@ export default async function PurchasesPage({
         <Stat label="Total cost" value={money(summary.total)} />
         <Stat label="Paid" value={money(summary.paid, { bare: true })} />
         <Stat
-          label="Still owing"
+          label="Owing on these"
           value={money(summary.outstanding, { bare: true })}
           tone={summary.outstanding > 0 ? 'warning' : 'default'}
+        />
+        <Stat
+          label="You owe suppliers"
+          value={money(payables)}
+          tone={payables > 0 ? 'warning' : 'default'}
+          hint="Accounts payable, whole shop"
         />
       </div>
 
