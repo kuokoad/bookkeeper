@@ -333,6 +333,61 @@ export function getSalesByProduct(db: Db, query: SalesReportQuery): SalesByProdu
     });
 }
 
+export interface TopProduct {
+  productId: number;
+  productName: string;
+  unit: string;
+  qtySold: Qty;
+  revenue: Minor;
+}
+
+/**
+ * The single product that brought in the most money in a window.
+ *
+ * `LIMIT 1` in SQL rather than the head of `getSalesByProduct`: naming one
+ * product is not a reason to carry every product the shop sold back from the
+ * database. On a shop with a long catalogue that is the difference between one
+ * row and a thousand.
+ *
+ * Revenue must be POSITIVE, which is not pedantry. A void is a mirror sale
+ * carrying negative quantities, so a product whose only trade in the window was
+ * later voided nets to zero — and a "top seller" that sold nothing is worse
+ * than showing no card at all.
+ *
+ * Ties break on the product id, which is the group key and therefore total:
+ * asked twice about the same figures, this names the same product both times. A
+ * headline that changes on refresh is a headline nobody believes.
+ */
+export function getTopProductByRevenue(db: Db, query: SalesReportQuery): TopProduct | null {
+  const row = db
+    .select({
+      productId: saleItems.productId,
+      productName: saleItems.productName,
+      unit: saleItems.unit,
+      qtySold: sql<number>`COALESCE(SUM(${saleItems.qtyMilli}), 0)`,
+      revenue: sql<number>`COALESCE(SUM(${saleItems.lineTotalMinor}), 0)`,
+    })
+    .from(saleItems)
+    .innerJoin(sales, eq(sales.id, saleItems.saleId))
+    .leftJoin(products, eq(products.id, saleItems.productId))
+    .where(linesMatching(query))
+    .groupBy(saleItems.productId)
+    .having(sql`SUM(${saleItems.lineTotalMinor}) > 0`)
+    .orderBy(desc(sql`SUM(${saleItems.lineTotalMinor})`), asc(saleItems.productId))
+    .limit(1)
+    .get();
+
+  if (row === undefined) return null;
+
+  return {
+    productId: row.productId,
+    productName: row.productName,
+    unit: row.unit,
+    qtySold: makeQty(row.qtySold),
+    revenue: minor(row.revenue),
+  };
+}
+
 export interface SalesByCategory {
   categoryId: number | null;
   categoryName: string;

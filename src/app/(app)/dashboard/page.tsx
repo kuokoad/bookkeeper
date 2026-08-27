@@ -9,7 +9,7 @@ import {
 } from '@/services/reporting/balances.service';
 import { getExpirySummary, getStockSummary, listProducts } from '@/services/catalog.service';
 import { getSalesSummary } from '@/services/sale.service';
-import { getSalesByDay } from '@/services/reporting/operations.service';
+import { getSalesByDay, getTopProductByRevenue } from '@/services/reporting/operations.service';
 import { getMoneyByMonth } from '@/services/reporting/money-trend';
 import { getReceivablesAgeing } from '@/services/reporting/ledger.service';
 import { getTotalReceivables } from '@/services/customer.service';
@@ -20,7 +20,7 @@ import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { add, subtract, sum, type Minor } from '@/domain/money';
-import { money, toBusinessDate } from '@/lib/format';
+import { money, quantity, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
 import { Donut, PairedBars, SplitBar, TrendLine } from '@/components/ui/chart';
 import { Clock } from '@/components/shared/clock';
@@ -170,6 +170,9 @@ export default async function DashboardPage({
   const todaySales = shows.sales ? getSalesSummary(db, today, today) : null;
   const rangeSales = shows.sales ? getSalesSummary(db, salesFrom, today) : null;
   const salesByDay = shows.sales ? getSalesByDay(db, { from: salesFrom, to: today }) : [];
+  const topProduct = shows.sales
+    ? getTopProductByRevenue(db, { from: salesFrom, to: today })
+    : null;
 
   const moneyMonths = shows.money ? getMoneyByMonth(db, today, 6) : [];
   const cashHeld = sum(paymentAccounts.map((account) => account.balance));
@@ -259,6 +262,52 @@ export default async function DashboardPage({
           <p className="mt-2 text-xs text-content-muted">
             Today: <span className="tabular font-medium text-content">{money(todaySales.total)}</span>
           </p>
+        </Card>
+        )}
+
+        {/*
+          No picker of its own, deliberately. It reads the window the Sales card
+          is set to — a second control bound to the same parameter would look
+          like an independent setting, and Spending's picker (which IS
+          independent) teaches exactly that reading. The window is named in
+          words below instead.
+        */}
+        {shows.sales && (
+        <Card title="Top selling product">
+          {topProduct === null ? (
+            <>
+              <p className="mb-1 text-2xl font-semibold text-content-muted">Nothing yet</p>
+              <p className="text-sm text-content-muted">
+                No product sold over the {RANGES[salesRange].label.toLowerCase()}.
+              </p>
+            </>
+          ) : (
+            <>
+              {/* Not `Headline`: it sets a tabular figure font, which is right
+                  for money and wrong for a name. */}
+              <p className="text-2xl font-semibold text-content">{topProduct.productName}</p>
+              <p className="mt-0.5 mb-3 text-xs text-content-muted">
+                By revenue · {RANGES[salesRange].label.toLowerCase()}
+              </p>
+              <dl className="flex gap-6">
+                <div>
+                  <dt className="text-xs text-content-muted">Revenue</dt>
+                  <dd className="tabular text-sm font-medium text-content">
+                    {money(topProduct.revenue)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-content-muted">Sold</dt>
+                  <dd className="tabular text-sm font-medium text-content">
+                    {quantity(topProduct.qtySold, topProduct.unit)}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-xs text-content-subtle">
+                Most money taken, not most units moved.
+              </p>
+            </>
+          )}
         </Card>
         )}
 
