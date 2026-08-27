@@ -5,6 +5,7 @@ import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { countProducts, getStockSummary, listCategories, listProducts } from '@/services/catalog.service';
+import { getSettings } from '@/services/settings.service';
 import { listSupplierOptions } from '@/services/supplier.service';
 import { money, quantity } from '@/lib/format';
 import { buildQuery, clampPage, type ActiveFilter } from '@/lib/filters';
@@ -58,6 +59,22 @@ export default async function ProductsPage({
   const direction = filters.direction ?? 'asc';
   const canCreate = can(user, 'products', 'create');
 
+
+  /*
+    "Negative stock" is only offered when it can mean something: the shop allows
+    it, or something has already gone negative. Otherwise it is a dropdown entry
+    that always returns nothing — and when a product DOES go negative it is a
+    recording error worth finding fast, so the option appears exactly then.
+  */
+  const negativeCount = countProducts(db, { stockStatus: 'negative' });
+  const stockStatusOptions = [
+    { value: 'in-stock', label: 'In stock' },
+    { value: 'low', label: 'Low or out' },
+    { value: 'out', label: 'Out of stock' },
+    ...(negativeCount > 0 || getSettings(db).allowNegativeStock
+      ? [{ value: 'negative', label: 'Negative stock' }]
+      : []),
+  ];
   const active: ActiveFilter[] = [];
   if (filters.search) active.push({ key: 'q', label: 'Search', value: filters.search });
   if (filters.categoryId !== undefined) {
@@ -221,12 +238,7 @@ export default async function ProductsPage({
             key: 'stock',
             label: 'Stock status',
             allLabel: 'Any stock level',
-            options: [
-              { value: 'in-stock', label: 'In stock' },
-              { value: 'low', label: 'Low or out' },
-              { value: 'out', label: 'Out of stock' },
-              { value: 'negative', label: 'Negative stock' },
-            ],
+            options: stockStatusOptions,
           },
           {
             kind: 'select',

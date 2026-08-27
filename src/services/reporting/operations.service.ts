@@ -196,6 +196,94 @@ export function getSalesByDay(db: Db, query: SalesReportQuery): SalesByDay[] {
     });
 }
 
+/**
+ * A day, or a customer, measured in LINES rather than receipts.
+ *
+ * These exist because "sales of Coca-Cola by day" has an obvious right answer
+ * and the receipt-level tables cannot give it. Filtering by product and then
+ * summing whole receipts reported a day on which somebody bought one Coke and
+ * five hundred cedis of rice as five hundred cedis of Coca-Cola.
+ *
+ * A deliberately narrower shape than `SalesByDay`, because a LINE has fewer
+ * facts than a receipt and pretending otherwise is how a wrong figure gets a
+ * familiar-looking column to sit in. There is no tax and no tax-inclusive
+ * total: tax is charged on the document, not stored per line, so it cannot
+ * honestly be apportioned. `revenue` is net of tax throughout.
+ */
+export interface SalesLinesByDay {
+  businessDate: string;
+  /** Receipts containing a matching line, not lines. */
+  saleCount: number;
+  revenue: Minor;
+  cost: Minor;
+  profit: Minor;
+}
+
+export interface SalesLinesByCustomer {
+  customerId: number | null;
+  customerName: string;
+  saleCount: number;
+  revenue: Minor;
+  cost: Minor;
+  profit: Minor;
+}
+
+const lineRevenue = sql<number>`COALESCE(SUM(${saleItems.lineTotalMinor}), 0)`;
+const lineCost = sql<number>`COALESCE(SUM(${saleItems.totalCostMinor}), 0)`;
+/** Receipts, not lines: two Cokes on one receipt is one customer served. */
+const lineSaleCount = sql<number>`COUNT(DISTINCT CASE WHEN ${sales.kind} = 'SALE' THEN ${sales.id} END)`;
+
+export function getSalesLinesByDay(db: Db, query: SalesReportQuery): SalesLinesByDay[] {
+  return db
+    .select({
+      businessDate: sales.businessDate,
+      saleCount: lineSaleCount,
+      revenue: lineRevenue,
+      cost: lineCost,
+    })
+    .from(saleItems)
+    .innerJoin(sales, eq(sales.id, saleItems.saleId))
+    .leftJoin(products, eq(products.id, saleItems.productId))
+    .where(linesMatching(query))
+    .groupBy(sales.businessDate)
+    .orderBy(asc(sales.businessDate))
+    .all()
+    .map((row) => ({
+      businessDate: row.businessDate,
+      saleCount: row.saleCount,
+      revenue: minor(row.revenue),
+      cost: minor(row.cost),
+      profit: subtract(minor(row.revenue), minor(row.cost)),
+    }));
+}
+
+export function getSalesLinesByCustomer(db: Db, query: SalesReportQuery): SalesLinesByCustomer[] {
+  return db
+    .select({
+      customerId: sales.customerId,
+      customerName: customers.name,
+      saleCount: lineSaleCount,
+      revenue: lineRevenue,
+      cost: lineCost,
+    })
+    .from(saleItems)
+    .innerJoin(sales, eq(sales.id, saleItems.saleId))
+    .leftJoin(products, eq(products.id, saleItems.productId))
+    .leftJoin(customers, eq(customers.id, sales.customerId))
+    .where(linesMatching(query))
+    .groupBy(sales.customerId)
+    .orderBy(desc(lineRevenue))
+    .all()
+    .map((row) => ({
+      customerId: row.customerId,
+      customerName: row.customerName ?? 'Walk-in customers',
+      saleCount: row.saleCount,
+      revenue: minor(row.revenue),
+      cost: minor(row.cost),
+      profit: subtract(minor(row.revenue), minor(row.cost)),
+    }));
+}
+
 export interface SalesByProduct {
   productId: number;
   productName: string;
@@ -665,7 +753,59 @@ export interface StockMovementSummary {
 }
 
 /** How much of each product moved in a period, and which way. */
-export function getStockMovementSummary(db: Db, period: Period): StockMovementSummary[] {
+/**
+ * What moved, for the products a filter selects.
+ *
+ * Takes the same narrowing as the valuation above it on the report. They used
+ * to disagree: filtering the inventory report to one category narrowed the
+ * valuation and left the movement table showing the whole shop, so the page
+ * presented two tables about two different sets of products under one filter.
+ */
+export function getStockMovementSummary(
+  db: Db,
+  period: Period,
+  query: StockValuationQuery = {},
+): StockMovementSummary[] {
+  const conditions = [
+    gte(stockLedger.businessDate, period.from),
+    lte(stockLedger.businessDate, period.to),
+  ];
+
+  if (query.categoryId !== undefined) conditions.push(eq(products.categoryId, query.categoryId));
+
+  if (query.supplierId !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${purchaseItems}
+                  JOIN ${purchases} ON ${purchases.id} = ${purchaseItems.purchaseId}
+                  WHERE ${purchaseItems.productId} = ${stockLedger.productId}
+                    AND ${purchases.supplierId} = ${query.supplierId})`,
+    );
+  }
+
+  /*
+    Stock status describes the product's position NOW, not the movements, so it
+    narrows which products appear rather than which rows are summed. That keeps
+    "out of stock" on the movement table meaning what it means on the valuation:
+    these products, and what happened to them in the period.
+  */
+  if (query.stockStatus !== undefined) {
+    const threshold = sql`COALESCE(${products.minStockMilli}, ${getLowStockThreshold(db)})`;
+    switch (query.stockStatus) {
+      case 'low':
+        conditions.push(sql`${products.qtyOnHandMilli} <= ${threshold}`);
+        break;
+      case 'out':
+        conditions.push(sql`${products.qtyOnHandMilli} <= 0`);
+        break;
+      case 'negative':
+        conditions.push(sql`${products.qtyOnHandMilli} < 0`);
+        break;
+      case 'in-stock':
+        conditions.push(sql`${products.qtyOnHandMilli} > ${threshold}`);
+        break;
+    }
+  }
+
   return db
     .select({
       productId: stockLedger.productId,
@@ -680,12 +820,7 @@ export function getStockMovementSummary(db: Db, period: Period): StockMovementSu
     })
     .from(stockLedger)
     .innerJoin(products, eq(products.id, stockLedger.productId))
-    .where(
-      and(
-        gte(stockLedger.businessDate, period.from),
-        lte(stockLedger.businessDate, period.to),
-      ),
-    )
+    .where(and(...conditions))
     .groupBy(stockLedger.productId)
     .orderBy(asc(products.name))
     .all()

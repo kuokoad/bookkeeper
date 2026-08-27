@@ -8,6 +8,8 @@ import {
   getSalesByDay,
   getSalesByPaymentMethod,
   getSalesByProduct,
+  getSalesLinesByCustomer,
+  getSalesLinesByDay,
 } from '@/services/reporting/operations.service';
 import { formatDate, money, quantity, toBusinessDate } from '@/lib/format';
 import { mulDiv, sum } from '@/domain/money';
@@ -40,15 +42,61 @@ export default async function SalesReportPage({
   const today = toBusinessDate();
   const { filters, range: period, preset, carried } = parseSalesReportFilters(params, today);
 
-  const byDay = getSalesByDay(db, filters);
+  /*
+    A product or a category is a property of a LINE, so once one is chosen every
+    money figure on this page becomes line money: the product's revenue, net of
+    tax, and the product's cost. A line has no tender, no invoice discount and
+    no tax of its own — those belong to the receipt — so the receipt-level
+    tables are swapped for line-level ones rather than being left to report a
+    whole receipt's total under a single product's name.
+  */
+  const byLine = filters.productId !== undefined || filters.categoryId !== undefined;
+
   const byProduct = getSalesByProduct(db, filters);
   const byCategory = getSalesByCategory(db, filters);
-  const byCustomer = getSalesByCustomer(db, filters);
-  const byMethod = getSalesByPaymentMethod(db, filters);
 
-  const totalSales = sum(byDay.map((row) => row.total));
-  const totalProfit = sum(byDay.map((row) => row.profit));
-  const saleCount = byDay.reduce((total, row) => total + row.saleCount, 0);
+  const byDay = byLine ? [] : getSalesByDay(db, filters);
+  const byCustomer = byLine ? [] : getSalesByCustomer(db, filters);
+  const byMethod = byLine ? [] : getSalesByPaymentMethod(db, filters);
+
+  const linesByDay = byLine ? getSalesLinesByDay(db, filters) : [];
+  const linesByCustomer = byLine ? getSalesLinesByCustomer(db, filters) : [];
+
+  const days = byLine
+    ? linesByDay.map((row) => ({
+        businessDate: row.businessDate,
+        saleCount: row.saleCount,
+        revenue: row.revenue,
+        cost: row.cost,
+        profit: row.profit,
+      }))
+    : byDay.map((row) => ({
+        businessDate: row.businessDate,
+        saleCount: row.saleCount,
+        revenue: row.total,
+        cost: row.cogs,
+        profit: row.profit,
+      }));
+
+  const customerRows = byLine
+    ? linesByCustomer.map((row) => ({
+        key: row.customerId,
+        name: row.customerName,
+        saleCount: row.saleCount,
+        revenue: row.revenue,
+        profit: row.profit,
+      }))
+    : byCustomer.map((row) => ({
+        key: row.customerId,
+        name: row.customerName,
+        saleCount: row.saleCount,
+        revenue: row.total,
+        profit: row.profit,
+      }));
+
+  const totalSales = sum(days.map((row) => row.revenue));
+  const totalProfit = sum(days.map((row) => row.profit));
+  const saleCount = days.reduce((total, row) => total + row.saleCount, 0);
 
   const customers = listCustomerOptions(db, true);
   const categories = listCategories(db);
@@ -98,8 +146,6 @@ export default async function SalesReportPage({
     });
   }
 
-  const narrowedByLine = filters.productId !== undefined || filters.categoryId !== undefined;
-
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
@@ -144,17 +190,16 @@ export default async function SalesReportPage({
         ]}
       />
 
-      {narrowedByLine && (
+      {byLine && (
         <p className="mb-4 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-xs text-content-muted no-print">
-          Filtering by product or category means two slightly different things, and it is worth
-          knowing which is which. <strong>By product</strong> and <strong>by category</strong> below
-          count only the matching lines. The other tables count whole sales that CONTAINED the
-          product, because a receipt&rsquo;s tax, discount and tender belong to the receipt and
-          cannot be split across its lines.
+          Every figure below is for the matching lines only, net of tax — this product&rsquo;s
+          revenue and this product&rsquo;s cost, not the totals of the receipts it appeared on.
+          A line has no tender, no invoice discount and no tax of its own; those belong to the
+          whole receipt, which is why there is no payment-method breakdown while this filter is on.
         </p>
       )}
 
-      {byDay.length === 0 ? (
+      {days.length === 0 ? (
         <EmptyState
           title="No sales in this period"
           description="Try a different date range, or record a sale to see it here."
@@ -162,11 +207,11 @@ export default async function SalesReportPage({
       ) : (
         <>
           <div className="mb-6 grid gap-3 sm:grid-cols-4">
-            <Stat label="Total sales" value={money(totalSales)} />
+            <Stat label={byLine ? 'Product revenue (net)' : 'Total sales'} value={money(totalSales)} />
             <Stat label="Gross profit" value={money(totalProfit)} tone="success" />
-            <Stat label="Number of sales" value={String(saleCount)} />
+            <Stat label={byLine ? 'Receipts involved' : 'Number of sales'} value={String(saleCount)} />
             <Stat
-              label="Average sale"
+              label={byLine ? 'Average per receipt' : 'Average sale'}
               value={money(saleCount === 0 ? totalSales : mulDiv(totalSales, 1, saleCount))}
             />
           </div>
@@ -176,19 +221,19 @@ export default async function SalesReportPage({
             <THead>
               <TH>Date</TH>
               <TH numeric>Sales</TH>
-              <TH numeric>Revenue</TH>
+              <TH numeric>{byLine ? 'Revenue (net)' : 'Revenue'}</TH>
               <TH numeric>Cost</TH>
               <TH numeric>Profit</TH>
             </THead>
             <tbody>
-              {byDay.map((row) => (
+              {days.map((row) => (
                 <TR key={row.businessDate}>
                   <TD>
                     <span className="whitespace-nowrap">{formatDate(row.businessDate)}</span>
                   </TD>
                   <TD numeric>{row.saleCount}</TD>
-                  <TD numeric>{money(row.total, { bare: true })}</TD>
-                  <TD numeric>{money(row.cogs, { bare: true })}</TD>
+                  <TD numeric>{money(row.revenue, { bare: true })}</TD>
+                  <TD numeric>{money(row.cost, { bare: true })}</TD>
                   <TD numeric>{money(row.profit, { bare: true })}</TD>
                 </TR>
               ))}
@@ -261,6 +306,13 @@ export default async function SalesReportPage({
 
             <div>
               <h2 className="mb-3 text-sm font-semibold text-content">By payment method</h2>
+              {byLine ? (
+                <p className="rounded-xl border border-dashed border-line-strong bg-surface-raised px-4 py-6 text-sm text-content-muted">
+                  Not shown while a product or category filter is on. Money is handed over for a
+                  whole receipt, so there is no honest way to say how much of a cash payment was
+                  for one product on it.
+                </p>
+              ) : (
               <TableWrap>
                 <THead>
                   <TH>Method</TH>
@@ -281,10 +333,13 @@ export default async function SalesReportPage({
                   </TR>
                 </tbody>
               </TableWrap>
-              <p className="mt-2 text-xs text-content-subtle">
-                This is what was actually handed over, so it is less than total sales when
-                something was sold on credit.
-              </p>
+              )}
+              {!byLine && (
+                <p className="mt-2 text-xs text-content-subtle">
+                  This is what was actually handed over, so it is less than total sales when
+                  something was sold on credit.
+                </p>
+              )}
             </div>
           </div>
 
@@ -292,16 +347,16 @@ export default async function SalesReportPage({
           <TableWrap>
             <THead>
               <TH>Customer</TH>
-              <TH numeric>Sales</TH>
-              <TH numeric>Total</TH>
+              <TH numeric>{byLine ? 'Receipts' : 'Sales'}</TH>
+              <TH numeric>{byLine ? 'Revenue (net)' : 'Total'}</TH>
               <TH numeric>Profit</TH>
             </THead>
             <tbody>
-              {byCustomer.map((row) => (
-                <TR key={row.customerId ?? 'walk-in'}>
-                  <TD>{row.customerName}</TD>
+              {customerRows.map((row) => (
+                <TR key={row.key ?? 'walk-in'}>
+                  <TD>{row.name}</TD>
                   <TD numeric>{row.saleCount}</TD>
-                  <TD numeric>{money(row.total, { bare: true })}</TD>
+                  <TD numeric>{money(row.revenue, { bare: true })}</TD>
                   <TD numeric>{money(row.profit, { bare: true })}</TD>
                 </TR>
               ))}
