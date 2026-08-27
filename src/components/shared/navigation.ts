@@ -107,9 +107,13 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     ],
   },
   {
-    // The two shop-owner guides, by name. A single "Help" item under a "Help"
+    // The shop-owner guides, by name. A single "Help" item under a "Help"
     // heading said the word twice and the page it opened was only a list of
-    // these two; this is the same click count with the destination on it.
+    // these; this is the same click count with the destination on it.
+    //
+    // No `defaultOpen`, so the section is a single folded row until you are
+    // inside it — six titles is the right thing to find when you go looking for
+    // help, and the wrong thing to scroll past every day on the way to Sales.
     //
     // No module on either, like the dashboard: the person who most needs
     // telling how the till works is the one holding the fewest permissions.
@@ -120,6 +124,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { href: '/help/getting-started', label: 'Getting started', icon: 'help' },
       { href: '/help/finding-things', label: 'Finding things', icon: 'help' },
+      { href: '/help/fixing-a-mistake', label: 'Fixing a mistake', icon: 'help' },
+      { href: '/help/managing-tax', label: 'Managing tax', icon: 'help' },
+      { href: '/help/closing-a-period', label: 'Closing a period', icon: 'help' },
+      { href: '/help/backups', label: 'Backups', icon: 'help' },
     ],
   },
 ];

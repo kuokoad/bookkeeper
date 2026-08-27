@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { getCurrentUser } from '@/lib/auth/current-user';
-import { findHelpPage, readHelpPage, HELP_PAGES } from '@/lib/help';
+import { findHelpPage, readHelpPage } from '@/lib/help';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page';
 import { Markdown } from '@/components/shared/markdown';
@@ -54,8 +54,6 @@ export default async function HelpArticlePage({
     );
   }
 
-  const others = HELP_PAGES.filter((other) => other.slug !== page.slug);
-
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
@@ -74,20 +72,16 @@ export default async function HelpArticlePage({
 
       <Markdown blocks={blocks} />
 
-      {others.length > 0 && (
-        <div className="mt-10 border-t border-line pt-4">
-          <p className="mb-2 text-xs text-content-subtle">Also here</p>
-          <div className="flex flex-wrap gap-2">
-            {others.map((other) => (
-              <Link key={other.slug} href={`/help/${other.slug}`}>
-                <Button variant="secondary" size="sm">
-                  {other.title}
-                </Button>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
+      {/*
+        One line, not a button for every other guide. The menu already lists
+        them all, and a strip that grows by one every time a page is written
+        ends up longer than the thing a reader came for.
+      */}
+      <div className="mt-10 border-t border-line pt-4">
+        <Link href="/help" className="text-sm font-medium text-accent hover:underline">
+          All the guides
+        </Link>
+      </div>
     </div>
   );
 }

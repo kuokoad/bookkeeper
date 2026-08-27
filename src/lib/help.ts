@@ -53,6 +53,38 @@ export const HELP_PAGES: readonly HelpPage[] = [
     file: 'docs/how-to/find-anything.md',
     read: () => readFileSync(join(process.cwd(), 'docs/how-to/find-anything.md'), 'utf8'),
   },
+  {
+    slug: 'fixing-a-mistake',
+    title: 'Fixing a mistake',
+    blurb:
+      'Undo a wrong sale, take goods back, or correct a count — without deleting anything.',
+    file: 'docs/how-to/fix-a-mistake.md',
+    read: () => readFileSync(join(process.cwd(), 'docs/how-to/fix-a-mistake.md'), 'utf8'),
+  },
+  {
+    slug: 'managing-tax',
+    title: 'Managing tax',
+    blurb:
+      "Set up Ghana's three taxes, and change a rate when the budget moves one.",
+    file: 'docs/how-to/manage-tax.md',
+    read: () => readFileSync(join(process.cwd(), 'docs/how-to/manage-tax.md'), 'utf8'),
+  },
+  {
+    slug: 'closing-a-period',
+    title: 'Closing a period',
+    blurb:
+      'Lock a month once it is filed, close a year, and produce the pack your accountant asks for.',
+    file: 'docs/how-to/close-a-period.md',
+    read: () => readFileSync(join(process.cwd(), 'docs/how-to/close-a-period.md'), 'utf8'),
+  },
+  {
+    slug: 'backups',
+    title: 'Backups',
+    blurb:
+      'The routine that keeps the books safe, and what to do on a bad day.',
+    file: 'docs/how-to/back-up-and-restore.md',
+    read: () => readFileSync(join(process.cwd(), 'docs/how-to/back-up-and-restore.md'), 'utf8'),
+  },
 ];
 
 export function findHelpPage(slug: string): HelpPage | undefined {
