@@ -16,6 +16,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // `server-only` throws on import outside a server bundle, which is the
+      // whole point of it. Under the test runner there is no bundle to be on
+      // the wrong side of, so it stands in for nothing and the modules that
+      // declare it stay testable.
+      'server-only': fileURLToPath(new URL('./tests/helpers/server-only.ts', import.meta.url)),
     },
   },
 });

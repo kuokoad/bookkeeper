@@ -21,7 +21,8 @@ export type IconName =
   | 'accounts'
   | 'reports'
   | 'users'
-  | 'settings';
+  | 'settings'
+  | 'help';
 
 export interface NavItem {
   href: string;
@@ -103,6 +104,22 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { href: '/users', label: 'Users', icon: 'users', module: 'users' },
       { href: '/settings', label: 'Settings', icon: 'settings', module: 'settings' },
+    ],
+  },
+  {
+    // The two shop-owner guides, by name. A single "Help" item under a "Help"
+    // heading said the word twice and the page it opened was only a list of
+    // these two; this is the same click count with the destination on it.
+    //
+    // No module on either, like the dashboard: the person who most needs
+    // telling how the till works is the one holding the fewest permissions.
+    // These must stay in step with `HELP_PAGES` in src/lib/help.ts — that file
+    // reads the filesystem, so it cannot be imported here, and a test holds the
+    // two lists together instead.
+    heading: 'Help',
+    items: [
+      { href: '/help/getting-started', label: 'Getting started', icon: 'help' },
+      { href: '/help/finding-things', label: 'Finding things', icon: 'help' },
     ],
   },
 ];
