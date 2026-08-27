@@ -882,10 +882,20 @@ check('offers stock policy', setHtml.includes('Allow selling stock you do not ha
 // The demo database has transactions, so the currency must be pinned.
 check('currency is locked once there are transactions', setHtml.includes('currency is fixed'));
 check('says changes are recorded', setHtml.includes('recorded in the audit log'));
-// Tax is off in the demo shop. The tax fields must still be present in the
-// form, or saving would submit no tax name and fail on a field nobody can see.
-check('tax fields still submit when tax is off', setHtml.includes('name="taxLabel"'));
-check('  and so does "prices include tax"', setHtml.includes('name="taxInclusive"'));
+/*
+  Tax is off in the demo shop, and the form still has to CARRY its tax fields:
+  a control nobody can see submits nothing, and saving then fails on a field
+  the owner cannot find to fix.
+
+  This used to assert `name="taxLabel"`. The tax-components work replaced the
+  shop's single tax name with a table of components, each carrying its own
+  name, rate and basis, so that field is gone BY DESIGN — and this check went
+  on failing against a settings page that was correct, which is worse than no
+  check at all. What remains on this form is the inclusive flag, kept in the
+  DOM behind `hidden` for exactly the reason above.
+*/
+check('the settings form still offers Tax when tax is off', /<h2[^>]*>Tax<\/h2>/.test(setHtml));
+check('tax fields still submit when tax is off', setHtml.includes('name="taxInclusive"'));
 check('links to its own change history', setHtml.includes('entity=business_settings'));
 
 // The nav promised this page with a "Soon" tag until it existed.
