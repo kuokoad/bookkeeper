@@ -28,6 +28,17 @@ no mobile network is hard-coded.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, database schema and
 accounting model.
 
+## Documentation
+
+[**docs/**](docs/README.md) splits by what you are trying to do:
+
+| | |
+| --- | --- |
+| **Learn it** | [Your first hour](docs/tutorials/first-hour.md) (shop owner) · [Developer setup](docs/tutorials/developer-setup.md) |
+| **Get a job done** | [Find anything](docs/how-to/find-anything.md) · [Fix a mistake](docs/how-to/fix-a-mistake.md) · [Manage tax](docs/how-to/manage-tax.md) · [Close a period](docs/how-to/close-a-period.md) · [Back up and restore](docs/how-to/back-up-and-restore.md) |
+| **Look it up** | [Commands](docs/reference/commands.md) · [Routes and permissions](docs/reference/routes-and-permissions.md) · [Filters](docs/reference/filters.md) · [Money and quantity](docs/reference/money-and-quantity.md) |
+| **Understand why** | [Filtering](docs/explanation/filtering.md) · [Inventory costing](docs/explanation/inventory-costing.md) · [Tax in Ghana](docs/explanation/tax-in-ghana.md) |
+
 ---
 
 ## Getting started

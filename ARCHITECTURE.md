@@ -3,6 +3,15 @@
 > Status: **Stage 1 design, approved**. This document is the contract the
 > implementation follows. Change it deliberately, not silently.
 
+This is the **design record**. For task-shaped and reference material see
+[docs/](docs/README.md) — it links back here rather than restating §3 (precision),
+§4 (double entry), §5 (schema), §7 (permissions) or §9 (testing).
+
+Three areas that shipped after this document was written are explained there rather
+than here: [filtering](docs/explanation/filtering.md),
+[inventory costing and batches](docs/explanation/inventory-costing.md), and
+[tax components](docs/explanation/tax-in-ghana.md).
+
 ---
 
 ## 0. Confirmed decisions
