@@ -373,9 +373,12 @@ export default async function AccountDetailPage({
       )}
 
       <p className="mt-4 text-xs text-content-subtle">
-        The balance column runs on from the opening balance, so it carries across pages and never
-        restarts at zero when a date filter is applied. Everything here reads the ledger; nothing on
-        this page can change a balance.
+        This is the full answer to &ldquo;why is the balance{' '}
+        {money(account.balance, { currencyCode: currency })}?&rdquo; — every line that moved money
+        through this account, newest first, with the balance after each one. The column runs on from
+        the opening balance, so it carries across pages and never restarts at zero when a date
+        filter is applied. Everything here reads the ledger; nothing on this page can change a
+        balance.
       </p>
     </div>
   );
