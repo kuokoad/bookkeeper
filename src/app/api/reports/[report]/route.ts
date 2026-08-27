@@ -13,6 +13,8 @@ import {
   getSalesByDay,
   getSalesByPaymentMethod,
   getSalesByProduct,
+  getSalesLinesByCustomer,
+  getSalesLinesByDay,
   getStockMovementSummary,
   getStockValuation,
 } from '@/services/reporting/operations.service';
@@ -152,11 +154,36 @@ function buildTable(report: string, request: NextRequest): Table | null {
 
     case 'sales': {
       const salesQuery = parseSalesReportFilters(params, range.to).filters;
+      /*
+        The same line-versus-receipt switch the report page makes, so the file
+        and the screen cannot answer the question two different ways. See the
+        note on SalesLinesByDay for why a line has no tender and no tax.
+      */
+      const salesByLine =
+        salesQuery.productId !== undefined || salesQuery.categoryId !== undefined;
+
       const byProduct = getSalesByProduct(db, salesQuery);
-      const byDay = getSalesByDay(db, salesQuery);
       const byCategory = getSalesByCategory(db, salesQuery);
-      const byCustomer = getSalesByCustomer(db, salesQuery);
-      const byMethod = getSalesByPaymentMethod(db, salesQuery);
+      const byMethod = salesByLine ? [] : getSalesByPaymentMethod(db, salesQuery);
+
+      const byDay = salesByLine
+        ? getSalesLinesByDay(db, salesQuery).map((row) => ({
+            businessDate: row.businessDate,
+            saleCount: row.saleCount,
+            total: row.revenue,
+            cogs: row.cost,
+            profit: row.profit,
+          }))
+        : getSalesByDay(db, salesQuery);
+
+      const byCustomer = salesByLine
+        ? getSalesLinesByCustomer(db, salesQuery).map((row) => ({
+            customerName: row.customerName,
+            saleCount: row.saleCount,
+            total: row.revenue,
+            profit: row.profit,
+          }))
+        : getSalesByCustomer(db, salesQuery);
 
       // One flat file with a "section" column, so a spreadsheet can filter it.
       const rows: CsvValue[][] = [
@@ -244,8 +271,9 @@ function buildTable(report: string, request: NextRequest): Table | null {
     }
 
     case 'inventory': {
-      const valuation = getStockValuation(db, parseInventoryReportFilters(params).filters);
-      const movement = getStockMovementSummary(db, range);
+      const inventoryQuery = parseInventoryReportFilters(params).filters;
+      const valuation = getStockValuation(db, inventoryQuery);
+      const movement = getStockMovementSummary(db, range, inventoryQuery);
       const movementByProduct = new Map(movement.map((row) => [row.productId, row]));
 
       const rows: CsvValue[][] = valuation.rows.map((row): CsvValue[] => {

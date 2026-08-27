@@ -18,7 +18,8 @@ import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
 import { describePeriod } from '@/components/shared/period-filter';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { listCategories } from '@/services/catalog.service';
+import { countProducts, listCategories } from '@/services/catalog.service';
+import { getSettings } from '@/services/settings.service';
 import { listSupplierOptions } from '@/services/supplier.service';
 import { buildQuery, type ActiveFilter } from '@/lib/filters';
 import { parseInventoryReportFilters, parseReportPeriod, type SearchParams } from '@/lib/list-filters';
@@ -42,7 +43,7 @@ export default async function InventoryReportPage({
 
   const valuation = getStockValuation(db, filters);
   const ageing = getExpiryAgeing(db, today);
-  const movement = getStockMovementSummary(db, period);
+  const movement = getStockMovementSummary(db, period, filters);
   const inventoryGl = getAccountBalanceByCode(db, ACCOUNT_CODES.INVENTORY);
 
   /*
@@ -61,6 +62,22 @@ export default async function InventoryReportPage({
   const categories = listCategories(db);
   const suppliers = listSupplierOptions(db, true);
 
+
+  /*
+    "Negative stock" is only offered when it can mean something: the shop allows
+    it, or something has already gone negative. Otherwise it is a dropdown entry
+    that always returns nothing — and when a product DOES go negative it is a
+    recording error worth finding fast, so the option appears exactly then.
+  */
+  const negativeCount = countProducts(db, { stockStatus: 'negative' });
+  const stockStatusOptions = [
+    { value: 'in-stock', label: 'In stock' },
+    { value: 'low', label: 'Low or out' },
+    { value: 'out', label: 'Out of stock' },
+    ...(negativeCount > 0 || getSettings(db).allowNegativeStock
+      ? [{ value: 'negative', label: 'Negative stock' }]
+      : []),
+  ];
   const active: ActiveFilter[] = [];
   if (filters.categoryId !== undefined) {
     active.push({
@@ -139,20 +156,15 @@ export default async function InventoryReportPage({
             key: 'stock',
             label: 'Stock status',
             allLabel: 'Any stock level',
-            options: [
-              { value: 'in-stock', label: 'In stock' },
-              { value: 'low', label: 'Low or out' },
-              { value: 'out', label: 'Out of stock' },
-              { value: 'negative', label: 'Negative stock' },
-            ],
+            options: stockStatusOptions,
           },
         ]}
       />
 
       {isFiltered && (
         <p className="mb-4 text-xs text-content-subtle no-print">
-          The valuation below covers only the products matching these filters. The stock-movement
-          table underneath is not narrowed by them — it reads the ledger for the whole shop.
+          Both tables below cover only the products matching these filters — the valuation and
+          the stock movement underneath it.
         </p>
       )}
 

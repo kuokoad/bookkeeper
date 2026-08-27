@@ -17,6 +17,8 @@ import {
   getSalesByDay,
   getSalesByPaymentMethod,
   getSalesByProduct,
+  getSalesLinesByCustomer,
+  getSalesLinesByDay,
   getStockValuation,
 } from '@/services/reporting/operations.service';
 import { getProfitAndLoss, getCashFlow } from '@/services/reporting/financial.service';
@@ -179,12 +181,89 @@ describe('the sales report', () => {
   });
 
   /**
-   * On the sale-level tables the same filter means "sales that CONTAINED it",
-   * and the figures stay whole-sale figures — a receipt's tax and tender cannot
-   * be split across its lines. The report page says so above the tables; this
-   * pins the behaviour so it cannot drift away from what the page claims.
+   * The bug this replaced: filtering to one product and summing whole receipts
+   * reported a day on which somebody bought one Coke and six thousand cedis of
+   * rice as six thousand cedis of Coca-Cola. A product's revenue is its lines.
    */
-  it('keeps whole-sale figures on the sale-level tables', () => {
+  it('reports a day in line money, not in whole receipts', () => {
+    createSale(
+      context.db,
+      {
+        businessDate: '2026-08-05',
+        items: [
+          { productId: COKE, qty: u(10) }, // 50.00
+          { productId: RICE, qty: u(1) }, // 60.00
+        ],
+        tenders: [{ paymentAccountId: CASH, amount: m(11_000) }],
+      },
+      ACTOR,
+    );
+
+    const byDay = getSalesLinesByDay(context.db, { ...AUGUST, productId: COKE });
+    expect(byDay).toHaveLength(1);
+    expect(byDay[0]?.revenue).toBe(5_000);
+    // The receipt is counted once, not once per line on it.
+    expect(byDay[0]?.saleCount).toBe(1);
+
+    // The unfiltered receipt-level table still reports the whole receipt.
+    expect(getSalesByDay(context.db, AUGUST)[0]?.total).toBe(11_000);
+  });
+
+  it('reports a customer in line money too', () => {
+    createSale(
+      context.db,
+      {
+        businessDate: '2026-08-05',
+        customerId: KOFI,
+        items: [
+          { productId: COKE, qty: u(10) },
+          { productId: RICE, qty: u(1) },
+        ],
+        tenders: [{ paymentAccountId: CASH, amount: m(11_000) }],
+      },
+      ACTOR,
+    );
+
+    const byCustomer = getSalesLinesByCustomer(context.db, { ...AUGUST, productId: COKE });
+    expect(byCustomer).toHaveLength(1);
+    expect(byCustomer[0]?.customerName).toBe('Kofi Mensah');
+    expect(byCustomer[0]?.revenue).toBe(5_000);
+  });
+
+  it('counts one receipt once however many matching lines it carries', () => {
+    // Two Coca-Cola lines on the same receipt — a split line, which happens.
+    createSale(
+      context.db,
+      {
+        businessDate: '2026-08-05',
+        items: [
+          { productId: COKE, qty: u(4) },
+          { productId: COKE, qty: u(6) },
+        ],
+        tenders: [{ paymentAccountId: CASH, amount: m(5_000) }],
+      },
+      ACTOR,
+    );
+
+    const byDay = getSalesLinesByDay(context.db, { ...AUGUST, productId: COKE });
+    expect(byDay[0]?.saleCount).toBe(1);
+    expect(byDay[0]?.revenue).toBe(5_000);
+  });
+
+  it('gives line revenue that agrees with the by-product table', () => {
+    sale('2026-08-05', COKE, 10, 500);
+    sale('2026-08-06', COKE, 4, 500);
+    sale('2026-08-07', RICE, 1, 6_000);
+
+    const filters = { ...AUGUST, productId: COKE };
+    const fromDays = sum(getSalesLinesByDay(context.db, filters).map((row) => row.revenue));
+    const fromProducts = sum(getSalesByProduct(context.db, filters).map((row) => row.revenue));
+
+    expect(fromDays).toBe(fromProducts);
+    expect(fromDays).toBe(7_000);
+  });
+
+  it('narrows line money by category as well as by product', () => {
     createSale(
       context.db,
       {
@@ -198,9 +277,16 @@ describe('the sales report', () => {
       ACTOR,
     );
 
-    const byDay = getSalesByDay(context.db, { ...AUGUST, productId: COKE });
-    expect(byDay).toHaveLength(1);
-    expect(byDay[0]?.total).toBe(11_000);
+    expect(getSalesLinesByDay(context.db, { ...AUGUST, categoryId: DRINKS })[0]?.revenue).toBe(
+      5_000,
+    );
+    expect(getSalesLinesByDay(context.db, { ...AUGUST, categoryId: FOOD })[0]?.revenue).toBe(6_000);
+  });
+
+  it('says nothing for a product that did not sell in the period', () => {
+    sale('2026-08-05', COKE, 10, 500);
+    expect(getSalesLinesByDay(context.db, { ...AUGUST, productId: RICE })).toEqual([]);
+    expect(getSalesLinesByCustomer(context.db, { ...AUGUST, productId: RICE })).toEqual([]);
   });
 
   it('returns nothing at all for a period with no trading', () => {
