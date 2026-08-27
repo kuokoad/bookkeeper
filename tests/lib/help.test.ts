@@ -82,9 +82,12 @@ describe('reading a page', () => {
     // If `**bold**` reaches the screen with its asterisks, the parser missed a
     // construct the documentation actually uses.
     for (const page of HELP_PAGES) {
+      // A SINGLE asterisk counts. The parser had no italics for a while, and
+      // `*accounts*` reached the screen wearing them — this check looked only
+      // for the doubled kind, so nothing said so.
       const leaked = spans(readHelpPage(page))
         .filter((span) => span.kind === 'text')
-        .filter((span) => /\*\*|`|\]\(/.test(span.text));
+        .filter((span) => /\*|`|\]\(/.test(span.text));
       expect(leaked.map((span) => span.text), page.slug).toEqual([]);
     }
   });

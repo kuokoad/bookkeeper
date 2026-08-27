@@ -66,8 +66,27 @@ describe('inline spans', () => {
     ]);
   });
 
-  it('keeps an unmatched asterisk as a character rather than eating it', () => {
+  it('reads italics, and does not mistake them for bold', () => {
+    expect(parseInline('the *accounts* survived, **truly**')).toEqual([
+      { kind: 'text', text: 'the ' },
+      { kind: 'italic', text: 'accounts' },
+      { kind: 'text', text: ' survived, ' },
+      { kind: 'bold', text: 'truly' },
+    ]);
+  });
+
+  it('leaves arithmetic alone', () => {
+    // An asterisk followed by a space is a multiplication sign, not the start
+    // of an emphasis that would run to the next one and tip half a sentence
+    // sideways.
     expect(parseInline('2 * 3 = 6')).toEqual([{ kind: 'text', text: '2 * 3 = 6' }]);
+    expect(parseInline('a * b * c')).toEqual([{ kind: 'text', text: 'a * b * c' }]);
+  });
+
+  it('keeps a lone asterisk as a character rather than eating it', () => {
+    expect(parseInline('a bare * on its own')).toEqual([
+      { kind: 'text', text: 'a bare * on its own' },
+    ]);
   });
 });
 

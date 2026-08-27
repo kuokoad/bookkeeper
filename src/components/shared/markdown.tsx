@@ -26,6 +26,12 @@ function InlineSpans({ content }: { content: Inline[] }): ReactNode {
             {span.text}
           </strong>
         );
+      case 'italic':
+        return (
+          <em key={index} className="italic">
+            {span.text}
+          </em>
+        );
       case 'code':
         return (
           <code

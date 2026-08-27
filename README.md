@@ -331,55 +331,33 @@ The entire business lives in one file: `data/bookkeeper.db`. Run:
 npm run backup
 ```
 
-This writes a timestamped, **verified** copy into `backups/`. It is safe to run
-while the shop is trading — it uses SQLite's online backup rather than copying
-the file behind the database's back, which is what makes a plain file copy
-unreliable.
-
-Every backup is checked before it counts: structural integrity, foreign keys,
-and that the books inside the copy still balance. **A backup that fails
-verification is deleted and the command fails**, because a broken backup you
-believe in is worse than no backup at all.
-
-Each backup is a single self-contained file with no `-wal`/`-shm` companions, so
-it can be copied on its own and still be whole.
+This writes a timestamped, **verified** copy into `backups/`, and is safe to run
+while the shop is trading.
 
 | Command                        | What it does                              |
 | ------------------------------ | ----------------------------------------- |
 | `npm run backup`               | Verified backup, keeping the newest 14    |
 | `npm run backup -- --keep=30`  | Keep 30 instead                           |
 | `npm run backup -- --dir=D:/x` | Write straight to a USB stick             |
-| `npm run db:restore -- <file>` | Put one back (see below)                  |
+| `npm run db:restore -- <file>` | Put one back                              |
 
 **Copy them off the machine.** A backup sitting on the same computer does not
 survive that computer being stolen, dropped, or having its disk fail. Pointing
 `--dir` at a USB stick, and running it at close of business, is the whole
 routine.
 
-### Putting a backup back
+**Do not copy a backup over `data/bookkeeper.db` by hand.** With WAL enabled the
+newest transactions live in `bookkeeper.db-wal`, and a power cut leaves it there;
+copy a backup into place beside it and SQLite replays it, putting back the very
+transactions you were undoing. The books still balance afterwards, so nothing
+warns you. `npm run db:restore` verifies first, refuses while the app is running,
+keeps what it replaced, and clears the companions.
 
-```bash
-npm run db:restore -- ./backups/bookkeeper-2026-08-26T18-00-00.db --force
-```
-
-**Do not copy the file over `data/bookkeeper.db` by hand.** That was the
-instruction here for a long time and it is wrong in the one situation restoring
-is for.
-
-With WAL enabled the newest transactions live in `bookkeeper.db-wal`. Shutting
-down cleanly folds them into the main file and deletes it — but a **power cut
-does not**, which is the whole point of `synchronous = FULL`. Copy a backup over
-the main file with that `-wal` still beside it and SQLite replays it into the
-file that was supposed to be free of it, putting back the very transactions you
-were undoing. The books still balance afterwards, so nothing warns you.
-
-The command does it properly: it verifies the backup **before** touching
-anything, refuses while the app is still running, copies the database it is
-about to replace to `bookkeeper.db.replaced-<timestamp>` so a wrong restore is
-undoable, removes `-wal` and `-shm`, and verifies the result.
-
-The database is configured with `synchronous = FULL`, which is slower on purpose:
-it survives a power cut without losing the last transactions committed.
+[**Back up and restore**](docs/how-to/back-up-and-restore.md) has the rest: what
+verification actually checks, the full order the restore runs in, how to practise
+one, and what to do when something goes wrong. It is written for a shop owner, so
+it is also the page to hand to one. Kept there rather than here so there is one
+copy of it — the app serves that file at `/help/backups`.
 
 ## Before a real shop uses this
 

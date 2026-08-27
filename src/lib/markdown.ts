@@ -17,6 +17,7 @@
 export type Inline =
   | { kind: 'text'; text: string }
   | { kind: 'bold'; text: string }
+  | { kind: 'italic'; text: string }
   | { kind: 'code'; text: string }
   | { kind: 'link'; text: string; href: string };
 
@@ -37,8 +38,14 @@ export type Block =
  * documented is itself Markdown or SQL. Double-backtick spans come first and
  * match lazily: a backtick INSIDE the span is the only reason to reach for the
  * double form at all, so refusing one there would defeat the construct.
+ *
+ * Bold comes before italic, or `**x**` would be read as an empty italic either
+ * side of the word. Italic requires a non-space straight after the opening
+ * asterisk, so `2 * 3 = 6` stays arithmetic instead of turning the rest of the
+ * sentence sideways.
  */
-const INLINE = /``(.+?)``|`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\)/g;
+const INLINE =
+  /``(.+?)``|`([^`]+)`|\*\*([^*]+)\*\*|\*([^\s*][^*]*?)\*|\[([^\]]+)\]\(([^)]+)\)/g;
 
 /** The words of a run of spans, with the formatting taken off. */
 const flatten = (spans: Inline[]): string => spans.map((span) => span.text).join('');
@@ -51,10 +58,11 @@ export function parseInline(source: string): Inline[] {
     const at = match.index;
     if (at > last) out.push({ kind: 'text', text: source.slice(last, at) });
 
-    const [, doubleCode, code, bold, linkText, href] = match;
+    const [, doubleCode, code, bold, italic, linkText, href] = match;
     if (doubleCode !== undefined) out.push({ kind: 'code', text: doubleCode.trim() });
     else if (code !== undefined) out.push({ kind: 'code', text: code });
     else if (bold !== undefined) out.push({ kind: 'bold', text: bold });
+    else if (italic !== undefined) out.push({ kind: 'italic', text: italic });
     else if (linkText !== undefined && href !== undefined) {
       // A link's own label may be formatted — `[`README.md`](…)` is written
       // that way throughout the docs. A link carries one string rather than
