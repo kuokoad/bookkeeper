@@ -113,6 +113,27 @@ Two things worth knowing early:
 - **Back up.** The whole business is one file. See
   [Back up and restore](../how-to/back-up-and-restore.md). Do this today, not later.
 
+## Making it easy on the eyes
+
+Two separate controls, and they work together rather than against each other.
+
+**Brightness** is the small switch at the top of every screen. Light or dark, and it
+belongs to the device you are holding: the counter computer in a bright shop and your
+phone at midnight want different answers, and the same person uses both. Anyone signed
+in can change it, on their own screen, without affecting anybody else's.
+
+**The look** is **Settings → Look**, and it belongs to the shop. Two choices:
+
+- **Standard** — crisp and neutral, with a dark menu.
+- **Ledger** — warm and paper-like, the feel of the book this replaced.
+
+Whichever you pick applies to every screen the shop signs in on, so the counter, the
+back office and your phone all agree. Only an owner can change it, and the change is
+recorded in the audit log like any other setting.
+
+Both looks show exactly the same figures. This is paint: it cannot alter a total, a
+balance or a report, and switching back and forth is safe at any time.
+
 ## Troubleshooting
 
 **I cannot type a stock number on the product form.** Correct — there is no such
@@ -129,6 +150,16 @@ it with another adjustment rather than editing anything.
 
 **I made a mistake in setup.** Shop name and most settings are editable in
 **Settings**. The owner account is not removable — that is the point of it.
+
+**The shop looks different on my phone than on the counter computer.** Check which of
+the two controls differs. The **look** is shop-wide, so it is the same everywhere; the
+**brightness** switch is per device, so one screen can be dark while another is light.
+That is deliberate, not a fault.
+
+**A staff member wants a different look and cannot change it.** They cannot: the look
+is a shop-wide setting and **Settings** is owner-only. They can still switch their own
+screen between light and dark, which is the control that usually matters at a till in
+daylight.
 
 ## Related
 
