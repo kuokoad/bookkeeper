@@ -21,8 +21,9 @@ no mobile network is hard-coded.
 > log) — with returns in both directions and void-with-reversal throughout —
 > hardening (error and empty states, verified backups, a production preflight,
 > and a measured performance pass), Settings (shop details, currency, tax
-> and stock policy), the year-end pack for an accountant, year-end close, and
-> a shop logo on receipts.
+> and stock policy), the year-end pack for an accountant, year-end close,
+> a shop logo on receipts, and a business type that decides which features a
+> shop is offered without ever changing a figure.
 > Nothing in the menu is a placeholder — every item leads to a working screen.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, database schema and
@@ -113,7 +114,7 @@ src/
   services/   Transactional orchestration; opens the DB transaction
   domain/     Pure business logic. Money, quantities, accounting. Fully tested.
   db/         Schema, migrations, seed
-  lib/        Auth, permissions, formatting
+  lib/        Auth, permissions, formatting, the shop's look and business type
 tests/        Unit + integration tests
 ```
 

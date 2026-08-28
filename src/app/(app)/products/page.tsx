@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
-import { countProducts, getStockSummary, listCategories, listProducts } from '@/services/catalog.service';
+import { countProducts, getStockSummary, hasDatedStock, listCategories, listProducts } from '@/services/catalog.service';
+import { featuresFromRow } from '@/lib/business-type';
 import { getSettings } from '@/services/settings.service';
 import { listSupplierOptions } from '@/services/supplier.service';
 import { money, quantity } from '@/lib/format';
@@ -66,6 +67,12 @@ export default async function ProductsPage({
     that always returns nothing — and when a product DOES go negative it is a
     recording error worth finding fast, so the option appears exactly then.
   */
+  /*
+    "Expiring soon" is offered on the same terms as "Negative stock" three lines
+    below: when the shop is offered dates, OR when something already carries one.
+    A yard that has dated a single delivery must still be able to find it.
+  */
+  const offerExpiry = featuresFromRow(getSettings(db)).expiry_batches || hasDatedStock(db);
   const negativeCount = countProducts(db, { stockStatus: 'negative' });
   const stockStatusOptions = [
     { value: 'in-stock', label: 'In stock' },
@@ -208,7 +215,9 @@ export default async function ProductsPage({
         quick={[
           { label: 'Low stock', params: { stock: 'low' }, match: { stock: 'low' } },
           { label: 'Out of stock', params: { stock: 'out' }, match: { stock: 'out' } },
-          { label: 'Expiring soon', params: { expiring: 'soon' }, match: { expiring: 'soon' } },
+          ...(offerExpiry
+            ? [{ label: 'Expiring soon', params: { expiring: 'soon' }, match: { expiring: 'soon' } }]
+            : []),
           { label: 'Archived', params: { archived: 'archived' }, match: { archived: 'archived' } },
         ]}
         fields={[

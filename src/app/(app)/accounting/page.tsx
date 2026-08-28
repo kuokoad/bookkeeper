@@ -3,6 +3,8 @@ import Link from 'next/link';
 
 import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
+import { visible, type FeatureKey } from '@/lib/business-type';
+import { getFeatures } from '@/lib/business-type.server';
 import { can } from '@/lib/auth/permissions';
 import { checkBooksIntegrity } from '@/services/reporting/ledger.service';
 import { getTotalReceivables } from '@/services/customer.service';
@@ -19,7 +21,13 @@ import { isYearClosed } from '@/services/year-end-close.service';
 export const metadata: Metadata = { title: 'Accounting' };
 export const dynamic = 'force-dynamic';
 
-const SECTIONS = [
+/** As on the Reports index: a `feature` here hides the card, nothing else. */
+const SECTIONS: {
+  href: string;
+  title: string;
+  description: string;
+  feature?: FeatureKey;
+}[] = [
   {
     href: '/reconciliation',
     title: 'Reconciliation',
@@ -54,6 +62,7 @@ const SECTIONS = [
 
 export default async function AccountingPage() {
   const user = await requirePageAccess('accounts', 'view');
+  const sections = visible(SECTIONS, getFeatures());
 
   const today = toBusinessDate();
   const yearOptions: YearOption[] = availableFinancialYears(db).map((year) => ({
@@ -136,7 +145,7 @@ export default async function AccountingPage() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <Link key={section.href} href={section.href} className="block">
             <Card className="h-full transition-colors hover:bg-surface-sunken">
               <p className="font-medium text-accent">{section.title}</p>

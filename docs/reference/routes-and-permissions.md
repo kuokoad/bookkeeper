@@ -111,6 +111,25 @@ for someone who typed an address.
 Export permission is checked **per module, not once for reports**. Someone who may
 see sales but not expenses cannot export expenses by guessing a URL.
 
+## The business type is not a permission
+
+No route is gated by the shop's business type, and none ever should be.
+
+A permission answers "may this person see it" and is enforced by the page's own
+`requirePageAccess`. A business type answers "does this shop want to be offered
+it", is enforced by the menu, and protects nothing: type the address of a
+feature the shop has put away and the page opens normally.
+
+That is deliberate, and it is what makes the setting safe. A shop changes type
+after months of trading, and every quotation, delivery or dated batch it
+recorded before the change must still open from a link, a search result, or a
+reference on a printed receipt. Guarding a route on a feature would break all
+three, silently, for records that are still perfectly valid.
+
+`src/lib/business-type.ts` holds the switches and `visible()`, the one predicate
+behind every hidden link. `tests/app/business-type-moves-nothing.test.ts` asserts
+that changing type moves no figure on any report.
+
 ## Things that are not routes
 
 - Server actions in `src/actions/` do their own `requirePermission` before anything

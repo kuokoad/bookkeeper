@@ -16,6 +16,18 @@ export const LOOKS = ['default', 'ledger'] as const;
 export type Look = (typeof LOOKS)[number];
 
 /**
+ * What kind of shop this is.
+ *
+ * This decides which features are OFFERED — menu entries, buttons, the cards on
+ * an index page. It decides nothing about what is RECORDED: every figure, every
+ * report and every saved record is identical under all three, and the address of
+ * a feature that has been put away still opens normally. `general_retail` is the
+ * app as it has always been.
+ */
+export const BUSINESS_TYPES = ['general_retail', 'building_materials', 'other'] as const;
+export type BusinessType = (typeof BUSINESS_TYPES)[number];
+
+/**
  * Business settings — a strict singleton (id is pinned to 1 by a CHECK).
  * Currency, tax and stock policy live here so nothing is hard-coded in code.
  */
@@ -121,6 +133,33 @@ export const businessSettings = sqliteTable(
      */
     look: text('look', { enum: LOOKS }).notNull().default('default'),
 
+    /**
+     * What kind of shop this is, and which features it is therefore offered.
+     *
+     * Beside the look because they are the same kind of decision: a property of
+     * the business, made once, the same on every screen the shop owns, audited
+     * with a before and after. The difference is that the look is paint and this
+     * one moves the switches below it.
+     */
+    businessType: text('business_type', { enum: BUSINESS_TYPES })
+      .notNull()
+      .default('general_retail'),
+
+    /**
+     * The feature switches. One typed column each, NOT a JSON bag.
+     *
+     * The business type chooses where each switch STARTS; the owner may move any
+     * one afterwards and it stays where they left it. So each switch is a
+     * decision about the business in its own right, and deserves a column the
+     * database can check and an audit line with a before and after, like
+     * everything else on this table. A blob of JSON would be none of those
+     * things, and would turn one readable audit summary into a diff.
+     *
+     * `true` by default, because that is what every existing shop has always
+     * had. Changing the type restamps these — see `updateSettings`.
+     */
+    featureExpiryBatches: boolean('feature_expiry_batches').notNull().default(true),
+
     /** True while the database still contains seeded demo rows. */
     hasDemoData: boolean('has_demo_data').notNull().default(false),
 
@@ -141,6 +180,9 @@ export const businessSettings = sqliteTable(
     // The enum in `text(..., { enum })` is a TYPE-level claim only; this is what
     // makes the database refuse a look nothing knows how to paint.
     check('ck_business_settings_look', oneOf(t.look, LOOKS)),
+    // Same reason: this is what refuses a business type the code has no
+    // feature map for, whoever wrote it and however they got in.
+    check('ck_business_settings_business_type', oneOf(t.businessType, BUSINESS_TYPES)),
     check(
       'ck_business_settings_lock_date_format',
       sql`${t.booksLockedBefore} IS NULL OR ${t.booksLockedBefore} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`,

@@ -17,6 +17,7 @@ import { credit, debit } from '@/domain/accounting/journal';
 import { minor } from '@/domain/money';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { createUser } from '@/services/auth.service';
+import { featuresFromRow } from '@/lib/business-type';
 
 let context: TestDatabase;
 let ACTOR: { id: number; username: string };
@@ -47,6 +48,8 @@ function currentAsInput(): SettingsInput {
     currencyCode: settings.currencyCode,
     currencySymbol: settings.currencySymbol,
     look: settings.look,
+    businessType: settings.businessType,
+    features: featuresFromRow(settings),
     taxEnabled: settings.taxEnabled,
     taxInclusive: settings.taxInclusive,
     lowStockThresholdMilli: settings.lowStockThresholdMilli,
@@ -370,5 +373,87 @@ describe('the expiry settings', () => {
     const after = getSettings(context.db);
     expect(after.lowStockThresholdMilli).toBe(before.lowStockThresholdMilli);
     expect(after.allowNegativeStock).toBe(before.allowNegativeStock);
+  });
+});
+
+describe('what kind of business this is', () => {
+  const summaries = () =>
+    listAuditLogs(context.db, { action: 'SETTINGS_CHANGE' }).map((entry) => entry.summary);
+
+  it('starts as the app has always been, with everything switched on', () => {
+    const settings = getSettings(context.db);
+    expect(settings.businessType).toBe('general_retail');
+    expect(featuresFromRow(settings)).toEqual({ expiry_batches: true });
+  });
+
+  it('keeps the choice once it is made', () => {
+    updateSettings(context.db, { ...currentAsInput(), businessType: 'other' }, ACTOR);
+    expect(getSettings(context.db).businessType).toBe('other');
+  });
+
+  /**
+   * The rule that makes "Something else" mean what it says. Choosing a type
+   * stamps that type's switches, so a feature put away under a type the shop
+   * has since left does not stay away for reasons nobody remembers.
+   */
+  it('stamps the new type onto the switches, whatever the form submitted', () => {
+    updateSettings(
+      context.db,
+      { ...currentAsInput(), businessType: 'building_materials', features: { expiry_batches: true } },
+      ACTOR,
+    );
+    expect(getSettings(context.db).featureExpiryBatches).toBe(false);
+  });
+
+  it('turns everything back on when the shop says "something else"', () => {
+    updateSettings(context.db, { ...currentAsInput(), businessType: 'building_materials' }, ACTOR);
+    expect(getSettings(context.db).featureExpiryBatches).toBe(false);
+
+    updateSettings(context.db, { ...currentAsInput(), businessType: 'other' }, ACTOR);
+    expect(getSettings(context.db).featureExpiryBatches).toBe(true);
+  });
+
+  it('leaves a switch where the owner put it while the type is unchanged', () => {
+    updateSettings(context.db, { ...currentAsInput(), businessType: 'building_materials' }, ACTOR);
+    updateSettings(
+      context.db,
+      { ...currentAsInput(), businessType: 'building_materials', features: { expiry_batches: true } },
+      ACTOR,
+    );
+
+    const settings = getSettings(context.db);
+    expect(settings.businessType).toBe('building_materials');
+    expect(settings.featureExpiryBatches).toBe(true);
+  });
+
+  it('records the change by the name on the button, not the slug in the column', () => {
+    updateSettings(context.db, { ...currentAsInput(), businessType: 'building_materials' }, ACTOR);
+
+    const summary = summaries()[0] ?? '';
+    expect(summary).toContain('Business type: General retail → Building materials');
+    expect(summary).toContain('Expiry dates and batches: on → off');
+    expect(summary).not.toContain('building_materials');
+  });
+
+  it('says what happened in one row, not two', () => {
+    updateSettings(context.db, { ...currentAsInput(), businessType: 'building_materials' }, ACTOR);
+    expect(summaries()).toHaveLength(1);
+  });
+
+  it('writes nothing when the type did not change', () => {
+    updateSettings(context.db, { ...currentAsInput(), businessType: 'general_retail' }, ACTOR);
+    expect(summaries()).toHaveLength(0);
+  });
+
+  /**
+   * The Drizzle enum is a type-level claim that emits no SQL, so without this
+   * the column would accept anything a raw statement cared to write.
+   */
+  it('is refused by the database itself, not merely by the form', () => {
+    expect(() =>
+      context.connection
+        .prepare("UPDATE business_settings SET business_type = 'pharmacy' WHERE id = 1")
+        .run(),
+    ).toThrow(/CHECK constraint failed/i);
   });
 });

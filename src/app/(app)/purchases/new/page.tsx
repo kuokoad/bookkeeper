@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { businessSettings, paymentAccounts } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
+import { defaultFeatures, featuresFromRow } from '@/lib/business-type';
 import { listProducts } from '@/services/catalog.service';
 import { listSuppliers } from '@/services/supplier.service';
 import { toBusinessDate } from '@/lib/format';
@@ -94,6 +95,9 @@ export default async function NewPurchasePage() {
         accounts={accounts}
         today={toBusinessDate()}
         currencyCode={settings?.currencyCode ?? 'GHS'}
+        offerExpiry={
+          settings ? featuresFromRow(settings).expiry_batches : defaultFeatures('general_retail').expiry_batches
+        }
       />
     </div>
   );

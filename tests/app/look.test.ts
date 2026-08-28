@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { LOOKS, LOOK_LABELS, isLook, lookAttribute } from '@/lib/look';
+import { featuresFromRow } from '@/lib/business-type';
 import { getSettings, updateSettings, type SettingsInput } from '@/services/settings.service';
 
 const CSS = readFileSync(join(process.cwd(), 'src', 'app', 'globals.css'), 'utf8');
@@ -33,6 +34,8 @@ function currentAsInput(): SettingsInput {
     currencyCode: settings.currencyCode,
     currencySymbol: settings.currencySymbol,
     look: settings.look,
+    businessType: settings.businessType,
+    features: featuresFromRow(settings),
     taxEnabled: settings.taxEnabled,
     taxInclusive: settings.taxInclusive,
     lowStockThresholdMilli: settings.lowStockThresholdMilli,

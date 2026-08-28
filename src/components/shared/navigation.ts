@@ -1,4 +1,5 @@
 import type { PermissionModule } from '@/db/schema/users';
+import type { FeatureKey } from '@/lib/business-type';
 
 /**
  * Navigation definition.
@@ -36,6 +37,19 @@ export interface NavItem {
    * person is standing on.
    */
   module?: PermissionModule;
+  /**
+   * The feature this item belongs to, or omitted for one every shop is offered.
+   *
+   * NOT a permission, and it protects nothing: the page behind a hidden item
+   * opens normally if its address is typed, which is what keeps a record
+   * reachable after a shop changes what kind of shop it is. It only stops a
+   * building materials yard being offered a screen about expiry dates.
+   *
+   * `tests/app/page-guards.test.ts` parses this file with a regex that stops at
+   * the first `}`, so an item carrying this key must stay on ONE line and the
+   * value must be a bare quoted string — never an object, array or template.
+   */
+  feature?: FeatureKey;
   /** Shown in the mobile bottom bar (space for five). */
   primary?: boolean;
   /** Not yet built — rendered disabled with a "Soon" tag rather than as a dead link. */

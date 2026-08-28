@@ -38,6 +38,7 @@ function renderForm() {
       suppliers={[{ id: 1, name: 'Kofi Wholesale', balanceMinor: 0 }]}
       accounts={[{ id: 1, name: 'Cash', isDefault: true }]}
       today="2026-08-26"
+      offerExpiry
       currencyCode="GHS"
     />,
   );

@@ -14,14 +14,33 @@ start with [Developer setup](developer-setup.md) instead.
 
 ## Step 1: Create your shop
 
-The first time the app opens it shows a setup screen. It asks four things:
+The first time the app opens it shows a setup screen. It asks five things:
 
 - **Business name** — what appears on receipts
+- **What kind of shop it is** — see below
 - **Your name**
 - **Username and password** — this is the owner account
 
 Fill it in and continue. That screen closes permanently once an owner exists, so
 nobody can create a second owner behind your back later.
+
+### What kind of shop is it?
+
+Three answers, and the only thing they change is what you are offered:
+
+- **General retail** — a provisions shop, a mini-mart, a chemical shop. Every
+  feature switched on. This is the app as it has always been, and the answer to
+  give if you are unsure.
+- **Building materials** — cement, pipes, roofing, hardware. Nothing on those
+  shelves carries a date, so expiry dates and batches are put away.
+- **Something else** — shows everything.
+
+You can change it later in **Settings**, and change any individual feature back
+on or off underneath it. What it never does is change a figure: switching type
+puts menu entries away and brings them back, and every total on every report
+reads exactly the same before and after. Nothing you have recorded is removed,
+hidden from a report, or made unreachable — a screen that has been put away
+still opens from a link or from search.
 
 You are now signed in, looking at the dashboard. It is empty. That is correct.
 

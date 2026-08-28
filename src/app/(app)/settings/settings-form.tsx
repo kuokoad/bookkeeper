@@ -10,6 +10,15 @@ import { Button } from '@/components/ui/button';
 import { Field, TextInput } from '@/components/ui/field';
 import { Card } from '@/components/ui/page';
 import { LOOKS, LOOK_LABELS, type Look } from '@/lib/look';
+import {
+  BUSINESS_TYPES,
+  BUSINESS_TYPE_LABELS,
+  FEATURES,
+  FEATURE_KEYS,
+  defaultFeatures,
+  type BusinessType,
+  type FeatureSwitches,
+} from '@/lib/business-type';
 
 export interface SettingsFormValues {
   businessName: string;
@@ -20,6 +29,8 @@ export interface SettingsFormValues {
   currencyCode: string;
   currencySymbol: string;
   look: Look;
+  businessType: BusinessType;
+  features: FeatureSwitches;
   taxEnabled: boolean;
   taxInclusive: boolean;
   /** What the shop currently charges, all in, e.g. "20". Shown, never edited here. */
@@ -104,13 +115,32 @@ function Toggle({
 export function SettingsForm({
   values,
   currencyLocked,
+  showExpiry,
 }: {
   values: SettingsFormValues;
   /** True once there are transactions: the currency then labels real history. */
   currencyLocked: boolean;
+  /**
+   * Whether the expiry settings are shown at all. False only when the shop is
+   * not offered dates AND has nothing dated, so the settings below govern
+   * nothing that can happen.
+   */
+  showExpiry: boolean;
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(updateSettingsAction, {});
   const [taxEnabled, setTaxEnabled] = useState(values.taxEnabled);
+  const [businessType, setBusinessType] = useState(values.businessType);
+  const [features, setFeatures] = useState(values.features);
+
+  /**
+   * Mirrors what the server is about to do, so the switches on screen are never
+   * a promise the save will break. The server decides it again from the row it
+   * reads, and does not trust this.
+   */
+  function chooseType(next: BusinessType) {
+    setBusinessType(next);
+    setFeatures(defaultFeatures(next));
+  }
 
   return (
     <form action={formAction} className="space-y-6" noValidate>
@@ -179,6 +209,64 @@ export function SettingsForm({
           </Field>
         </div>
       </Card>
+      <Card>
+        <h2 className="mb-1 text-sm font-semibold text-content">What kind of business is this?</h2>
+        <p className="mb-4 text-sm text-content-muted">
+          This decides which features you are offered. It changes no figure, hides no report, and
+          nothing you have already recorded is removed or altered &mdash; anything put away here is
+          still found by search and still opens from a link.
+        </p>
+
+        <fieldset className="grid gap-3 sm:grid-cols-3">
+          <legend className="sr-only">Business type</legend>
+          {BUSINESS_TYPES.map((option) => (
+            <label
+              key={option}
+              className="flex cursor-pointer gap-3 rounded-xl border border-line p-3 has-checked:border-accent has-checked:bg-accent-soft"
+            >
+              <input
+                type="radio"
+                name="businessType"
+                value={option}
+                checked={businessType === option}
+                onChange={() => chooseType(option)}
+                className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-content">
+                  {BUSINESS_TYPE_LABELS[option].name}
+                </span>
+                <span className="mt-0.5 block text-xs text-content-muted">
+                  {BUSINESS_TYPE_LABELS[option].blurb}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+
+        <h3 className="mt-6 mb-1 text-sm font-medium text-content">Features</h3>
+        <p className="mb-4 text-sm text-content-muted">
+          Choosing a type above sets these. Change any one afterwards and it stays as you left it.
+        </p>
+
+        {/* Every switch is here for every business type, never a per-type
+            subset. That is what makes an unticked box mean "off" rather than
+            "not asked" — the trap noted at the top of this file does not apply
+            to a control that is always in the form. */}
+        <div className="space-y-4">
+          {FEATURE_KEYS.map((key) => (
+            <Toggle
+              key={key}
+              name={`feature_${key}`}
+              label={FEATURES[key].name}
+              hint={`${FEATURES[key].blurb} Off, this puts away ${FEATURES[key].hides}.`}
+              checked={features[key]}
+              onChange={(next) => setFeatures((current) => ({ ...current, [key]: next }))}
+            />
+          ))}
+        </div>
+      </Card>
+
 
       <Card>
         <h2 className="mb-4 text-sm font-semibold text-content">Currency</h2>
@@ -362,8 +450,21 @@ export function SettingsForm({
         </div>
       </Card>
 
+      {/* Hidden, never unmounted. An unmounted input submits nothing and the
+          server reads nothing as "off", so removing this card would silently
+          rewrite the two values it is hiding. It is shown whenever the shop has
+          dated stock even if the business type does not use dates, because
+          `expiryBlocksSales` can then still refuse a sale and the owner must be
+          able to reach the switch that does it. */}
+      <div hidden={!showExpiry}>
       <Card>
         <h2 className="mb-4 text-sm font-semibold text-content">Expiry dates</h2>
+        {!features.expiry_batches && (
+          <p className="mb-4 text-sm text-content-muted">
+            Your business type does not normally use dates, but you have stock with a date on it,
+            so these still apply.
+          </p>
+        )}
         <p className="mb-4 text-sm text-content-muted">
           Only applies to stock you have given a date to. A shop that never enters one never sees
           any of this.
@@ -395,6 +496,7 @@ export function SettingsForm({
           />
         </div>
       </Card>
+      </div>
 
       <Card>
         <h2 className="mb-4 text-sm font-semibold text-content">Credit and invoices</h2>

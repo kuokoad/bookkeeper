@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { paymentAccounts, productBatches, products } from '@/db/schema';
 import { writeTransaction } from '@/db/transaction';
-import { createProduct } from '@/services/catalog.service';
+import { createProduct, hasDatedStock } from '@/services/catalog.service';
 import { createSupplier } from '@/services/supplier.service';
 import { createCustomer } from '@/services/customer.service';
 import { createPurchase, voidPurchase } from '@/services/purchase.service';
@@ -491,5 +491,44 @@ describe('correcting the date on a crate', () => {
       .where(eq(productBatches.id, batchId))
       .get()!;
     expect(batch.qtyMilli).toBe(10_000);
+  });
+});
+
+/**
+ * Whether anything on the shelf carries a date.
+ *
+ * This is what decides whether a shop that has switched expiry dates off must
+ * still be shown the settings that govern them — so it decides whether an owner
+ * can reach the switch that is refusing sales at the till.
+ */
+const SOON = '2026-09-10';
+
+describe('whether the shop has anything dated', () => {
+  it('is false in a shop that has never entered a date', () => {
+    const milk = makeProduct('Evaporated Milk');
+    deliver(milk, 20, null);
+
+    expect(hasDatedStock(context.db)).toBe(false);
+  });
+
+  it('is true the moment one delivery carries a date', () => {
+    const milk = makeProduct('Evaporated Milk');
+    deliver(milk, 20, null);
+    deliver(milk, 5, SOON);
+
+    expect(hasDatedStock(context.db)).toBe(true);
+  });
+
+  it('is false again once the dated stock is gone', () => {
+    const milk = makeProduct('Evaporated Milk');
+    const batch = deliver(milk, 5, SOON);
+
+    context.db
+      .update(productBatches)
+      .set({ qtyMilli: 0, isClosed: true })
+      .where(eq(productBatches.id, batch))
+      .run();
+
+    expect(hasDatedStock(context.db)).toBe(false);
   });
 });

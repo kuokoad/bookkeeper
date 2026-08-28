@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
@@ -824,6 +824,31 @@ export interface ExpirySummary {
  * turned yet are worth exactly what the books say; putting a number beside them
  * would invite writing it off early, which is the opposite of the point.
  */
+/**
+ * Whether any stock on the shelf carries a date.
+ *
+ * Decides whether a shop that has switched expiry dates off must still be shown
+ * the settings that govern them. With nothing dated, `expiryBlocksSales` cannot
+ * fire and the card it lives on is hiding an inert control; the moment one
+ * crate is dated the block becomes reachable, and the owner must be able to
+ * reach it too. A menu setting must never leave the till refusing a sale for a
+ * reason nobody on the shop floor can see or undo.
+ */
+export function hasDatedStock(db: Db): boolean {
+  const row = db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(productBatches)
+    .where(
+      and(
+        eq(productBatches.isClosed, false),
+        isNotNull(productBatches.expiryDate),
+        gt(productBatches.qtyMilli, 0),
+      ),
+    )
+    .get();
+  return (row?.count ?? 0) > 0;
+}
+
 export function getExpirySummary(db: Db, asAt: string = toBusinessDate()): ExpirySummary {
   const settings = db
     .select({ warningDays: businessSettings.expiryWarningDays })

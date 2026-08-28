@@ -8,6 +8,7 @@ import { minor } from '@/domain/money';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { createTestDatabase, accountIdFor, type TestDatabase } from '../helpers/test-db';
 import { createUser } from '@/services/auth.service';
+import { featuresFromRow } from '@/lib/business-type';
 
 let context: TestDatabase;
 let ACTOR: { id: number; username: string };
@@ -71,6 +72,8 @@ function setStartMonth(month: number): void {
       currencyCode: settings.currencyCode,
       currencySymbol: settings.currencySymbol,
       look: settings.look,
+    businessType: settings.businessType,
+    features: featuresFromRow(settings),
       taxEnabled: settings.taxEnabled,
         taxInclusive: settings.taxInclusive,
         lowStockThresholdMilli: settings.lowStockThresholdMilli,

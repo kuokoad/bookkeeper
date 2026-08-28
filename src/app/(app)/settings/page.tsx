@@ -16,6 +16,8 @@ import { toQtyInputString, type Qty } from '@/domain/quantity';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, PageHeader } from '@/components/ui/page';
+import { featuresFromRow } from '@/lib/business-type';
+import { hasDatedStock } from '@/services/catalog.service';
 import { SettingsForm, type SettingsFormValues } from './settings-form';
 import { LogoForm } from './logo-form';
 import { TaxComponents, type TaxComponentRowValues } from './tax-components';
@@ -27,6 +29,14 @@ export default async function SettingsPage() {
   const user = await requirePageAccess('settings', 'view');
   const settings = getSettings(db);
   const currencyLocked = hasPostedTransactions(db);
+
+  /**
+   * The expiry settings are shown when the shop is offered dates, OR when it
+   * has stock carrying one regardless. Hiding them in the second case would
+   * leave `expiryBlocksSales` still refusing sales with nowhere to go and turn
+   * it off.
+   */
+  const showExpiry = featuresFromRow(settings).expiry_batches || hasDatedStock(db);
   const logo = getLogoSummary(db);
 
   // The all-in rate comes from the domain rather than from adding the rates up
@@ -60,6 +70,8 @@ export default async function SettingsPage() {
     // Rendered by the same domain function the rates are parsed with, so what
     // is shown and what is saved cannot drift apart.
     look: settings.look,
+    businessType: settings.businessType,
+    features: featuresFromRow(settings),
     taxSummary: `${formatBasisPoints(allInRateBp)}%`,
     lowStock: toQtyInputString(settings.lowStockThresholdMilli as Qty),
     expiryWarningDays: String(settings.expiryWarningDays),
@@ -103,7 +115,7 @@ export default async function SettingsPage() {
               version: logo.updatedAt?.getTime() ?? 0,
             }}
           />
-          <SettingsForm values={values} currencyLocked={currencyLocked} />
+          <SettingsForm values={values} currencyLocked={currencyLocked} showExpiry={showExpiry} />
           <TaxComponents
             rows={taxRows}
             accounts={holdingAccounts}

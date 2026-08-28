@@ -158,6 +158,30 @@ describe('an old crate at the back of the shelf', () => {
     expect(() => sell(milk, 5)).toThrow(ExpiredStockError);
   });
 
+  /**
+   * A business type is a menu setting and must never reach the till.
+   *
+   * A shop that switches to Building materials still has whatever it had on the
+   * shelf, dates and all. If choosing a type quietly stopped the block, the shop
+   * would begin selling expired goods for a reason nobody would connect to a
+   * radio button pressed in Settings weeks earlier. `expiryBlocksSales` is the
+   * only thing allowed to decide this, which is why the settings that govern it
+   * stay on screen for as long as anything carries a date.
+   */
+  it('still blocks in a shop that no longer uses dates, while stock carries one', () => {
+    context.db
+      .update(businessSettings)
+      .set({ businessType: 'building_materials', featureExpiryBatches: false })
+      .where(eq(businessSettings.id, 1))
+      .run();
+
+    const milk = makeProduct();
+    deliver(milk, 20, GONE);
+    deliver(milk, 3, SOON);
+
+    expect(() => sell(milk, 5)).toThrow(ExpiredStockError);
+  });
+
   it('writes nothing at all when it blocks', () => {
     const milk = makeProduct();
     const expired = deliver(milk, 20, GONE);

@@ -81,12 +81,19 @@ export function PurchaseEntry({
   accounts,
   today,
   currencyCode,
+  offerExpiry,
 }: {
   products: EntryProduct[];
   suppliers: EntrySupplier[];
   accounts: EntryAccount[];
   today: string;
   currencyCode: string;
+  /**
+   * Whether to OFFER a date on a delivery. A shop selling pipes has no use for
+   * one. It only hides the button below: a row that already carries a date
+   * still shows it, so an entry in progress is never quietly stripped.
+   */
+  offerExpiry: boolean;
 }) {
   const [state, formAction, pending] = useActionState<PurchaseFormState, FormData>(
     createPurchaseAction,
@@ -416,7 +423,7 @@ export function PurchaseEntry({
                           </p>
                         )}
                       </div>
-                    ) : (
+                    ) : offerExpiry ? (
                       <button
                         type="button"
                         onClick={() => updateRow(row.key, { showExpiry: true })}
@@ -424,7 +431,7 @@ export function PurchaseEntry({
                       >
                         + Expiry date
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>

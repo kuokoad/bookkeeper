@@ -10,6 +10,7 @@ import { MAX_IMAGE_BYTES, inspectImage } from '@/lib/image';
 import { parseQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
 import { LOOKS } from '@/lib/look';
+import { BUSINESS_TYPES, FEATURE_KEYS, type FeatureSwitches } from '@/lib/business-type';
 import type { FormState } from './auth.actions';
 
 /**
@@ -55,6 +56,14 @@ const settingsSchema = z.object({
   // rather than failing the whole save over a cosmetic field. The database
   // CHECK refuses a bad value regardless, so this is belt and braces.
   look: z.enum(LOOKS).catch('default'),
+
+  // A hard enum, unlike the look above. A bad look can safely fall back because
+  // it is paint; this one decides which features the shop is offered, so a
+  // silently-corrected value would put something away that nobody asked to lose.
+  businessType: z.enum(BUSINESS_TYPES, { message: 'Choose the kind of business you run.' }),
+  features: z.object(
+    Object.fromEntries(FEATURE_KEYS.map((key) => [key, z.boolean()])),
+  ) as unknown as z.ZodType<FeatureSwitches>,
 
   taxEnabled: z.boolean(),
   taxInclusive: z.boolean(),
@@ -130,6 +139,12 @@ export async function updateSettingsAction(
     currencyCode: formData.get('currencyCode'),
     currencySymbol: formData.get('currencySymbol'),
     look: formData.get('look'),
+    businessType: formData.get('businessType'),
+    // Every switch is in the form for every business type, so an unticked box
+    // genuinely means off — there is no hidden-field trap to work around here.
+    features: Object.fromEntries(
+      FEATURE_KEYS.map((key) => [key, checkbox(formData, `feature_${key}`)]),
+    ),
     taxEnabled: checkbox(formData, 'taxEnabled'),
     taxInclusive: checkbox(formData, 'taxInclusive'),
     lowStockThresholdMilli,

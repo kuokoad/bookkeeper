@@ -8,7 +8,7 @@ import { createProduct, listProducts } from '@/services/catalog.service';
 import { createStockAdjustment } from '@/services/stock-adjustment.service';
 import { recordStockMovement, verifyBatchCoverage } from '@/services/inventory.service';
 import { writeTransaction } from '@/db/transaction';
-import { productBatches, stockAdjustmentItems } from '@/db/schema';
+import { businessSettings, productBatches, stockAdjustmentItems } from '@/db/schema';
 import { ValidationError } from '@/domain/errors';
 import { writeAudit } from '@/services/audit.service';
 import { minor, type Minor } from '@/domain/money';
@@ -247,6 +247,29 @@ describe('being told about dates', () => {
 
     const notice = getNotices(context.db, OWNER).find((row) => row.id === 'expiring-soon');
     expect(notice!.title).toContain('1 product');
+  });
+
+  /**
+   * A warning about stock that exists is never a menu preference.
+   *
+   * Switching to a business type that does not normally use dates puts the
+   * date BOX away on a delivery. It cannot put away the fact that twenty tins
+   * on the shelf have gone off. These notices are already driven by the data —
+   * a shop that never enters a date never sees one — which is a better gate
+   * than any setting, and gating them again would hide exactly the warning the
+   * shop most needs.
+   */
+  it('still tells a building materials yard about stock it has already dated', () => {
+    context.db
+      .update(businessSettings)
+      .set({ businessType: 'building_materials', featureExpiryBatches: false })
+      .where(eq(businessSettings.id, 1))
+      .run();
+
+    const milk = stocked('Evaporated Milk');
+    deliver(milk, 20, inDays(-24));
+
+    expect(ids(OWNER)).toContain('expired-stock');
   });
 
   it('raises it to danger once something has actually turned', () => {

@@ -3,6 +3,8 @@ import Link from 'next/link';
 
 import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
+import { visible, type FeatureKey } from '@/lib/business-type';
+import { getFeatures } from '@/lib/business-type.server';
 import { getProfitAndLoss, getBalanceSheet } from '@/services/reporting/financial.service';
 import { money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
@@ -11,7 +13,16 @@ import { Card, PageHeader, Stat } from '@/components/ui/page';
 export const metadata: Metadata = { title: 'Reports' };
 export const dynamic = 'force-dynamic';
 
-const REPORTS = [
+/**
+ * A `feature` here hides the CARD only. The report behind it is unchanged, its
+ * figures are unchanged, and its address still opens. Nothing in this list has
+ * one yet — the wiring is here so the next feature does not have to remember
+ * that this hand-written list exists.
+ */
+const REPORTS: {
+  group: string;
+  items: { href: string; title: string; description: string; feature?: FeatureKey }[];
+}[] = [
   {
     group: 'For your accountant',
     items: [
@@ -88,6 +99,12 @@ const REPORTS = [
 export default async function ReportsPage() {
   await requirePageAccess('reports', 'view');
 
+  const features = getFeatures();
+  const groups = REPORTS.map((section) => ({
+    ...section,
+    items: visible(section.items, features),
+  })).filter((section) => section.items.length > 0);
+
   const today = toBusinessDate();
   const monthStart = `${today.slice(0, 7)}-01`;
   const pl = getProfitAndLoss(db, { from: monthStart, to: today });
@@ -121,7 +138,7 @@ export default async function ReportsPage() {
       </div>
 
       <div className="space-y-6">
-        {REPORTS.map((section) => (
+        {groups.map((section) => (
           <section key={section.group}>
             <h2 className="mb-3 text-sm font-semibold text-content">{section.group}</h2>
             <div className="grid gap-3 sm:grid-cols-3">

@@ -2,6 +2,16 @@ import { eq, sql } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import { LOOK_LABELS, type Look } from '@/lib/look';
+import {
+  BUSINESS_TYPE_LABELS,
+  FEATURES,
+  FEATURE_KEYS,
+  defaultFeatures,
+  featuresFromRow,
+  resolveFeatures,
+  type BusinessType,
+  type FeatureSwitches,
+} from '@/lib/business-type';
 import { businessSettings, journalEntries } from '@/db/schema';
 import type { Db, Tx } from '@/db/types';
 import { NotFoundError, ValidationError } from '@/domain/errors';
@@ -62,6 +72,19 @@ export interface SettingsInput {
 
   /** Which look every screen wears. Paint only; it changes no figure. */
   look: Look;
+
+  /**
+   * What kind of shop this is. Decides which features are OFFERED and nothing
+   * else — no figure, no report and no saved record differs between them.
+   */
+  businessType: BusinessType;
+  /**
+   * The feature switches as submitted.
+   *
+   * IGNORED when the type itself changed: choosing a type stamps that type's
+   * own defaults over these. See the note in `updateSettings`.
+   */
+  features: FeatureSwitches;
 
   taxEnabled: boolean;
   taxInclusive: boolean;
@@ -229,6 +252,21 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
       });
     }
 
+    /**
+     * Choosing a type STAMPS that type's switches; moving a switch leaves the
+     * type alone.
+     *
+     * Decided on the server, not taken from the form, because the form is not
+     * the only caller and a stale tab is not a decision. It is also what makes
+     * "Something else" mean what it says: switching to it turns everything back
+     * on, rather than leaving a feature off that was put away under a type the
+     * shop has since left.
+     */
+    const features =
+      input.businessType === before.businessType
+        ? resolveFeatures(input.businessType, input.features)
+        : defaultFeatures(input.businessType);
+
     const now = new Date();
     tx.update(businessSettings)
       .set({
@@ -240,6 +278,10 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         currencyCode: input.currencyCode,
         currencySymbol: input.currencySymbol,
         look: input.look,
+        businessType: input.businessType,
+        // Column by column rather than by spreading the map, so a feature added
+        // without storage is a type error here and not a silent no-op.
+        featureExpiryBatches: features.expiry_batches,
         taxEnabled: input.taxEnabled,
         // The rate and label are deliberately absent: they belong to the
         // components. Switching tax off leaves them alone, so switching it back
@@ -271,6 +313,17 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
       // By the name on the button, not the slug in the column: an audit line
       // reading "ledger" means nothing to the person who clicked "Ledger".
       describeChange('Look', LOOK_LABELS[before.look].name, LOOK_LABELS[input.look].name),
+      describeChange(
+        'Business type',
+        BUSINESS_TYPE_LABELS[before.businessType].name,
+        BUSINESS_TYPE_LABELS[input.businessType].name,
+      ),
+      // One line per switch that actually moved, so changing a type reads as
+      // "Business type: ... ; Expiry dates and batches: on → off" — what
+      // happened, in one row, in the words on the buttons.
+      ...FEATURE_KEYS.map((key) =>
+        describeChange(FEATURES[key].name, featuresFromRow(before)[key], features[key]),
+      ),
       describeChange('Tax', before.taxEnabled, input.taxEnabled),
       describeChange('Prices include tax', before.taxInclusive, input.taxInclusive),
       describeChange(

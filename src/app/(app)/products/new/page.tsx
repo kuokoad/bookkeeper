@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { businessSettings } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
+import { getFeatures } from '@/lib/business-type.server';
 import { listCategories } from '@/services/catalog.service';
 import { createProductAction } from '@/actions/catalog.actions';
 import { PageHeader } from '@/components/ui/page';
@@ -25,6 +26,7 @@ export default async function NewProductPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Add product" description="Something new to sell." />
       <ProductForm
+        offerExpiry={getFeatures().expiry_batches}
         action={createProductAction}
         categories={categories}
         currencyCode={settings?.currencyCode ?? 'GHS'}

@@ -44,6 +44,7 @@ export function ProductForm({
   submitLabel,
   currencyCode,
   showStockNotice,
+  offerExpiry,
 }: {
   action: (previous: FormState, formData: FormData) => Promise<FormState>;
   categories: CategoryOption[];
@@ -51,6 +52,12 @@ export function ProductForm({
   submitLabel: string;
   currencyCode: string;
   showStockNotice: boolean;
+  /**
+   * Whether this shop is offered expiry dates at all. Hidden, NEVER unmounted:
+   * an unmounted input submits nothing, and `warnDays` would then be silently
+   * cleared on every save by a shop that had once set one.
+   */
+  offerExpiry: boolean;
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(action, {});
 
@@ -184,6 +191,9 @@ export function ProductForm({
             />
           </Field>
 
+          {/* Hidden, never unmounted — an unmounted input submits nothing and
+              `warnDays` would be silently cleared on every save. */}
+          <div hidden={!offerExpiry}>
           <Field
             label="Warn me this long before it expires"
             htmlFor="warnDays"
@@ -199,6 +209,7 @@ export function ProductForm({
               invalid={Boolean(state.fieldErrors?.['warnDays'])}
             />
           </Field>
+          </div>
 
           <div className="flex items-start gap-3 pt-7">
             <input

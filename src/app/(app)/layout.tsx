@@ -7,6 +7,7 @@ import { businessSettings, users } from '@/db/schema';
 import { getCurrentUser } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { NAV_SECTIONS } from '@/components/shared/navigation';
+import { defaultFeatures, featuresFromRow, visible } from '@/lib/business-type';
 import { MobileNav, Sidebar } from '@/components/shared/app-nav';
 import { TopBar } from '@/components/shared/top-bar';
 import { getNotices } from '@/services/notifications.service';
@@ -39,11 +40,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
   const notices = getNotices(db, user);
 
+  // From the row already read above, not a second query: the shop name and the
+  // menu must be two readings of one row, never of two.
+  const features = settings ? featuresFromRow(settings) : defaultFeatures('general_retail');
+
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
-    // An item with no module needs no permission — see `NavItem.module`. Hiding
-    // a link is a convenience either way; the page's own guard is the protection.
-    items: section.items.filter((item) => item.module === undefined || can(user, item.module, 'view')),
+    // Two different questions, kept apart on purpose. `can()` decides what this
+    // PERSON may see, and the page's own guard enforces the same answer —
+    // hiding the link is a convenience. `visible()` decides what this SHOP has
+    // asked to be offered, and protects nothing at all: the address still opens.
+    items: visible(
+      section.items.filter((item) => item.module === undefined || can(user, item.module, 'view')),
+      features,
+    ),
   })).filter((section) => section.items.length > 0);
 
   const primaryItems = sections.flatMap((section) => section.items).filter((item) => item.primary);

@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
+import { BUSINESS_TYPES, defaultFeatures } from '@/lib/business-type';
 
 import { db } from '@/db/client';
 import { login, loginWithPin, createUser, needsInitialSetup } from '@/services/auth.service';
@@ -225,6 +226,13 @@ export async function logoutAction(): Promise<void> {
 const setupSchema = z
   .object({
     businessName: z.string().trim().min(2, 'Enter your shop name.').max(120),
+    /**
+     * `.catch` here, and a hard enum in Settings, deliberately. At first run
+     * there is nothing at stake — no data and no switches to lose — and
+     * refusing to create the owner account over a radio button is a far worse
+     * outcome than starting the shop on the behaviour it would have had anyway.
+     */
+    businessType: z.enum(BUSINESS_TYPES).catch('general_retail'),
     displayName: z.string().trim().min(2, 'Enter your name.').max(80),
     username: z
       .string()
@@ -256,6 +264,7 @@ export async function setupOwnerAction(
 
   const parsed = setupSchema.safeParse({
     businessName: formData.get('businessName'),
+    businessType: formData.get('businessType'),
     displayName: formData.get('displayName'),
     username: formData.get('username'),
     password: formData.get('password'),
@@ -271,7 +280,7 @@ export async function setupOwnerAction(
     return { fieldErrors };
   }
 
-  const { businessName, displayName, username, password } = parsed.data;
+  const { businessName, businessType, displayName, username, password } = parsed.data;
 
   try {
     await createUser(db, { username, displayName, password, role: 'OWNER' });
@@ -283,8 +292,18 @@ export async function setupOwnerAction(
 
   const { businessSettings } = await import('@/db/schema');
   const { eq } = await import('drizzle-orm');
+  // The switches must be written explicitly. The row already exists carrying
+  // the column defaults, so choosing Building materials here and saying nothing
+  // more would leave every feature switched on regardless.
+  const features = defaultFeatures(businessType);
   db.update(businessSettings)
-    .set({ businessName, setupCompletedAt: new Date(), updatedAt: new Date() })
+    .set({
+      businessName,
+      businessType,
+      featureExpiryBatches: features.expiry_batches,
+      setupCompletedAt: new Date(),
+      updatedAt: new Date(),
+    })
     .where(eq(businessSettings.id, 1))
     .run();
 
