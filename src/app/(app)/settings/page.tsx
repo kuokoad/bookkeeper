@@ -59,6 +59,7 @@ export default async function SettingsPage() {
     taxInclusive: settings.taxInclusive,
     // Rendered by the same domain function the rates are parsed with, so what
     // is shown and what is saved cannot drift apart.
+    look: settings.look,
     taxSummary: `${formatBasisPoints(allInRateBp)}%`,
     lowStock: toQtyInputString(settings.lowStockThresholdMilli as Qty),
     expiryWarningDays: String(settings.expiryWarningDays),

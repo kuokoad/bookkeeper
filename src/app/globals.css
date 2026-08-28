@@ -56,6 +56,25 @@
   --warning-soft: oklch(0.96 0.05 75);
   --success: oklch(0.55 0.14 150);
   --success-soft: oklch(0.95 0.04 150);
+
+  /* How a card sits on the page. Tokens because the Ledger look wants paper on
+     a desk rather than panels on a screen, and that difference is a corner
+     radius and a shadow — not something worth a second component over. These
+     values ARE the current look: `--card-radius` matches `rounded-xl` and the
+     shadow is none, so the default renders exactly as it always has. */
+  --card-radius: 0.75rem;
+  --card-shadow: none;
+
+  /* The donut's slices. Roles rather than the brand ramp used directly, so a
+     look can dress them — the default's values ARE that ramp, so a shop that
+     has not switched sees exactly the chart it always did. Every other mark in
+     chart.tsx already reads --accent and --border-strong, which is why the
+     donut was the one thing that stayed green when the look changed. */
+  --chart-1: var(--color-brand-500);
+  --chart-2: var(--color-brand-300);
+  --chart-3: var(--color-brand-700);
+  --chart-4: var(--color-brand-200);
+  --chart-5: var(--color-brand-800);
 }
 
 /* ---------------------------------------------------------------------------
@@ -121,6 +140,121 @@
     --success: oklch(0.7 0.13 150);
     --success-soft: oklch(0.27 0.05 150);
   
+}
+
+/* ---------------------------------------------------------------------------
+   The Ledger look.
+
+   Paint, and only paint. Every rule below is keyed on `data-look='ledger'`,
+   which the root layout writes from the shop's settings; the default look sets
+   no attribute at all, so nothing here can reach it. Both looks render the same
+   components from the same figures — there is no second dashboard, and no way
+   for the two to disagree about the shop's money.
+
+   Light and dark are BOTH defined, through all three of the same states the
+   theme uses. Choosing Ledger must never quietly cancel somebody's dark mode:
+   a till assistant on a phone at midnight asked for a dark screen and is
+   entitled to one, warm or not.
+
+   The sidebar stays a constant within each look, exactly as it does in the
+   default one, for the reason given up there: it is chrome, not content.
+   --------------------------------------------------------------------------- */
+
+:root[data-look='ledger'] {
+  /* Sand desk, cream cards, ink brown. Hue 70: warm, dark enough to read. */
+  --surface: oklch(0.91 0.022 78);
+  --surface-raised: oklch(0.975 0.012 85);
+  --surface-sunken: oklch(0.87 0.026 76);
+  --border: oklch(0.85 0.028 72);
+  --border-strong: oklch(0.75 0.035 68);
+  --text: oklch(0.33 0.03 58);
+  --text-muted: oklch(0.52 0.028 62);
+  --text-subtle: oklch(0.62 0.024 66);
+
+  /* Sage rather than the default green: the same role, a warmer neighbour. */
+  --accent: oklch(0.52 0.075 145);
+  --accent-text: oklch(0.98 0.01 85);
+  --accent-soft: oklch(0.9 0.04 145);
+
+  --sidebar: oklch(0.29 0.028 62);
+  --sidebar-raised: oklch(0.36 0.03 62);
+  --sidebar-border: oklch(0.42 0.03 62);
+  --sidebar-text: oklch(0.93 0.02 82);
+  --sidebar-muted: oklch(0.76 0.028 76);
+  --sidebar-subtle: oklch(0.64 0.03 72);
+
+  /* Clay, not fire engine: a loss should read as serious, not as an emergency. */
+  --danger: oklch(0.52 0.13 35);
+  --danger-soft: oklch(0.91 0.04 40);
+  --warning: oklch(0.63 0.11 78);
+  --warning-soft: oklch(0.92 0.05 82);
+  --success: oklch(0.52 0.09 145);
+  --success-soft: oklch(0.9 0.04 145);
+
+  /* Paper sits on a desk, so cards cast a shadow and round a little more. */
+  --card-radius: 1rem;
+  --card-shadow:
+    0 2px 0 oklch(0.62 0.035 70 / 0.16), 0 10px 22px oklch(0.42 0.04 65 / 0.1);
+
+  /* Sage through clay: a spending breakdown in the same earth as everything
+     else here, rather than the default's emerald sitting on warm sand. */
+  --chart-1: oklch(0.55 0.08 145);
+  --chart-2: oklch(0.72 0.06 130);
+  --chart-3: oklch(0.5 0.1 55);
+  --chart-4: oklch(0.78 0.05 90);
+  --chart-5: oklch(0.42 0.07 40);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-look='ledger']:not([data-theme='light']) {
+    color-scheme: dark;
+    --surface: oklch(0.2 0.016 62);
+    --surface-raised: oklch(0.25 0.018 64);
+    --surface-sunken: oklch(0.16 0.014 60);
+    --border: oklch(0.34 0.022 64);
+    --border-strong: oklch(0.44 0.026 66);
+    --text: oklch(0.93 0.018 82);
+    --text-muted: oklch(0.74 0.022 76);
+    --text-subtle: oklch(0.62 0.024 72);
+
+    --accent: oklch(0.72 0.09 145);
+    --accent-text: oklch(0.19 0.02 62);
+    --accent-soft: oklch(0.3 0.045 145);
+
+    --danger: oklch(0.68 0.13 38);
+    --danger-soft: oklch(0.3 0.05 38);
+    --warning: oklch(0.76 0.11 80);
+    --warning-soft: oklch(0.31 0.05 80);
+    --success: oklch(0.71 0.1 148);
+    --success-soft: oklch(0.29 0.045 148);
+
+    --card-shadow: 0 2px 0 oklch(0.12 0.01 60 / 0.5), 0 10px 22px oklch(0.08 0.01 60 / 0.45);
+  }
+}
+
+:root[data-look='ledger'][data-theme='dark'] {
+  color-scheme: dark;
+    --surface: oklch(0.2 0.016 62);
+    --surface-raised: oklch(0.25 0.018 64);
+    --surface-sunken: oklch(0.16 0.014 60);
+    --border: oklch(0.34 0.022 64);
+    --border-strong: oklch(0.44 0.026 66);
+    --text: oklch(0.93 0.018 82);
+    --text-muted: oklch(0.74 0.022 76);
+    --text-subtle: oklch(0.62 0.024 72);
+
+    --accent: oklch(0.72 0.09 145);
+    --accent-text: oklch(0.19 0.02 62);
+    --accent-soft: oklch(0.3 0.045 145);
+
+    --danger: oklch(0.68 0.13 38);
+    --danger-soft: oklch(0.3 0.05 38);
+    --warning: oklch(0.76 0.11 80);
+    --warning-soft: oklch(0.31 0.05 80);
+    --success: oklch(0.71 0.1 148);
+    --success-soft: oklch(0.29 0.045 148);
+
+    --card-shadow: 0 2px 0 oklch(0.12 0.01 60 / 0.5), 0 10px 22px oklch(0.08 0.01 60 / 0.45);
 }
 
 /* ---------------------------------------------------------------------------
@@ -321,3 +455,4 @@ body {
     color: black;
   }
 }
+

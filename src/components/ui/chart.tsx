@@ -192,12 +192,16 @@ export function Donut({
   if (total <= 0) return <EmptyChart className={className} />;
 
   const RADIUS = 15.9155; // circumference 100, so a slice's length IS its percent
+  // Role tokens, not the brand ramp directly. Every other mark in this file
+  // already reads --accent and --border-strong, so the donut was the one thing
+  // that stayed emerald when the shop switched to a warm look. The default's
+  // values are that same ramp, so nothing changes for a shop that has not.
   const palette = [
-    'var(--color-brand-500)',
-    'var(--color-brand-300)',
-    'var(--color-brand-700)',
-    'var(--color-brand-200)',
-    'var(--color-brand-800)',
+    'var(--chart-1)',
+    'var(--chart-2)',
+    'var(--chart-3)',
+    'var(--chart-4)',
+    'var(--chart-5)',
     'var(--border-strong)',
   ];
 

@@ -9,6 +9,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Field, TextInput } from '@/components/ui/field';
 import { Card } from '@/components/ui/page';
+import { LOOKS, LOOK_LABELS, type Look } from '@/lib/look';
 
 export interface SettingsFormValues {
   businessName: string;
@@ -18,6 +19,7 @@ export interface SettingsFormValues {
   email: string;
   currencyCode: string;
   currencySymbol: string;
+  look: Look;
   taxEnabled: boolean;
   taxInclusive: boolean;
   /** What the shop currently charges, all in, e.g. "20". Shown, never edited here. */
@@ -235,6 +237,55 @@ export function SettingsForm({
             />
           </Field>
         </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 text-sm font-semibold text-content">Look</h2>
+        <p className="mb-4 text-sm text-content-muted">
+          How every screen in the shop is painted. This changes nothing about your figures, and
+          applies to whichever screen anyone signs in on.
+        </p>
+
+        <fieldset className="grid gap-3 sm:grid-cols-2">
+          <legend className="sr-only">Look</legend>
+          {LOOKS.map((option) => (
+            <label
+              key={option}
+              className="flex cursor-pointer gap-3 rounded-xl border border-line p-3 has-checked:border-accent has-checked:bg-accent-soft"
+            >
+              <input
+                type="radio"
+                name="look"
+                value={option}
+                defaultChecked={values.look === option}
+                className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-content">
+                  {LOOK_LABELS[option].name}
+                </span>
+                <span className="mt-0.5 block text-xs text-content-muted">
+                  {LOOK_LABELS[option].blurb}
+                </span>
+                {/* A swatch, so the difference is visible before saving rather
+                    than only after. Hard-coded rather than token-driven: it has
+                    to show the look you are NOT currently wearing. */}
+                <span className="mt-2 flex gap-1" aria-hidden="true">
+                  {(option === 'ledger'
+                    ? ['#e8dcc8', '#fdfaf3', '#453729', '#7c9a6d']
+                    : ['#f7f8fa', '#ffffff', '#2b3038', '#2f9e77']
+                  ).map((swatch) => (
+                    <span
+                      key={swatch}
+                      className="h-4 w-6 rounded border border-line"
+                      style={{ backgroundColor: swatch }}
+                    />
+                  ))}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
       </Card>
 
       <Card>

@@ -70,6 +70,7 @@ function setStartMonth(month: number): void {
       email: settings.email,
       currencyCode: settings.currencyCode,
       currencySymbol: settings.currencySymbol,
+      look: settings.look,
       taxEnabled: settings.taxEnabled,
         taxInclusive: settings.taxInclusive,
         lowStockThresholdMilli: settings.lowStockThresholdMilli,

@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
+/**
+ * These two walk every price from -50.00 to 50.00 for each rate set: 10,001
+ * cases apiece, six tests, and that is the point — a tax identity that holds
+ * for chosen examples and fails at 3,847 pesewas is exactly the bug this suite
+ * exists to catch, so the loop stays exhaustive.
+ *
+ * Vitest's 5s default is tuned for unit tests. These sit just under it on an
+ * idle machine and tip over whenever anything else is running, which turns
+ * `npm run verify` red for a reason that has nothing to do with the books.
+ * The allowance is generous on purpose: it exists to distinguish "busy" from
+ * "hung", not to hide a slow test.
+ */
+const SLOW_MS = 30_000;
+
 import {
   taxOnNet,
   taxShareOf,
@@ -295,7 +309,7 @@ describe('the identities hold across every price, not just chosen ones', () => {
           running += line.amount;
         }
       }
-    });
+    }, SLOW_MS);
 
     it(`extracting tax from: ${label}`, () => {
       for (let value = -5_000; value <= 5_000; value++) {
@@ -320,7 +334,7 @@ describe('the identities hold across every price, not just chosen ones', () => {
           running += line.amount;
         }
       }
-    });
+    }, SLOW_MS);
   }
 
   it('a return is the exact mirror of the sale it reverses', () => {

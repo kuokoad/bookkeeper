@@ -4,6 +4,18 @@ import { boolean, businessDate, createdAt, timestampMs, updatedAt } from './_sha
 import { oneOf } from './_check';
 
 /**
+ * The two looks the shop's screens can wear.
+ *
+ * `default` is the app as it has always been. `ledger` is a warm, paper-like
+ * treatment: sand ground, cream cards, ink brown chrome. It is PAINT ONLY —
+ * both looks render the same components from the same figures, so there is no
+ * second dashboard to keep in step and no way for the two to disagree about
+ * the shop's money.
+ */
+export const LOOKS = ['default', 'ledger'] as const;
+export type Look = (typeof LOOKS)[number];
+
+/**
  * Business settings — a strict singleton (id is pinned to 1 by a CHECK).
  * Currency, tax and stock policy live here so nothing is hard-coded in code.
  */
@@ -96,6 +108,19 @@ export const businessSettings = sqliteTable(
      */
     booksLockedBefore: businessDate('books_locked_before'),
 
+    /**
+     * Which look every screen wears.
+     *
+     * Kept against the SHOP rather than in a cookie, unlike light and dark.
+     * Brightness is a property of the screen you are standing at — the counter
+     * PC in daylight and the owner's phone at midnight want different answers,
+     * and `lib/theme.ts` says so. Which look the shop wears is the opposite: it
+     * is a decision about the business, made once, and it should be the same on
+     * every screen the shop owns. Being here also means it is audited with a
+     * before and after, like every other setting on this table.
+     */
+    look: text('look', { enum: LOOKS }).notNull().default('default'),
+
     /** True while the database still contains seeded demo rows. */
     hasDemoData: boolean('has_demo_data').notNull().default(false),
 
@@ -113,6 +138,9 @@ export const businessSettings = sqliteTable(
       sql`${t.financialYearStartMonth} BETWEEN 1 AND 12`,
     ),
     check('ck_business_settings_currency', sql`length(${t.currencyCode}) BETWEEN 2 AND 4`),
+    // The enum in `text(..., { enum })` is a TYPE-level claim only; this is what
+    // makes the database refuse a look nothing knows how to paint.
+    check('ck_business_settings_look', oneOf(t.look, LOOKS)),
     check(
       'ck_business_settings_lock_date_format',
       sql`${t.booksLockedBefore} IS NULL OR ${t.booksLockedBefore} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`,

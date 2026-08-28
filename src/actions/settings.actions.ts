@@ -9,6 +9,7 @@ import { clearLogo, setLogo, updateSettings } from '@/services/settings.service'
 import { MAX_IMAGE_BYTES, inspectImage } from '@/lib/image';
 import { parseQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
+import { LOOKS } from '@/lib/look';
 import type { FormState } from './auth.actions';
 
 /**
@@ -49,6 +50,11 @@ const settingsSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z]{3}$/, 'Use the three-letter code, like GHS or NGN.'),
   currencySymbol: z.string().trim().min(1, 'Enter the symbol shown on receipts.').max(8),
+
+  // Anything unrecognised falls back to the look the shop has always had,
+  // rather than failing the whole save over a cosmetic field. The database
+  // CHECK refuses a bad value regardless, so this is belt and braces.
+  look: z.enum(LOOKS).catch('default'),
 
   taxEnabled: z.boolean(),
   taxInclusive: z.boolean(),
@@ -123,6 +129,7 @@ export async function updateSettingsAction(
     email: formData.get('email'),
     currencyCode: formData.get('currencyCode'),
     currencySymbol: formData.get('currencySymbol'),
+    look: formData.get('look'),
     taxEnabled: checkbox(formData, 'taxEnabled'),
     taxInclusive: checkbox(formData, 'taxInclusive'),
     lowStockThresholdMilli,

@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
+import { LOOK_LABELS, type Look } from '@/lib/look';
 import { businessSettings, journalEntries } from '@/db/schema';
 import type { Db, Tx } from '@/db/types';
 import { NotFoundError, ValidationError } from '@/domain/errors';
@@ -58,6 +59,9 @@ export interface SettingsInput {
 
   currencyCode: string;
   currencySymbol: string;
+
+  /** Which look every screen wears. Paint only; it changes no figure. */
+  look: Look;
 
   taxEnabled: boolean;
   taxInclusive: boolean;
@@ -235,6 +239,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         email: input.email,
         currencyCode: input.currencyCode,
         currencySymbol: input.currencySymbol,
+        look: input.look,
         taxEnabled: input.taxEnabled,
         // The rate and label are deliberately absent: they belong to the
         // components. Switching tax off leaves them alone, so switching it back
@@ -263,6 +268,9 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
       describeChange('Email', before.email, input.email),
       describeChange('Currency', before.currencyCode, input.currencyCode),
       describeChange('Currency symbol', before.currencySymbol, input.currencySymbol),
+      // By the name on the button, not the slug in the column: an audit line
+      // reading "ledger" means nothing to the person who clicked "Ledger".
+      describeChange('Look', LOOK_LABELS[before.look].name, LOOK_LABELS[input.look].name),
       describeChange('Tax', before.taxEnabled, input.taxEnabled),
       describeChange('Prices include tax', before.taxInclusive, input.taxInclusive),
       describeChange(

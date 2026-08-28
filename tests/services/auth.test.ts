@@ -424,7 +424,12 @@ describe('after a lockout has been served', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe('ACCOUNT_LOCKED');
-  });
+    // Two full runs of failed sign-ins, each one hashing a password for real
+    // rather than against a stub — which is the whole point, since a password
+    // check that is cheap to run is cheap to attack. Slow by design, so it is
+    // given room rather than left to trip Vitest's 5s unit-test default the
+    // moment the machine is busy.
+  }, 30_000);
 });
 
 describe('how long a session lives', () => {

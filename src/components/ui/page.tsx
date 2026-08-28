@@ -30,8 +30,14 @@ export function Card({
   className?: string;
   title?: string;
 }) {
+  // Radius and shadow come from tokens rather than fixed utilities, so a look
+  // can make a card sit on the page like paper on a desk without a second
+  // component existing. The default look's tokens are today's values exactly.
   return (
-    <section className={cn('rounded-xl border border-line bg-surface-raised p-4', className)}>
+    <section
+      className={cn('border border-line bg-surface-raised p-4', className)}
+      style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}
+    >
       {title && <h2 className="mb-3 text-sm font-semibold text-content">{title}</h2>}
       {children}
     </section>
@@ -60,7 +66,10 @@ export function Stat({
           : 'text-content';
 
   return (
-    <div className="rounded-xl border border-line bg-surface-raised p-4">
+    <div
+      className="border border-line bg-surface-raised p-4"
+      style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}
+    >
       <p className="text-sm text-content-muted">{label}</p>
       <p className={cn('tabular mt-1 text-xl font-semibold', toneClass)}>{value}</p>
       {hint && <p className="mt-1 text-xs text-content-subtle">{hint}</p>}
