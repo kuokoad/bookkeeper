@@ -24,7 +24,9 @@ import { money, quantity, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
 import { Donut, PairedBars, SplitBar, TrendLine } from '@/components/ui/chart';
 import { Clock } from '@/components/shared/clock';
+import { Greeting } from '@/components/shared/greeting';
 import { formatClockDate, formatClockTime } from '@/lib/clock-format';
+import { bandFor } from '@/lib/greeting';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -206,9 +208,17 @@ export default async function DashboardPage({
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-content">
-            Good day, {user.displayName.split(' ')[0]}
-          </h1>
+          {/*
+            The band is the server's guess, corrected in the browser so this
+            can never contradict the Clock to its right. The seed holds the
+            wording steady for the whole band rather than reshuffling on every
+            refresh — see lib/greeting.ts.
+          */}
+          <Greeting
+            displayName={user.displayName}
+            initialBand={bandFor(new Date().getHours())}
+            seed={`${today}:${user.username}`}
+          />
           <p className="mt-1 text-sm text-content-muted">
             {nothingToShow
               ? 'Use the menu to get to your work.'
@@ -420,9 +430,7 @@ export default async function DashboardPage({
           </ul>
         </Card>
         )}
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
         {shows.stock && stock !== null && (
         <Card title="Stock">
           <Headline value={money(stock.totalStockValue)} note="At weighted average cost" />
@@ -500,39 +508,43 @@ export default async function DashboardPage({
         )}
 
         {shows.money && trialBalance !== null && (
-        <div className="lg:col-span-2">
-          <Card title="Books check">
-            <dl className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <dt className="text-sm text-content-muted">Total debits</dt>
-                <dd className="tabular mt-0.5 text-lg font-semibold text-content">
-                  {money(trialBalance.totalDebit)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-content-muted">Total credits</dt>
-                <dd className="tabular mt-0.5 text-lg font-semibold text-content">
-                  {money(trialBalance.totalCredit)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-content-muted">Status</dt>
-                <dd
-                  className={`mt-0.5 text-lg font-semibold ${
-                    trialBalance.balanced ? 'text-success' : 'text-danger'
-                  }`}
-                >
-                  {trialBalance.balanced ? 'Balanced' : 'Out of balance'}
-                </dd>
-              </div>
-            </dl>
-            <p className="mt-4 border-t border-line pt-3 text-xs text-content-subtle">
-              {entryCount === 0
-                ? 'No transactions recorded yet, so every figure above is genuinely zero — not a placeholder.'
-                : `Derived from ${entryCount} journal ${entryCount === 1 ? 'entry' : 'entries'}. Every figure traces back to a real transaction.`}
-            </p>
-          </Card>
-        </div>
+        <Card title="Books check">
+          {/*
+            Label left, figure right, one per row — the same shape the Money
+            accounts card above uses. It was three across while this card
+            spanned two columns; at a single column that put four-figure
+            amounts on two lines each.
+          */}
+          <dl className="space-y-2.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-sm text-content-muted">Total debits</dt>
+              <dd className="tabular shrink-0 font-medium text-content">
+                {money(trialBalance.totalDebit)}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-sm text-content-muted">Total credits</dt>
+              <dd className="tabular shrink-0 font-medium text-content">
+                {money(trialBalance.totalCredit)}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-sm text-content-muted">Status</dt>
+              <dd
+                className={`shrink-0 font-medium ${
+                  trialBalance.balanced ? 'text-success' : 'text-danger'
+                }`}
+              >
+                {trialBalance.balanced ? 'Balanced' : 'Out of balance'}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-4 border-t border-line pt-3 text-xs text-content-subtle">
+            {entryCount === 0
+              ? 'No transactions recorded yet, so every figure above is genuinely zero — not a placeholder.'
+              : `Derived from ${entryCount} journal ${entryCount === 1 ? 'entry' : 'entries'}. Every figure traces back to a real transaction.`}
+          </p>
+        </Card>
         )}
       </div>
     </div>
