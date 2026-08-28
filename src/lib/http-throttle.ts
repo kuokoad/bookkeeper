@@ -44,6 +44,17 @@ export const EXPORT_THROTTLE: Throttle = { limit: 30, windowMs: 60_000 };
 export const BACKUP_THROTTLE: Throttle = { limit: 6, windowMs: 5 * 60_000 };
 
 /**
+ * Search-as-you-type: loose, because it is a keystroke and not a report.
+ *
+ * The box in the top bar asks for results while somebody types, debounced, so a
+ * person hunting for a customer legitimately makes a request every couple of
+ * hundred milliseconds for a few seconds at a time. This has to sit well above
+ * that and still catch a loop. Each query is a handful of indexed LIKEs against
+ * small tables, so the cost of one is closer to a page view than to a backup.
+ */
+export const SEARCH_THROTTLE: Throttle = { limit: 240, windowMs: 60_000 };
+
+/**
  * `null` when the request may proceed, otherwise the 429 to return.
  *
  * `Retry-After` is in whole seconds and rounded UP: rounding down would invite
