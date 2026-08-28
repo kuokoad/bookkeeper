@@ -4,6 +4,7 @@ import type { Notice } from '@/services/notifications.service';
 import { logoutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { ThemeSwitch } from './theme-switch';
+import { SearchBox } from './search-box';
 import { Icon } from './icon';
 
 /**
@@ -15,16 +16,17 @@ import { Icon } from './icon';
  *
  * The notification panel is a `<details>` element, so it opens and closes with
  * no JavaScript at all — the same reason the charts are server-rendered SVG.
+ *
+ * `SearchBox` is the one exception in here, and only because it has to show the
+ * term that was searched for and a layout cannot read the query string. Search
+ * itself is still a plain GET form, so it works before that JavaScript arrives.
  */
 export function TopBar({
   shopName,
   notices,
-  query,
 }: {
   shopName: string;
   notices: Notice[];
-  /** Echoed back so the box still shows what was searched for. */
-  query?: string;
 }) {
   const TONES = {
     danger: 'text-danger',
@@ -36,24 +38,7 @@ export function TopBar({
     <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface-raised px-4 py-2.5">
       <p className="truncate text-sm font-medium text-content lg:hidden">{shopName}</p>
 
-      <form action="/search" role="search" className="hidden min-w-0 flex-1 lg:block">
-        <label htmlFor="q" className="sr-only">
-          Search products, customers, suppliers and receipts
-        </label>
-        <div className="relative max-w-md">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-subtle">
-            <Icon name="reports" className="h-4 w-4" />
-          </span>
-          <input
-            id="q"
-            name="q"
-            type="search"
-            defaultValue={query ?? ''}
-            placeholder="Search a product, customer or receipt"
-            className="h-9 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm text-content placeholder:text-content-subtle focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
-          />
-        </div>
-      </form>
+      <SearchBox />
 
       <div className="ml-auto flex items-center gap-1">
         <Link
@@ -61,7 +46,7 @@ export function TopBar({
           className="rounded-lg p-2 text-content-muted transition-colors hover:bg-surface-sunken hover:text-content lg:hidden"
           aria-label="Search"
         >
-          <Icon name="reports" className="h-5 w-5" />
+          <Icon name="search" className="h-5 w-5" />
         </Link>
 
         <ThemeSwitch />

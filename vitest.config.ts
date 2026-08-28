@@ -12,6 +12,26 @@ export default defineConfig({
     // Financial invariant tests must not be silently skipped.
     passWithNoTests: false,
     restoreMocks: true,
+
+    /**
+     * Vitest defaults to 5s, which is tuned for pure unit tests. Very little
+     * here is one. A typical test in this suite builds a real SQLite database
+     * by running all the real migrations, and the rest take real online
+     * backups, hash real passwords, or walk ten thousand prices to prove a tax
+     * identity holds at every one of them. Several land within a second or two
+     * of that ceiling on an idle machine and go over it whenever anything else
+     * on the machine is busy.
+     *
+     * That produced runs of `npm run verify` failing with a handful of "Test
+     * timed out in 5000ms" lines and not one failed assertion — a red gate
+     * carrying no information, which is worse than a slow one. Raising it here
+     * rather than per test, because the ones that tripped were a different set
+     * each time; it is the suite that is slow, not three particular tests.
+     *
+     * The cost is honest: a test that genuinely hangs now takes 30s to say so.
+     * That is the right trade for a gate that means something when it is red.
+     */
+    testTimeout: 30_000,
   },
   resolve: {
     alias: {

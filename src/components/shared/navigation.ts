@@ -22,6 +22,7 @@ export type IconName =
   | 'reports'
   | 'users'
   | 'settings'
+  | 'search'
   | 'help';
 
 export interface NavItem {
