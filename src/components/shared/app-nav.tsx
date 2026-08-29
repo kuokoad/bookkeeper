@@ -103,7 +103,7 @@ export function MobileNav({ items }: { items: NavItem[] }) {
   return (
     <nav
       aria-label="Main"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface-raised pb-[env(safe-area-inset-bottom)] lg:hidden"
+      className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface-raised pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       <ul className="grid grid-cols-4">
         {items.slice(0, 4).map((item) => {

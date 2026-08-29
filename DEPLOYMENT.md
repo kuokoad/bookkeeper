@@ -102,6 +102,41 @@ documented in `env.example` and neither should be changed speculatively.
 
 ---
 
+## Printing
+
+Eight screens are built to be printed: a sale's receipt and invoice, a customer
+statement, the trial balance, the balance sheet, the sales and inventory
+reports, and the year-end pack. Each has a **Print** button, which opens the
+browser's own print dialog. Nothing needs installing and no printer is
+configured inside the application, because the browser already knows about
+every printer the machine has.
+
+**Paper.** Everything except the receipt is set to A4. The receipt follows
+whatever paper is selected in the dialog, so it prints down the top of an A4
+sheet today and fills an 80mm till roll on the day one is plugged in, with
+nothing to change here.
+
+**Choosing the printer.** A shop with a till roll at the counter and an A4
+printer in the back picks between them in the dialog under **Destination**.
+Setting the A4 printer as the machine's default is worth doing, since it is the
+one used for anything a customer or an accountant keeps.
+
+**The URL across the top.** Browsers print the page address, the title and the
+date into the page margin. That is why these documents set a zero page margin
+and lay their own margin inside it: with no margin there is nowhere for the
+browser to write. If a printout does come out carrying a URL, somebody has
+switched **Headers and footers** back on in the dialog's More settings; turn it
+off there.
+
+**Colour.** Print in black and white unless the shop's logo needs colour. The
+documents are designed to read correctly either way, and muted text is darkened
+for paper so the small print stays legible.
+
+**Save as PDF** is in the same Destination list, which is how to send an invoice
+by email or WhatsApp without a printer at all.
+
+---
+
 ## Keeping it running
 
 Starting it by hand works, but the shop should not depend on somebody

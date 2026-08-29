@@ -435,6 +435,29 @@ body {
   }
 }
 
+/*
+  The paper.
+
+  `margin: 0` is doing something specific and is not a mistake. Chrome draws its
+  own furniture — the page URL, the document title, the date, "1/2" — into the
+  page MARGIN. Leave a margin and every invoice a shop hands a customer carries
+  "localhost:5177/sales/14/invoice" across the top. There is no CSS that removes
+  that text; taking the margin away removes the space it lives in, which is the
+  only reliable way to be rid of it.
+
+  The real margin then has to come from somewhere else, and that is the padding
+  on `body` below. It is not merely cosmetic: printers cannot mark the outer few
+  millimetres of a sheet, so content laid flush to a zero margin comes out
+  clipped on the edges.
+
+  A4 because every document here except the receipt is a business paper: an
+  invoice, a statement, a trial balance, the year-end pack an accountant reads.
+*/
+@page {
+  size: A4;
+  margin: 0;
+}
+
 @media print {
   /* A receipt must render in its final state, not mid-entrance. */
   .motion-page,
@@ -450,9 +473,113 @@ body {
     display: none !important;
   }
 
+  /*
+    Flatten the shell.
+
+    On screen the layout reserves a full viewport height and leaves 6rem clear
+    at the bottom for the mobile bar that floats over it. On paper both are dead
+    space, and together they are enough to push a second sheet out of the
+    printer carrying nothing at all — which is exactly what a receipt did before
+    this rule existed. The chrome itself is hidden by `no-print` above; this is
+    the space it used to occupy.
+  */
+  .app-shell {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  .app-main {
+    padding: 0 !important;
+  }
+
+  /*
+    Plain paper, not a photograph of a screen.
+
+    On screen a document sits as a card on a tinted ground: a border, rounded
+    corners, a shadow, and a width chosen to stay readable on a wide monitor. On
+    paper the SHEET is the card. The border then prints as a box drawn around
+    the document, the corners round off a page that has square ones, and the
+    width leaves half the sheet empty. All three are furniture for a screen and
+    none of it belongs on something a customer or an accountant keeps.
+
+    `!important` is doing real work here: Card sets its radius and shadow as
+    inline styles, which nothing but this overrides.
+  */
+  .app-main > .motion-page > * {
+    max-width: none !important;
+    margin-inline: 0 !important;
+  }
+
+  article,
+  .app-main section {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  /*
+    The outermost card gives up its inset too, because the page margin already
+    provides one. Cards NESTED inside a report keep theirs, so its sections do
+    not run into one another on the page.
+  */
+  .app-main > .motion-page > * > article,
+  .app-main > .motion-page > * > section {
+    padding: 0 !important;
+  }
+
   body {
     background: white;
     color: black;
+    /* The margin @page gave up. See the note above. */
+    padding: 14mm;
+  }
+
+  /*
+    Tables are the whole point of most of these documents, and a table that
+    breaks badly is what makes a printout look untrustworthy.
+
+    A row split down the middle of a figure is the worst of it: half an amount
+    on one sheet and half on the next is not a rounding error a reader can spot,
+    it is a number they will read wrongly. `table-header-group` repeats the
+    column headings on every sheet, so page four of a general ledger still says
+    which column is debit and which is credit.
+  */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr,
+  img {
+    break-inside: avoid;
+  }
+
+  /* A heading alone at the foot of a sheet, with its section overleaf. */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  /* A single line stranded from its paragraph reads as a printing fault. */
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /*
+    Print in ink, not in screen greys. The tokens are tuned for a lit screen and
+    several of them come out as barely-there grey on paper, which matters most
+    on exactly the small print a reader is squinting at anyway.
+  */
+  .text-content-muted,
+  .text-content-subtle {
+    color: #333 !important;
   }
 }
 

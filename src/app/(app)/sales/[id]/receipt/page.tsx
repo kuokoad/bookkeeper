@@ -19,6 +19,37 @@ export const metadata: Metadata = { title: 'Receipt' };
 export const dynamic = 'force-dynamic';
 
 /**
+ * The paper a receipt comes out on, which is not the paper everything else uses.
+ *
+ * `size: auto` overrides the A4 default in globals.css and means "whichever
+ * paper is chosen in the print dialog". On the A4 printer a shop has today the
+ * receipt prints down the top of a sheet; on an 80mm till roll bought next year
+ * it fills the roll, with nothing in this application to change on the day it is
+ * plugged in.
+ *
+ * `size: A4` here instead would be wrong the moment a roll appears, and a fixed
+ * `80mm auto` would be wrong right now. Neither guess is needed: the person
+ * standing at the printer already told the dialog which paper they loaded.
+ *
+ * The margin has to adapt for the same reason the size does. In print a media
+ * query measures the PAGE, so `min-width: 120mm` asks "is this a sheet or a
+ * roll?" — nothing narrower than 120mm is a sheet, and nothing wider is a roll.
+ * A roll gets 4mm, because 14mm off each side of 80mm would throw away a third
+ * of the paper. A sheet gets the same 14mm as every other document, because
+ * 4mm on A4 runs the figures out to the edge, where printers cannot mark and
+ * the last column risks being clipped.
+ *
+ * Scoped by being on this route. `@page` cannot be scoped to a component, but a
+ * receipt is its own address, so this rule only ever reaches the browser when a
+ * receipt is what is on screen.
+ */
+const RECEIPT_PAGE_CSS = `
+@page { size: auto; margin: 0; }
+@media print { body { padding: 4mm; } }
+@media print and (min-width: 120mm) { body { padding: 14mm; } }
+`;
+
+/**
  * A printable receipt.
  *
  * Laid out narrow so it prints sensibly on an 80mm till roll as well as on A4.
@@ -53,6 +84,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="mx-auto max-w-md">
+      <style>{RECEIPT_PAGE_CSS}</style>
       <div className="no-print mb-4 flex items-center justify-between gap-2">
         <Link href={`/sales/${saleId}`}>
           <Button variant="secondary" size="sm">

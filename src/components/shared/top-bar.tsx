@@ -35,7 +35,7 @@ export function TopBar({
   } as const;
 
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface-raised px-4 py-2.5">
+    <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface-raised px-4 py-2.5">
       <p className="truncate text-sm font-medium text-content lg:hidden">{shopName}</p>
 
       <SearchBox />

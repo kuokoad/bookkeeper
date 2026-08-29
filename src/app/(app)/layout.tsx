@@ -59,8 +59,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const primaryItems = sections.flatMap((section) => section.items).filter((item) => item.primary);
 
   return (
-    <div className="flex min-h-dvh flex-col lg:flex-row">
-      <aside className="hidden w-64 shrink-0 border-r border-sidebar-line bg-sidebar lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
+    <div className="app-shell flex min-h-dvh flex-col lg:flex-row">
+      <aside className="no-print hidden w-64 shrink-0 border-r border-sidebar-line bg-sidebar lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
         <div className="border-b border-sidebar-line px-4 py-4">
           <p className="truncate px-2 font-semibold text-sidebar-text">
             {settings?.businessName ?? 'NunaBooks'}
@@ -95,7 +95,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar shopName={settings?.businessName ?? 'NunaBooks'} notices={notices} />
 
-        <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">
+        <main className="app-main flex-1 px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>
