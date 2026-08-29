@@ -139,6 +139,80 @@ export function parseSalesFilters(
   };
 }
 
+// --- quotations ------------------------------------------------------------
+
+export const QUOTATION_SORTS = ['date', 'total', 'validUntil'] as const;
+
+export interface QuotationListQuery {
+  from: string;
+  to: string;
+  status?: 'OPEN' | 'CONVERTED' | 'CANCELLED';
+  /** Open quotes past their date. A view of the data, never a stored status. */
+  expired?: boolean;
+  customerId?: number;
+  search?: string;
+  sort: (typeof QUOTATION_SORTS)[number];
+  direction: 'asc' | 'desc';
+}
+
+/**
+ * ONE parser, used by the quotations page AND its CSV route.
+ *
+ * An export that read the query string its own way is how a downloaded file
+ * stops matching the screen it came from.
+ */
+export function parseQuotationFilters(
+  params: SearchParams,
+  today: string = toBusinessDate(),
+  pageSize: number = DEFAULT_PAGE_SIZE,
+): ParsedList<QuotationListQuery> {
+  const { range, preset } = resolveDateRange(
+    one(params, 'period'),
+    one(params, 'from'),
+    one(params, 'to'),
+    today,
+  );
+  const { sort, direction } = parseSort(
+    one(params, 'sort'),
+    one(params, 'direction'),
+    QUOTATION_SORTS,
+    'date',
+  );
+
+  const filters: QuotationListQuery = { from: range.from, to: range.to, sort, direction };
+  put(
+    filters,
+    'status',
+    parseEnum(one(params, 'status'), ['OPEN', 'CONVERTED', 'CANCELLED'] as const),
+  );
+  // Only ever true or absent. "expired=0" is not a request to see unexpired
+  // quotes, it is a hand-edited query string, and it narrows nothing.
+  put(filters, 'expired', one(params, 'expired') === '1' ? true : undefined);
+  put(filters, 'customerId', parseId(one(params, 'customer')));
+  put(filters, 'search', parseSearch(one(params, 'q')));
+
+  const paged = parsePage(one(params, 'page'), pageSize);
+
+  return {
+    filters,
+    range,
+    preset,
+    page: paged.page,
+    pageSize: paged.pageSize,
+    carried: carry(params, [
+      'period',
+      'from',
+      'to',
+      'q',
+      'status',
+      'expired',
+      'customer',
+      'sort',
+      'direction',
+    ]),
+  };
+}
+
 // --- purchases -------------------------------------------------------------
 
 export function parsePurchaseFilters(

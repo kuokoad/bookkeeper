@@ -21,6 +21,7 @@ export const PERMISSION_MODULES = [
   'accounts',
   'reports',
   'reconciliation',
+  'quotations',
   'users',
   'settings',
 ] as const;

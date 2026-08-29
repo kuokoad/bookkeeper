@@ -27,6 +27,7 @@ export function getFeatures(): FeatureSwitches {
       .select({
         businessType: businessSettings.businessType,
         featureExpiryBatches: businessSettings.featureExpiryBatches,
+        featureQuotations: businessSettings.featureQuotations,
       })
       .from(businessSettings)
       .where(eq(businessSettings.id, 1))

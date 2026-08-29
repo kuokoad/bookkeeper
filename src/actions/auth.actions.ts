@@ -301,6 +301,7 @@ export async function setupOwnerAction(
       businessName,
       businessType,
       featureExpiryBatches: features.expiry_batches,
+      featureQuotations: features.quotations,
       setupCompletedAt: new Date(),
       updatedAt: new Date(),
     })

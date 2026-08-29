@@ -160,6 +160,19 @@ export const businessSettings = sqliteTable(
      */
     featureExpiryBatches: boolean('feature_expiry_batches').notNull().default(true),
 
+    /**
+     * Quotations. Default FALSE, unlike the switch above it, and the difference
+     * is worth stating.
+     *
+     * `feature_expiry_batches` defaults true because every existing shop already
+     * had expiry dates and an upgrade must take nothing away. NOBODY had
+     * quotations, so there is nothing to preserve, and the honest default is
+     * what a fresh shop's own type says: a new install is `general_retail`, and
+     * a provisions shop does not write quotes. Existing shops are set from their
+     * own declared type by the migration.
+     */
+    featureQuotations: boolean('feature_quotations').notNull().default(false),
+
     /** True while the database still contains seeded demo rows. */
     hasDemoData: boolean('has_demo_data').notNull().default(false),
 

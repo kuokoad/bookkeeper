@@ -28,6 +28,7 @@ export const DOC_TYPES = {
   ADJUSTMENT: 'ADJUSTMENT',
   RECONCILIATION: 'RECONCILIATION',
   BATCH: 'BATCH',
+  QUOTE: 'QUOTE',
 } as const;
 
 export type DocType = (typeof DOC_TYPES)[keyof typeof DOC_TYPES];
@@ -48,6 +49,9 @@ export const DEFAULT_SEQUENCES: readonly { docType: DocType; prefix: string; pad
   // A batch is a document in its own right: a shop points at one during a
   // recall, and a stock take reads the ref off the shelf.
   { docType: DOC_TYPES.BATCH, prefix: 'BAT-', padding: 5 },
+  // A quote is handed to somebody who may ring back weeks later asking about
+  // "that price you gave me". It needs a number they can quote back.
+  { docType: DOC_TYPES.QUOTE, prefix: 'QTE-', padding: 5 },
 ];
 
 export function formatDocumentNumber(prefix: string, value: number, padding: number): string {

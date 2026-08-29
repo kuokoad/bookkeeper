@@ -282,6 +282,7 @@ export function updateSettings(db: Db, input: SettingsInput, actor: Actor): void
         // Column by column rather than by spreading the map, so a feature added
         // without storage is a type error here and not a silent no-op.
         featureExpiryBatches: features.expiry_batches,
+        featureQuotations: features.quotations,
         taxEnabled: input.taxEnabled,
         // The rate and label are deliberately absent: they belong to the
         // components. Switching tax off leaves them alone, so switching it back

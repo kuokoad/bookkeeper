@@ -27,6 +27,11 @@ export const MODULE_ROWS: readonly ModuleRow[] = [
     label: 'Reconciliation',
     description: 'Counting cash against the books',
   },
+  {
+    module: 'quotations',
+    label: 'Quotations',
+    description: 'Prepare priced quotes for customers',
+  },
   { module: 'reports', label: 'Reports', description: 'Profit, balance sheet and the dashboard' },
   { module: 'users', label: 'Users', description: 'Staff accounts and what they can do' },
   { module: 'settings', label: 'Settings', description: 'Shop settings and closing the books' },

@@ -160,7 +160,7 @@ describe('changing what kind of business this is', () => {
 
     updateSettings(
       context.db,
-      { ...currentAsInput(), features: { expiry_batches: false } },
+      { ...currentAsInput(), features: { expiry_batches: false, quotations: true } },
       ACTOR,
     );
     expect(getSettings(context.db).featureExpiryBatches).toBe(false);

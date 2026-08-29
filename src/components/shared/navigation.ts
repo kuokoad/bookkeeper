@@ -21,6 +21,7 @@ export type IconName =
   | 'income'
   | 'accounts'
   | 'reports'
+  | 'quotations'
   | 'users'
   | 'settings'
   | 'search'
@@ -87,6 +88,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       // staff account — while `loginAction` went on sending them straight to it.
       { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', primary: true },
       { href: '/sales', label: 'Sales', icon: 'sales', module: 'sales', primary: true },
+      { href: '/quotations', label: 'Quotations', icon: 'quotations', module: 'quotations', feature: 'quotations' },
       { href: '/purchases', label: 'Purchases', icon: 'purchases', module: 'purchases' },
       { href: '/expenses', label: 'Expenses', icon: 'expenses', module: 'expenses', primary: true },
     ],

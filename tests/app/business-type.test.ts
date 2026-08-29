@@ -42,8 +42,8 @@ describe('the business types on offer', () => {
 
 describe('the features a type can put away', () => {
   it('refuses a key it does not know', () => {
-    expect(isFeatureKey('expiry_batches')).toBe(true);
-    for (const value of ['', 'EXPIRY_BATCHES', 'quotations', null, 1]) {
+    for (const key of FEATURE_KEYS) expect(isFeatureKey(key)).toBe(true);
+    for (const value of ['', 'EXPIRY_BATCHES', 'deliveries', null, 1]) {
       expect(isFeatureKey(value)).toBe(false);
     }
   });
@@ -76,8 +76,24 @@ describe('the features a type can put away', () => {
 });
 
 describe('where each type starts', () => {
-  it('leaves general retail exactly as the app has always been', () => {
-    for (const on of Object.values(defaultFeatures('general_retail'))) expect(on).toBe(true);
+  /**
+   * General retail is NOT "every switch on", and stopped being so the moment a
+   * second feature existed. It is the ordinary provisions shop: it dates its
+   * stock, and it does not write quotes. "Everything on" is what `other` means,
+   * which is the type to choose when neither of the others fits.
+   */
+  it('gives a provisions shop dates but not quotes', () => {
+    expect(defaultFeatures('general_retail')).toEqual({
+      expiry_batches: true,
+      quotations: false,
+    });
+  });
+
+  it('gives a materials yard quotes but not dates', () => {
+    expect(defaultFeatures('building_materials')).toEqual({
+      expiry_batches: false,
+      quotations: true,
+    });
   });
 
   it('means everything when the shop says "something else"', () => {
@@ -91,8 +107,8 @@ describe('where each type starts', () => {
 
 describe('a switch the owner has moved', () => {
   it('beats the type it started from, in both directions', () => {
-    expect(resolveFeatures('building_materials', { expiry_batches: true }).expiry_batches).toBe(true);
-    expect(resolveFeatures('general_retail', { expiry_batches: false }).expiry_batches).toBe(false);
+    expect(resolveFeatures('building_materials', { expiry_batches: true, quotations: true }).expiry_batches).toBe(true);
+    expect(resolveFeatures('general_retail', { expiry_batches: false, quotations: true }).expiry_batches).toBe(false);
   });
 
   it('falls back to the type when nothing was moved', () => {
@@ -102,20 +118,24 @@ describe('a switch the owner has moved', () => {
 
   it('is what a settings row is read as', () => {
     expect(
-      featuresFromRow({ businessType: 'building_materials', featureExpiryBatches: true }),
-    ).toEqual({ expiry_batches: true });
+      featuresFromRow({ businessType: 'building_materials', featureExpiryBatches: true, featureQuotations: true }),
+    ).toEqual({ expiry_batches: true, quotations: true });
     expect(
-      featuresFromRow({ businessType: 'general_retail', featureExpiryBatches: false }),
-    ).toEqual({ expiry_batches: false });
+      featuresFromRow({ businessType: 'general_retail', featureExpiryBatches: false, featureQuotations: true }),
+    ).toEqual({ expiry_batches: false, quotations: true });
   });
 
   it('shows everything when the stored type is not one we know', () => {
     // A hand-edited database file, or a column written by something that has
     // never heard of this list. The worst outcome must be a menu entry nobody
     // needed, never a shop that cannot find a feature it uses.
-    expect(featuresFromRow({ businessType: 'pharmacy', featureExpiryBatches: true })).toEqual({
-      expiry_batches: true,
-    });
+    expect(
+      featuresFromRow({
+        businessType: 'pharmacy',
+        featureExpiryBatches: true,
+        featureQuotations: true,
+      }),
+    ).toEqual({ expiry_batches: true, quotations: true });
   });
 });
 
@@ -126,17 +146,17 @@ describe('hiding a menu entry', () => {
   ];
 
   it('keeps everything a shop is offered', () => {
-    expect(visible(items, { expiry_batches: true })).toHaveLength(2);
+    expect(visible(items, { expiry_batches: true, quotations: true })).toHaveLength(2);
   });
 
   it('drops only what belongs to a feature that is off', () => {
-    const shown = visible(items, { expiry_batches: false });
+    const shown = visible(items, { expiry_batches: false, quotations: true });
     expect(shown.map((item) => item.href)).toEqual(['/sales']);
   });
 
   it('never drops an entry that names no feature', () => {
     const plain: { href: string; feature?: FeatureKey }[] = [{ href: '/dashboard' }];
-    expect(visible(plain, { expiry_batches: false })).toHaveLength(1);
+    expect(visible(plain, { expiry_batches: false, quotations: true })).toHaveLength(1);
   });
 });
 

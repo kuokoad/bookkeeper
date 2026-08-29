@@ -169,6 +169,13 @@
       "when": 1787932619048,
       "tag": "0023_lean_hemingway",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1788012305244,
+      "tag": "0024_quotations",
+      "breakpoints": true
     }
   ]
 }

@@ -383,7 +383,8 @@ describe('what kind of business this is', () => {
   it('starts as the app has always been, with everything switched on', () => {
     const settings = getSettings(context.db);
     expect(settings.businessType).toBe('general_retail');
-    expect(featuresFromRow(settings)).toEqual({ expiry_batches: true });
+    // Not "everything on": a provisions shop dates its stock and does not quote.
+    expect(featuresFromRow(settings)).toEqual({ expiry_batches: true, quotations: false });
   });
 
   it('keeps the choice once it is made', () => {
@@ -399,7 +400,7 @@ describe('what kind of business this is', () => {
   it('stamps the new type onto the switches, whatever the form submitted', () => {
     updateSettings(
       context.db,
-      { ...currentAsInput(), businessType: 'building_materials', features: { expiry_batches: true } },
+      { ...currentAsInput(), businessType: 'building_materials', features: { expiry_batches: true, quotations: true } },
       ACTOR,
     );
     expect(getSettings(context.db).featureExpiryBatches).toBe(false);
@@ -417,7 +418,7 @@ describe('what kind of business this is', () => {
     updateSettings(context.db, { ...currentAsInput(), businessType: 'building_materials' }, ACTOR);
     updateSettings(
       context.db,
-      { ...currentAsInput(), businessType: 'building_materials', features: { expiry_batches: true } },
+      { ...currentAsInput(), businessType: 'building_materials', features: { expiry_batches: true, quotations: true } },
       ACTOR,
     );
 

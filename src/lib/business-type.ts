@@ -24,7 +24,7 @@ export { BUSINESS_TYPES, type BusinessType };
  */
 
 /** Every feature that can be switched off. Each key MUST have a column. */
-export const FEATURE_KEYS = ['expiry_batches'] as const;
+export const FEATURE_KEYS = ['expiry_batches', 'quotations'] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
 /** The resolved answer to "what is this shop offered". */
@@ -57,6 +57,18 @@ export const FEATURES: Readonly<Record<FeatureKey, FeatureDefinition>> = {
     hides: 'the expiry date box on a delivery, the reminder setting on a product, and the "expiring soon" filter',
     column: 'feature_expiry_batches',
     defaultOn: { general_retail: true, building_materials: false, other: true },
+  },
+  quotations: {
+    key: 'quotations',
+    name: 'Quotations',
+    blurb:
+      'Write a customer a priced quote they can take away, then turn it into a sale without typing it again.',
+    hides: 'the Quotations menu entry and everything reached from it',
+    column: 'feature_quotations',
+    // The mirror of expiry dates. A materials yard quotes constantly because a
+    // contractor is comparing three of them; a mini-mart sells over a counter
+    // and almost never does.
+    defaultOn: { general_retail: false, building_materials: true, other: true },
   },
 };
 
@@ -125,9 +137,13 @@ export function resolveFeatures(
 export function featuresFromRow(row: {
   businessType: string;
   featureExpiryBatches: boolean;
+  featureQuotations: boolean;
 }): FeatureSwitches {
   const type = isBusinessType(row.businessType) ? row.businessType : 'general_retail';
-  return resolveFeatures(type, { expiry_batches: row.featureExpiryBatches });
+  return resolveFeatures(type, {
+    expiry_batches: row.featureExpiryBatches,
+    quotations: row.featureQuotations,
+  });
 }
 
 /**
