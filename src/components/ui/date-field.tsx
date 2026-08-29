@@ -290,7 +290,76 @@ export function DateField({
     };
   }, [open]);
 
+  /**
+   * The day the keyboard is on, which is not the day that is chosen.
+   *
+   * A calendar grid takes ONE tab stop, not forty two. The focused day carries
+   * `tabIndex=0` and every other day carries -1, so Tab moves past the whole
+   * grid and the arrows move within it. That is the roving-focus pattern the
+   * ARIA practices describe for exactly this control.
+   */
+  const [focusedDay, setFocusedDay] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
   const weeks = useMemo(() => monthGrid(cursor.year, cursor.month), [cursor]);
+
+  /**
+   * Put the browser's focus where the roving focus says it is.
+   *
+   * A layout effect because it must happen before paint: moving focus after
+   * the frame shows the outline jumping from the old day to the new one. This
+   * writes to the DOM rather than to state, which is what an effect is for.
+   */
+  useLayoutEffect(() => {
+    if (!open || focusedDay === null) return;
+    gridRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-date="${focusedDay}"]`)
+      ?.focus({ preventScroll: true });
+  }, [open, focusedDay, cursor]);
+
+  /** Move the keyboard, paging the month when the move leaves it. */
+  function moveFocus(to: string) {
+    setFocusedDay(to);
+    const parts = parseParts(to);
+    if (parts && (parts.year !== cursor.year || parts.month !== cursor.month)) {
+      setCursor({ year: parts.year, month: parts.month });
+    }
+  }
+
+  function gridKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const from = focusedDay ?? value ?? today;
+    if (from === undefined || from === '' || parseParts(from) === null) return;
+
+    const byDays: Record<string, number> = {
+      ArrowLeft: -1,
+      ArrowRight: 1,
+      ArrowUp: -7,
+      ArrowDown: 7,
+    };
+
+    if (event.key in byDays) {
+      event.preventDefault();
+      moveFocus(shiftDate(from, byDays[event.key]!));
+      return;
+    }
+
+    if (event.key === 'PageUp' || event.key === 'PageDown') {
+      event.preventDefault();
+      // Shift pages a year, which is the convention and saves twelve presses
+      // when somebody is looking for a date last spring.
+      const by = event.key === 'PageUp' ? -1 : 1;
+      moveFocus(monthShifted(from, event.shiftKey ? by * 12 : by));
+      return;
+    }
+
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      // The week, not the month: it is a grid, and Home means the start of the
+      // row you are on.
+      const column = weeks.flat().findIndex((cell) => cell.date === from) % 7;
+      moveFocus(shiftDate(from, event.key === 'Home' ? -column : 6 - column));
+    }
+  }
 
   function choose(date: string) {
     if (!isSelectable(date, { min, max })) {
@@ -382,8 +451,14 @@ export function DateField({
             // Land on the month the value is in, decided at the moment of
             // opening rather than watched for by an effect.
             if (!open) {
-              const p = parseParts(parseParts(value) ? value : (today ?? ''));
-              if (p) setCursor({ year: p.year, month: p.month });
+              const start = parseParts(value) ? value : (today ?? '');
+              const p = parseParts(start);
+              if (p) {
+                setCursor({ year: p.year, month: p.month });
+                // The keyboard starts on the chosen day, or on today when
+                // nothing is chosen yet.
+                setFocusedDay(start);
+              }
               setRefused(false);
             }
             setOpen((current) => !current);
@@ -446,7 +521,13 @@ export function DateField({
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-0.5">
+          <div
+            ref={gridRef}
+            role="grid"
+            aria-label="Calendar"
+            onKeyDown={gridKeyDown}
+            className="grid grid-cols-7 gap-0.5"
+          >
             {weeks.flat().map((cell) => {
               const selected = cell.date === value;
               const isToday = cell.date === today;
@@ -455,9 +536,20 @@ export function DateField({
                 <button
                   key={cell.date}
                   type="button"
-                  disabled={!allowed}
+                  role="gridcell"
+                  data-date={cell.date}
+                  /*
+                    `aria-disabled`, not `disabled`. A disabled button cannot
+                    take focus, so the arrow keys would dead-end at the edge of
+                    a locked period with no way past it. This stays focusable
+                    and still refuses the click — and refusing out loud, with
+                    the reason, beats a button that silently does nothing.
+                  */
+                  aria-disabled={!allowed}
+                  aria-selected={selected}
                   aria-current={isToday ? 'date' : undefined}
                   aria-label={longDate(cell.date)}
+                  tabIndex={cell.date === (focusedDay ?? value) ? 0 : -1}
                   onClick={() => choose(cell.date)}
                   className={cn(
                     'h-8 rounded-full text-sm transition-colors',

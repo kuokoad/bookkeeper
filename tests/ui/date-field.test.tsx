@@ -156,14 +156,25 @@ describe('a day inside a locked period', () => {
     return rendered;
   };
 
-  it('cannot be clicked', () => {
+  /**
+   * `aria-disabled`, not `disabled`. A disabled button cannot take focus, so
+   * the arrow keys would dead-end at the edge of a locked period with no way
+   * past it. This stays reachable by keyboard and still refuses the click.
+   */
+  it('is marked unavailable but stays reachable by keyboard', () => {
     lockedOpen();
-    expect((screen.getByLabelText('Tuesday, 30 June 2026') as HTMLButtonElement).disabled).toBe(
-      true,
+    expect(screen.getByLabelText('Tuesday, 30 June 2026').getAttribute('aria-disabled')).toBe(
+      'true',
     );
-    expect((screen.getByLabelText('Wednesday, 1 July 2026') as HTMLButtonElement).disabled).toBe(
-      false,
+    expect(screen.getByLabelText('Wednesday, 1 July 2026').getAttribute('aria-disabled')).toBe(
+      'false',
     );
+  });
+
+  it('says why, rather than doing nothing when clicked', () => {
+    lockedOpen();
+    fireEvent.click(screen.getByLabelText('Tuesday, 30 June 2026'));
+    expect(screen.getByText('The books are locked before 1 July 2026.')).toBeTruthy();
   });
 
   it('leaves the value alone when one is attempted', () => {
@@ -181,11 +192,15 @@ describe('a day inside a locked period', () => {
   });
 
   it('refuses a day after a ceiling too', () => {
-    render(<DateField name="d" defaultValue="2026-08-15" max={TODAY} today={TODAY} />);
-    fireEvent.click(screen.getByLabelText('Open calendar'));
-    expect((screen.getByLabelText('Monday, 31 August 2026') as HTMLButtonElement).disabled).toBe(
-      true,
+    const { container } = render(
+      <DateField name="d" defaultValue="2026-08-15" max={TODAY} today={TODAY} />,
     );
+    fireEvent.click(screen.getByLabelText('Open calendar'));
+    expect(screen.getByLabelText('Monday, 31 August 2026').getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    fireEvent.click(screen.getByLabelText('Monday, 31 August 2026'));
+    expect(submitted(container)).toBe('2026-08-15');
   });
 });
 
@@ -268,5 +283,113 @@ describe('where the calendar opens', () => {
     document.body.appendChild(inner);
     fireEvent.scroll(inner);
     expect(screen.queryByText('April 2026')).toBeNull();
+  });
+});
+
+/**
+ * Walking the calendar without a mouse.
+ *
+ * A grid takes ONE tab stop, not forty two: the focused day carries tabIndex 0
+ * and every other day carries -1, so Tab moves past the whole calendar and the
+ * arrows move within it. That is the roving-focus pattern the ARIA practices
+ * describe for this control, and it was the last thing missing against a
+ * component library's version.
+ */
+describe('the keyboard, inside the calendar', () => {
+  const openOn = (value: string) => {
+    render(<DateField name="d" defaultValue={value} today={TODAY} />);
+    fireEvent.click(screen.getByLabelText('Open calendar'));
+    return screen.getByRole('grid');
+  };
+
+  const focused = () => document.activeElement?.getAttribute('data-date');
+
+  it('starts on the chosen day', () => {
+    openOn('2026-04-15');
+    expect(focused()).toBe('2026-04-15');
+  });
+
+  it('is a single tab stop, not forty two', () => {
+    const grid = openOn('2026-04-15');
+    const reachable = Array.from(grid.querySelectorAll('[data-date]')).filter(
+      (cell) => cell.getAttribute('tabindex') === '0',
+    );
+    expect(reachable).toHaveLength(1);
+  });
+
+  it('moves a day with left and right', () => {
+    const grid = openOn('2026-04-15');
+    fireEvent.keyDown(grid, { key: 'ArrowRight' });
+    expect(focused()).toBe('2026-04-16');
+    fireEvent.keyDown(grid, { key: 'ArrowLeft' });
+    fireEvent.keyDown(grid, { key: 'ArrowLeft' });
+    expect(focused()).toBe('2026-04-14');
+  });
+
+  it('moves a week with up and down, which is what a grid means', () => {
+    const grid = openOn('2026-04-15');
+    fireEvent.keyDown(grid, { key: 'ArrowDown' });
+    expect(focused()).toBe('2026-04-22');
+    fireEvent.keyDown(grid, { key: 'ArrowUp' });
+    fireEvent.keyDown(grid, { key: 'ArrowUp' });
+    expect(focused()).toBe('2026-04-08');
+  });
+
+  it('moves to the ends of the WEEK with Home and End, not the month', () => {
+    // 15 April 2026 is a Wednesday.
+    const grid = openOn('2026-04-15');
+    fireEvent.keyDown(grid, { key: 'Home' });
+    expect(focused()).toBe('2026-04-13'); // the Monday
+    fireEvent.keyDown(grid, { key: 'End' });
+    expect(focused()).toBe('2026-04-19'); // the Sunday
+  });
+
+  it('pages a month, and a year with Shift', () => {
+    const grid = openOn('2026-04-15');
+    fireEvent.keyDown(grid, { key: 'PageDown' });
+    expect(focused()).toBe('2026-05-15');
+    fireEvent.keyDown(grid, { key: 'PageUp', shiftKey: true });
+    expect(focused()).toBe('2025-05-15');
+  });
+
+  /** Walking off the edge of a month should show the next one, not stop. */
+  it('turns the page when the keyboard leaves the month', () => {
+    const grid = openOn('2026-04-30');
+    fireEvent.keyDown(grid, { key: 'ArrowRight' });
+    expect(focused()).toBe('2026-05-01');
+    expect(screen.getByText('May 2026')).toBeTruthy();
+  });
+
+  it('carries the year backwards across January', () => {
+    const grid = openOn('2026-01-01');
+    fireEvent.keyDown(grid, { key: 'ArrowLeft' });
+    expect(focused()).toBe('2025-12-31');
+    expect(screen.getByText('December 2025')).toBeTruthy();
+  });
+
+  /**
+   * The reason locked days are aria-disabled rather than disabled: a disabled
+   * button cannot take focus, so this walk would dead-end at 1 July with no way
+   * back to June to see what is there.
+   */
+  it('can walk into a locked period, and still cannot choose from it', () => {
+    const { container } = render(
+      <DateField
+        name="d"
+        defaultValue="2026-07-01"
+        min="2026-07-01"
+        minReason="The books are locked before 1 July 2026."
+        today={TODAY}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Open calendar'));
+    const grid = screen.getByRole('grid');
+
+    fireEvent.keyDown(grid, { key: 'ArrowLeft' });
+    expect(focused()).toBe('2026-06-30');
+
+    fireEvent.click(screen.getByLabelText('Tuesday, 30 June 2026'));
+    expect(submitted(container)).toBe('2026-07-01');
+    expect(screen.getByText('The books are locked before 1 July 2026.')).toBeTruthy();
   });
 });
