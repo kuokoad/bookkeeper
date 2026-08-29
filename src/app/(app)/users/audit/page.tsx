@@ -13,6 +13,7 @@ import { listUsers } from '@/services/user.service';
 import { AUDIT_ACTIONS, type AuditAction } from '@/db/schema/system';
 import { formatDateTime, fromBusinessDate, isValidBusinessDate, toBusinessDate } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
+import { DateField } from '@/components/ui/date-field';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
@@ -217,26 +218,22 @@ export default async function AuditLogPage({
           <label htmlFor="from" className="mb-1 block text-xs text-content-muted">
             From
           </label>
-          <input
+          <DateField
             id="from"
             name="from"
-            type="date"
             defaultValue={params.from ?? ''}
             max={toBusinessDate()}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
           />
         </div>
         <div>
           <label htmlFor="to" className="mb-1 block text-xs text-content-muted">
             To
           </label>
-          <input
+          <DateField
             id="to"
             name="to"
-            type="date"
             defaultValue={params.to ?? ''}
             max={toBusinessDate()}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
           />
         </div>
         <Button type="submit" size="sm" variant="secondary">

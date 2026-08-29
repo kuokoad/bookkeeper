@@ -183,7 +183,11 @@ describe('what the owner actually sees', () => {
   });
 
   it('gets nothing while the backup is recent and nothing is unsaved', () => {
-    recordBackup(2);
+    // Anchored on the REAL clock, for the reason spelled out in the next test:
+    // `getNotices` reads `new Date()` itself, so a backup dated from the fixed
+    // NOW drifts a day older every day and eventually trips the week rule. This
+    // one passed when it was written and started failing five days later.
+    recordBackupAt(Date.now() - 2 * DAY);
     const ids = getNotices(context.db, OWNER).map((n) => n.id);
     expect(ids).not.toContain('stale-backup');
     expect(ids).not.toContain('never-backed-up');

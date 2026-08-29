@@ -9,6 +9,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/page';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 /**
  * Writing a quote.
@@ -228,10 +229,10 @@ export function QuoteEditor({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Date" htmlFor="businessDate" required>
-              <TextInput
+              <DateField
                 id="businessDate"
                 name="businessDate"
-                type="date"
+                label="Quote date"
                 defaultValue={values.businessDate}
               />
             </Field>
@@ -241,10 +242,10 @@ export function QuoteEditor({
               required
               error={state.fieldErrors?.['validUntil']}
             >
-              <TextInput
+              <DateField
                 id="validUntil"
                 name="validUntil"
-                type="date"
+                label="Valid until"
                 defaultValue={values.validUntil}
                 invalid={Boolean(state.fieldErrors?.['validUntil'])}
               />

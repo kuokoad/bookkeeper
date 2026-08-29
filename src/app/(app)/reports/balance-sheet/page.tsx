@@ -7,6 +7,7 @@ import { requirePageAccess } from '@/lib/auth/current-user';
 import { getBalanceSheet } from '@/services/reporting/financial.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
+import { DateField } from '@/components/ui/date-field';
 import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
 import { ReportActions } from '@/components/shared/report-actions';
@@ -48,12 +49,10 @@ export default async function BalanceSheetPage({
           <label htmlFor="asAt" className="mb-1 block text-xs text-content-muted">
             As at
           </label>
-          <input
+          <DateField
             id="asAt"
             name="asAt"
-            type="date"
             defaultValue={asAt}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
           />
         </div>
         <Button type="submit" size="sm" variant="secondary">

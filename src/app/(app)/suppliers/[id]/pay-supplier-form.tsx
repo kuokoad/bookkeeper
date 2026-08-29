@@ -8,6 +8,7 @@ import type { FormState } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 function fmt(minorValue: number): string {
   const digits = Math.abs(Math.round(minorValue)).toString().padStart(3, '0');
@@ -65,7 +66,7 @@ export function PaySupplierForm({
 
       <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Date" htmlFor="businessDate" required error={state.fieldErrors?.['businessDate']}>
-          <TextInput id="businessDate" name="businessDate" type="date" defaultValue={today} required />
+          <DateField id="businessDate" name="businessDate" defaultValue={today} required />
         </Field>
 
         <Field label="Paid from" htmlFor="paymentAccountId" required>

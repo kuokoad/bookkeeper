@@ -8,6 +8,7 @@ import { reconcileAction, type ReconcileFormState } from '@/actions/reconciliati
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 export interface CountableAccount {
   id: number;
@@ -120,10 +121,9 @@ export function CountForm({
             hint="The balance is compared as at this day."
             error={state.fieldErrors?.['businessDate']}
           >
-            <TextInput
+            <DateField
               id="businessDate"
               name="businessDate"
-              type="date"
               defaultValue={today}
               required
             />

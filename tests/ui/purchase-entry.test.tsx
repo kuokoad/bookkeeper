@@ -56,6 +56,22 @@ afterEach(() => {
   action.current = async () => ({});
 });
 
+/**
+ * Fill a segmented date field.
+ *
+ * The single `fireEvent.change` that drove `<input type="date">` cannot work
+ * here: the field is three boxes now, and setting the day box to a whole date
+ * string leaves the other two empty, so no value is ever assembled. The segments
+ * announce themselves by what the date IS, which is also what keeps them apart
+ * when a page has several.
+ */
+function fillDate(label: string, value: string) {
+  const [year, month, day] = value.split('-');
+  fireEvent.change(screen.getByLabelText(`${label} day`), { target: { value: day } });
+  fireEvent.change(screen.getByLabelText(`${label} month`), { target: { value: month } });
+  fireEvent.change(screen.getByLabelText(`${label} year`), { target: { value: year } });
+}
+
 describe('the expiry date on a delivery line', () => {
   it('is not offered at all until a product is chosen', () => {
     renderForm();
@@ -89,7 +105,7 @@ describe('the expiry date on a delivery line', () => {
     renderForm();
     chooseProduct();
     fireEvent.click(screen.getByRole('button', { name: /\+ expiry date/i }));
-    fireEvent.change(screen.getByLabelText(/^expires$/i), { target: { value: '2025-03-31' } });
+    fillDate('Expires', '2025-03-31');
 
     expect(screen.getByText(/That date has already passed/i)).toBeDefined();
   });
@@ -98,7 +114,7 @@ describe('the expiry date on a delivery line', () => {
     renderForm();
     chooseProduct();
     fireEvent.click(screen.getByRole('button', { name: /\+ expiry date/i }));
-    fireEvent.change(screen.getByLabelText(/^expires$/i), { target: { value: '2027-03-31' } });
+    fillDate('Expires', '2027-03-31');
 
     expect(screen.queryByText(/already passed/i)).toBeNull();
   });
@@ -109,7 +125,7 @@ describe('the expiry date on a delivery line', () => {
     renderForm();
     chooseProduct();
     fireEvent.click(screen.getByRole('button', { name: /\+ expiry date/i }));
-    fireEvent.change(screen.getByLabelText(/^expires$/i), { target: { value: '2026-08-26' } });
+    fillDate('Expires', '2026-08-26');
 
     expect(screen.queryByText(/already passed/i)).toBeNull();
   });
@@ -118,7 +134,7 @@ describe('the expiry date on a delivery line', () => {
     renderForm();
     chooseProduct();
     fireEvent.click(screen.getByRole('button', { name: /\+ expiry date/i }));
-    fireEvent.change(screen.getByLabelText(/^expires$/i), { target: { value: '2025-01-01' } });
+    fillDate('Expires', '2025-01-01');
     expect(screen.getByText(/already passed/i)).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: /no date/i }));

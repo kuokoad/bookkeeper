@@ -6,7 +6,7 @@ import { setBatchExpiryAction } from '@/actions/inventory.actions';
 import type { FormState } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
-import { TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 /**
  * Correcting the date on a crate.
@@ -43,10 +43,9 @@ export function ExpiryForm({
         >
           {expiryDate === null ? 'Set a date' : 'Change the date'}
         </label>
-        <TextInput
+        <DateField
           id="expiryDate"
           name="expiryDate"
-          type="date"
           defaultValue={expiryDate ?? ''}
           invalid={state.fieldErrors?.['expiryDate'] !== undefined}
         />

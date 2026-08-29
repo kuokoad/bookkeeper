@@ -7,6 +7,7 @@ import { createPurchaseAction, type PurchaseFormState } from '@/actions/purchase
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 export interface EntryProduct {
   id: number;
@@ -248,11 +249,12 @@ export function PurchaseEntry({
             <label htmlFor="date" className="mb-1 block text-sm font-medium text-content">
               Date <span className="text-danger">*</span>
             </label>
-            <TextInput
+            <DateField
               id="date"
-              type="date"
+              label="Delivery date"
               value={businessDate}
-              onChange={(event) => setBusinessDate(event.target.value)}
+              onChange={setBusinessDate}
+              today={today}
             />
           </div>
 
@@ -391,13 +393,12 @@ export function PurchaseEntry({
                           >
                             Expires
                           </label>
-                          <TextInput
+                          <DateField
                             id={`e-${row.key}`}
-                            type="date"
+                            label="Expires"
                             value={row.expiryDate}
-                            onChange={(event) =>
-                              updateRow(row.key, { expiryDate: event.target.value })
-                            }
+                            onChange={(next) => updateRow(row.key, { expiryDate: next })}
+                            today={today}
                           />
                         </div>
                         <Button

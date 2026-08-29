@@ -7,7 +7,8 @@ import { setBooksLockAction } from '@/actions/accounting.actions';
 import type { FormState } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
-import { Field, TextInput } from '@/components/ui/field';
+import { Field } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 function SubmitButton({ reopening }: { reopening: boolean }) {
   const { pending } = useFormStatus();
@@ -91,12 +92,12 @@ export function BooksLockForm({
           error={state.fieldErrors?.['lockedBefore']}
           hint={`Today is ${today}.`}
         >
-          <TextInput
+          <DateField
             id="lockedBefore"
             name="lockedBefore"
-            type="date"
             value={value}
-            onChange={(event) => setValue(event.target.value)}
+            onChange={setValue}
+            today={today}
             invalid={Boolean(state.fieldErrors?.['lockedBefore'])}
           />
         </Field>

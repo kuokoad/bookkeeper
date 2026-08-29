@@ -12,6 +12,7 @@ import {
 } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { DateField } from '@/components/ui/date-field';
 import { TextInput } from '@/components/ui/field';
 import { cn } from '@/lib/cn';
 import { DATE_PRESET_LABELS, type ActiveFilter, type DatePreset } from '@/lib/filters';
@@ -342,11 +343,14 @@ export function FilterBar({
 
       Those differ whenever the URL is junk — a hand-edited `?from=2026-13-45`
       is thrown away by the parser and the page falls back to this month. Echoing
-      the raw value back put "2026-13-45" into a `<input type="date">`, which the
-      browser rejects: the box rendered EMPTY while the table showed a month
-      nobody had asked for, and nothing on the page said the dates had been
-      ignored. Reading the resolved range means the controls always describe the
-      data underneath them.
+      the raw value back left the box EMPTY while the table showed a month nobody
+      had asked for, and nothing on the page said the dates had been ignored.
+      Reading the resolved range means the controls always describe the data
+      underneath them.
+
+      `DateField` would render the junk no better — it parses the same way the
+      server does and shows nothing for a date that is not one — so this is not
+      something the new control made safe to skip.
 
       A draft still wins, because that is the owner mid-edit.
     */
@@ -359,26 +363,26 @@ export function FilterBar({
           <label htmlFor={`${fromKey}-input`} className="mb-1 block text-xs text-content-muted">
             From
           </label>
-          <input
+          <DateField
             id={`${fromKey}-input`}
-            type="date"
+            label="From"
             value={fromValue}
             max={toValue || undefined}
-            onChange={(event) => setDraft(fromKey, event.target.value)}
-            className={CONTROL_CLASS}
+            onChange={(next) => setDraft(fromKey, next)}
+            className="w-[11.5rem]"
           />
         </div>
         <div>
           <label htmlFor={`${toKey}-input`} className="mb-1 block text-xs text-content-muted">
             To
           </label>
-          <input
+          <DateField
             id={`${toKey}-input`}
-            type="date"
+            label="To"
             value={toValue}
             min={fromValue || undefined}
-            onChange={(event) => setDraft(toKey, event.target.value)}
-            className={CONTROL_CLASS}
+            onChange={(next) => setDraft(toKey, next)}
+            className="w-[11.5rem]"
           />
         </div>
         <Button
@@ -459,13 +463,12 @@ export function FilterBar({
                 <label htmlFor={id} className="mb-1 block text-xs text-content-muted">
                   {field.label}
                 </label>
-                <input
+                <DateField
                   id={id}
-                  type="date"
                   max={field.max}
                   value={valueOf(field.key)}
-                  onChange={(event) => apply({ [field.key]: event.target.value || null })}
-                  className={cn(CONTROL_CLASS, 'w-full sm:w-auto')}
+                  onChange={(next) => apply({ [field.key]: next || null })}
+                  className="w-full sm:w-[11.5rem]"
                 />
               </div>
             );

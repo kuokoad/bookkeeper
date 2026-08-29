@@ -7,6 +7,7 @@ import type { FormState } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 export interface Option {
   id: number;
@@ -75,10 +76,9 @@ export function CashbookForm({
             required
             error={state.fieldErrors?.['businessDate']}
           >
-            <TextInput
+            <DateField
               id="businessDate"
               name="businessDate"
-              type="date"
               defaultValue={today}
               required
             />

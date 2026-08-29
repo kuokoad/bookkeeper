@@ -9,6 +9,7 @@ import type { FormState } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 export interface ProductOption {
   id: number;
@@ -110,10 +111,9 @@ export function AdjustmentForm({
       <div className="rounded-xl border border-line bg-surface-raised p-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Date" htmlFor="businessDate" required error={state.fieldErrors?.['businessDate']}>
-            <TextInput
+            <DateField
               id="businessDate"
               name="businessDate"
-              type="date"
               defaultValue={today}
               required
               invalid={Boolean(state.fieldErrors?.['businessDate'])}

@@ -8,6 +8,7 @@ import { getGeneralLedger } from '@/services/reporting/ledger.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { isDomainError } from '@/domain/errors';
 import { Badge } from '@/components/ui/badge';
+import { DateField } from '@/components/ui/date-field';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
@@ -80,24 +81,20 @@ export default async function GeneralLedgerPage({
           <label htmlFor="from" className="mb-1 block text-xs text-content-muted">
             From
           </label>
-          <input
+          <DateField
             id="from"
             name="from"
-            type="date"
             defaultValue={query.from ?? ''}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
           />
         </div>
         <div>
           <label htmlFor="to" className="mb-1 block text-xs text-content-muted">
             To
           </label>
-          <input
+          <DateField
             id="to"
             name="to"
-            type="date"
             defaultValue={query.to ?? toBusinessDate()}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
           />
         </div>
         <Button type="submit" size="sm" variant="secondary">

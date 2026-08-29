@@ -11,6 +11,7 @@ import type { FormState } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -89,7 +90,7 @@ export function OwnerMoneyForm({
 
       <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Date" htmlFor="businessDate" required error={state.fieldErrors?.['businessDate']}>
-          <TextInput id="businessDate" name="businessDate" type="date" defaultValue={today} required />
+          <DateField id="businessDate" name="businessDate" defaultValue={today} required />
         </Field>
 
         <Field

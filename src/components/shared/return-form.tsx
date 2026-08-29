@@ -7,6 +7,7 @@ import type { FormState } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
+import { DateField } from '@/components/ui/date-field';
 
 export interface ReturnableItem {
   id: number;
@@ -110,7 +111,7 @@ export function ReturnForm({
         <label htmlFor="return-date" className="mb-1 block text-xs text-content-muted">
           Date
         </label>
-        <TextInput id="return-date" name="businessDate" type="date" defaultValue={today} required />
+        <DateField id="return-date" name="businessDate" defaultValue={today} required />
       </div>
 
       <div className="space-y-2">
