@@ -28,6 +28,11 @@ for someone who typed an address.
 | `/sales/[id]` | `sales` view |
 | `/sales/[id]/receipt` | `sales` view |
 | `/sales/[id]/invoice` | `sales` view |
+| `/quotations` | `quotations` view |
+| `/quotations/new` | `quotations` create |
+| `/quotations/[id]` | `quotations` view |
+| `/quotations/[id]/edit` | `quotations` edit |
+| `/quotations/[id]/print` | `quotations` view |
 | `/purchases` | `purchases` view |
 | `/purchases/new` | `purchases` create |
 | `/purchases/[id]` | `purchases` view |
@@ -129,6 +134,13 @@ three, silently, for records that are still perfectly valid.
 `src/lib/business-type.ts` holds the switches and `visible()`, the one predicate
 behind every hidden link. `tests/app/business-type-moves-nothing.test.ts` asserts
 that changing type moves no figure on any report.
+
+**Quotations is the worked example.** Its menu entry declares both
+`module: 'quotations'` and `feature: 'quotations'`, and the two do different
+jobs. The module is a permission and the pages enforce it. The feature is the
+shop saying it does not quote, and the pages ignore it entirely: turn quoting
+off in a shop that has written quotes and every one of them still opens from a
+link, a search result, or the number printed on a customer's copy.
 
 ## Things that are not routes
 

@@ -141,6 +141,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { href: '/help/getting-started', label: 'Getting started', icon: 'help' },
       { href: '/help/finding-things', label: 'Finding things', icon: 'help' },
+      { href: '/help/quoting', label: 'Quoting a customer', icon: 'help' },
       { href: '/help/fixing-a-mistake', label: 'Fixing a mistake', icon: 'help' },
       { href: '/help/managing-tax', label: 'Managing tax', icon: 'help' },
       { href: '/help/closing-a-period', label: 'Closing a period', icon: 'help' },

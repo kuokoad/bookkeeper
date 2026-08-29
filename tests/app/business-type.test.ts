@@ -233,3 +233,50 @@ describe('the menu key stays parseable', () => {
     }
   });
 });
+
+/**
+ * Quotations is the first feature that is BOTH a permission and a shop-type
+ * switch, and the two must not be confused. The permission decides whether this
+ * person may see it. The feature decides whether this shop was ever offered it.
+ */
+describe('the quotations menu entry', () => {
+  const nav = () => source('src', 'components', 'shared', 'navigation.ts');
+
+  it('declares its permission and its feature, on one line', () => {
+    const line = nav()
+      .split(/\r?\n/)
+      .find((row) => row.includes("href: '/quotations'"));
+    expect(line).toBeDefined();
+    expect(line).toContain("module: 'quotations'");
+    expect(line).toContain("feature: 'quotations'");
+  });
+
+  it('is named in plain words on the no-access page, not as a slug', () => {
+    const modules = source('src', 'components', 'shared', 'modules.ts');
+    expect(modules).toContain("module: 'quotations'");
+    expect(modules).toContain("label: 'Quotations'");
+  });
+
+  it('is a real permission module the database will accept', () => {
+    const users = source('src', 'db', 'schema', 'users.ts');
+    const tuple = /PERMISSION_MODULES = \[([\s\S]*?)\] as const/.exec(users)?.[1] ?? '';
+    expect(tuple).toContain("'quotations'");
+  });
+
+  /**
+   * A page guarded on the feature would stop a converted quote opening from
+   * the number printed on a customer's copy. Only the permission guards.
+   */
+  it('never guards a quotations page on the feature', () => {
+    for (const parts of [
+      ['src', 'app', '(app)', 'quotations', 'page.tsx'],
+      ['src', 'app', '(app)', 'quotations', '[id]', 'page.tsx'],
+      ['src', 'app', '(app)', 'quotations', '[id]', 'print', 'page.tsx'],
+    ]) {
+      const page = source(...parts);
+      expect(page).toContain("requirePageAccess('quotations'");
+      expect(page).not.toContain('getFeatures');
+      expect(page).not.toContain('featuresFromRow');
+    }
+  });
+});

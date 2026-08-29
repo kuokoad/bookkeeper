@@ -9,6 +9,7 @@ import { can } from '@/lib/auth/permissions';
 import { countQuotations, isExpired, listQuotations } from '@/services/quotation.service';
 import { listCustomers } from '@/services/customer.service';
 import { parseQuotationFilters } from '@/lib/list-filters';
+import { buildQuery } from '@/lib/filters';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { Badge } from '@/components/ui/badge';
@@ -46,17 +47,27 @@ export default async function QuotationsPage({
   const currency = settings?.currencyCode ?? 'GHS';
   const customers = listCustomers(db, {});
 
+  /* The export carries the filters, so the file matches what is on screen. */
+  const exportHref = `/api/exports/quotations${buildQuery(carried)}`;
+
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title="Quotations"
         description="Prices offered to customers. Nothing here has been sold."
         actions={
-          can(user, 'quotations', 'create') ? (
-            <Link href="/quotations/new">
-              <Button size="sm">New quote</Button>
-            </Link>
-          ) : undefined
+          <>
+            <a href={exportHref} download>
+              <Button variant="secondary" size="sm" type="button">
+                Download CSV
+              </Button>
+            </a>
+            {can(user, 'quotations', 'create') ? (
+              <Link href="/quotations/new">
+                <Button size="sm">New quote</Button>
+              </Link>
+            ) : null}
+          </>
         }
       />
 

@@ -23,7 +23,8 @@ no mobile network is hard-coded.
 > and a measured performance pass), Settings (shop details, currency, tax
 > and stock policy), the year-end pack for an accountant, year-end close,
 > a shop logo on receipts, and a business type that decides which features a
-> shop is offered without ever changing a figure.
+> shop is offered without ever changing a figure, and quotations that become a
+> sale at the price the customer was promised.
 > Nothing in the menu is a placeholder — every item leads to a working screen.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, database schema and
@@ -36,7 +37,7 @@ accounting model.
 | | |
 | --- | --- |
 | **Learn it** | [Your first hour](docs/tutorials/first-hour.md) (shop owner) · [Developer setup](docs/tutorials/developer-setup.md) |
-| **Get a job done** | [Find anything](docs/how-to/find-anything.md) · [Fix a mistake](docs/how-to/fix-a-mistake.md) · [Manage tax](docs/how-to/manage-tax.md) · [Close a period](docs/how-to/close-a-period.md) · [Back up and restore](docs/how-to/back-up-and-restore.md) |
+| **Get a job done** | [Find anything](docs/how-to/find-anything.md) · [Quote a customer](docs/how-to/quote-a-customer.md) · [Fix a mistake](docs/how-to/fix-a-mistake.md) · [Manage tax](docs/how-to/manage-tax.md) · [Close a period](docs/how-to/close-a-period.md) · [Back up and restore](docs/how-to/back-up-and-restore.md) |
 | **Look it up** | [Commands](docs/reference/commands.md) · [Routes and permissions](docs/reference/routes-and-permissions.md) · [Filters](docs/reference/filters.md) · [Money and quantity](docs/reference/money-and-quantity.md) |
 | **Understand why** | [Filtering](docs/explanation/filtering.md) · [Inventory costing](docs/explanation/inventory-costing.md) · [Tax in Ghana](docs/explanation/tax-in-ghana.md) |
 

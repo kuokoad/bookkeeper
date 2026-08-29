@@ -11,6 +11,7 @@ import { getStockLedger } from '@/services/inventory.service';
 import { getAccountStatement, getPaymentAccount } from '@/services/payment-account.service';
 import { listPurchases } from '@/services/purchase.service';
 import { listSales } from '@/services/sale.service';
+import { isExpired, listQuotations } from '@/services/quotation.service';
 import { listSuppliers } from '@/services/supplier.service';
 import {
   parseAccountFilters,
@@ -18,6 +19,7 @@ import {
   parseCustomerFilters,
   parseProductFilters,
   parsePurchaseFilters,
+  parseQuotationFilters,
   parseSalesFilters,
   parseStockMovementFilters,
   parseSupplierFilters,
@@ -98,6 +100,7 @@ const MODULES: Record<string, PermissionModule> = {
   customers: 'customers',
   suppliers: 'suppliers',
   account: 'accounts',
+  quotations: 'quotations',
 };
 
 function searchParamsOf(request: NextRequest): SearchParams {
@@ -113,6 +116,39 @@ function buildTable(list: string, request: NextRequest): Table | null {
   const today = toBusinessDate();
 
   switch (list) {
+    case 'quotations': {
+      const { filters } = parseQuotationFilters(params, today);
+      const rows = listQuotations(db, { ...filters, limit: EXPORT_LIMIT, offset: 0 }, today);
+      return {
+        headers: [
+          'Quote',
+          'Issued',
+          'Valid until',
+          'Customer',
+          'Job',
+          'Subtotal',
+          'Discount',
+          'Tax',
+          'Total',
+          'Status',
+        ],
+        rows: rows.map((quote) => [
+          quote.quoteNo,
+          quote.businessDate,
+          quote.validUntil,
+          quote.customerName,
+          quote.reference ?? '',
+          csvMoney(minor(quote.subtotalMinor)),
+          csvMoney(minor(quote.discountMinor)),
+          csvMoney(minor(quote.taxMinor)),
+          csvMoney(minor(quote.totalMinor)),
+          // "Ran out" is a view of an OPEN quote, not a fourth stored status,
+          // so it is worked out here exactly as the screen works it out.
+          quote.status === 'OPEN' && isExpired(quote, today) ? 'Ran out' : quote.status,
+        ]),
+      };
+    }
+
     case 'sales': {
       const { filters } = parseSalesFilters(params, today);
       const rows = listSales(db, { ...filters, limit: EXPORT_LIMIT, offset: 0 });

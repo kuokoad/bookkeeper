@@ -54,6 +54,14 @@ export const HELP_PAGES: readonly HelpPage[] = [
     read: () => readFileSync(join(process.cwd(), 'docs/how-to/find-anything.md'), 'utf8'),
   },
   {
+    slug: 'quoting',
+    title: 'Quoting a customer',
+    blurb:
+      'Give a contractor a price they can take away, then turn it into a sale without typing it again.',
+    file: 'docs/how-to/quote-a-customer.md',
+    read: () => readFileSync(join(process.cwd(), 'docs/how-to/quote-a-customer.md'), 'utf8'),
+  },
+  {
     slug: 'fixing-a-mistake',
     title: 'Fixing a mistake',
     blurb:
