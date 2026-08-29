@@ -61,10 +61,14 @@ account. That screen closes permanently once an owner exists.
 
 `SEED_DEMO_DATA=true` in `.env` seeds two clearly-marked demo accounts:
 
-| Role  | Username | Password          |
-| ----- | -------- | ----------------- |
-| Owner | `owner`  | `demo-owner-2026` |
-| Staff | `ama`    | `demo-staff-2026` |
+| Role  | Username | Password          | Till PIN |
+| ----- | -------- | ----------------- | -------- |
+| Owner | `owner`  | `demo-owner-2026` | —        |
+| Staff | `ama`    | `demo-staff-2026` | `8351`   |
+
+The PIN signs in on the **Sign in with PIN** tab, which is what the counter
+machine uses. Only the staff account has one: the owner signs in with a
+password.
 
 These are published here precisely because they must never exist on a real shop's
 machine. The seed refuses to run with `NODE_ENV=production`.

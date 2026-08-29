@@ -51,14 +51,31 @@ export default async function LoginPage({
 
       {showDemoHint && (
         <Alert tone="warning" title="Demo data is loaded" className="mt-6">
+          {/*
+            Read from the seed's own constants rather than retyped here. These
+            two lines are the only published record of what the seed created,
+            and a hint that disagreed with it would send someone hunting for a
+            password that was never set.
+          */}
           <ul className="mt-1 space-y-1">
             <li>
-              Owner — <code className="font-mono font-medium">owner</code> /{' '}
+              Owner — <code className="font-mono font-medium">{DEMO_OWNER.username}</code> /{' '}
               <code className="font-mono font-medium">{DEMO_OWNER.password}</code>
             </li>
             <li>
-              Staff — <code className="font-mono font-medium">ama</code> /{' '}
+              Staff — <code className="font-mono font-medium">{DEMO_STAFF.username}</code> /{' '}
               <code className="font-mono font-medium">{DEMO_STAFF.password}</code>
+            </li>
+            {/*
+              The other tab needs its own credentials. Only the staff account is
+              seeded with a PIN, because that is who the till is for: the owner
+              signs in with a password. Naming the tab saves working out which
+              of the two boxes above this belongs in.
+            */}
+            <li>
+              Till PIN — <code className="font-mono font-medium">{DEMO_STAFF.username}</code> /{' '}
+              <code className="font-mono font-medium">{DEMO_STAFF.pin}</code>, on the{' '}
+              <span className="font-medium">Sign in with PIN</span> tab
             </li>
           </ul>
           <p className="mt-2">
