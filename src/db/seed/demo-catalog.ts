@@ -9,7 +9,7 @@ import { fromUnits, type Qty } from '@/domain/quantity';
 import type { Actor } from '@/services/journal.service';
 
 /**
- * Demo catalogue for development: a plausible Ghanaian corner shop.
+ * Demo catalogue for development: a plausible Ghanaian building materials yard.
  *
  * Opening stock is entered through a REAL stock adjustment, exactly as an owner
  * would. Nothing here writes a stock quantity directly, so the demo data
@@ -33,114 +33,151 @@ interface DemoProduct {
   /** Opening stock: units and the total value paid for them, in cedis. */
   openingQty: number;
   openingValue: number;
+  /**
+   * Cartage and offloading are sold but never stocked.
+   *
+   * A materials quote nearly always ends with transport to site, and the spec
+   * for quotations says it is priced as a non-stock product rather than a
+   * free-text line. A yard demo without one would not show that working.
+   */
+  service?: boolean;
 }
 
-const DEMO_CATEGORIES = ['Drinks', 'Food', 'Snacks', 'Household'] as const;
+const DEMO_CATEGORIES = ['Cement', 'Steel', 'Plumbing', 'Roofing', 'Fixings', 'Services'] as const;
 
 const DEMO_PRODUCTS: readonly DemoProduct[] = [
   {
-    name: 'Coca-Cola 350ml',
-    category: 'Drinks',
-    sku: 'COKE350',
-    barcode: '5449000000996',
-    unit: 'bottle',
-    cost: 4.5,
-    price: 6,
-    minStock: 24,
-    openingQty: 72,
-    openingValue: 324,
+    name: 'Cement 50kg',
+    category: 'Cement',
+    sku: 'CEM50',
+    unit: 'bag',
+    cost: 86,
+    price: 96,
+    minStock: 100,
+    openingQty: 400,
+    openingValue: 34_400,
   },
   {
-    name: 'Bottled Water 750ml',
-    category: 'Drinks',
-    sku: 'WATER750',
-    barcode: '6001240100015',
-    unit: 'bottle',
-    cost: 1.8,
-    price: 3,
-    minStock: 48,
-    openingQty: 120,
-    openingValue: 216,
-  },
-  {
-    name: 'Milo Tin 400g',
-    category: 'Drinks',
-    sku: 'MILO400',
-    barcode: '6001068600014',
-    unit: 'tin',
-    cost: 38,
-    price: 46,
-    minStock: 6,
-    openingQty: 18,
-    openingValue: 684,
-  },
-  {
-    name: 'Evaporated Milk 170g',
-    category: 'Food',
-    sku: 'MILK170',
-    unit: 'tin',
-    cost: 6.5,
-    price: 9,
-    minStock: 12,
-    openingQty: 40,
-    openingValue: 260,
-  },
-  {
-    name: 'Tea Bread',
-    category: 'Food',
-    sku: 'BREAD-TEA',
-    unit: 'loaf',
-    cost: 8,
-    price: 12,
-    minStock: 5,
-    // Deliberately low so the low-stock warning is visible in the demo.
+    name: 'Sand (tipper load)',
+    category: 'Cement',
+    sku: 'SAND-TIP',
+    unit: 'load',
+    cost: 900,
+    price: 1_100,
+    minStock: 1,
     openingQty: 4,
-    openingValue: 32,
+    openingValue: 3_600,
   },
   {
-    name: 'Digestive Biscuits',
-    category: 'Snacks',
-    sku: 'BISC-DIG',
-    unit: 'pack',
-    cost: 5.2,
-    price: 8,
+    name: 'Chippings 3/4in (tipper load)',
+    category: 'Cement',
+    sku: 'CHIP34',
+    unit: 'load',
+    cost: 1_150,
+    price: 1_380,
+    minStock: 1,
+    openingQty: 3,
+    openingValue: 3_450,
+  },
+  {
+    name: 'Iron rod 12mm',
+    category: 'Steel',
+    sku: 'ROD12',
+    unit: 'length',
+    cost: 96,
+    price: 112,
+    minStock: 50,
+    openingQty: 220,
+    openingValue: 21_120,
+  },
+  {
+    name: 'Iron rod 16mm',
+    category: 'Steel',
+    sku: 'ROD16',
+    unit: 'length',
+    cost: 172,
+    price: 198,
+    minStock: 30,
+    openingQty: 120,
+    openingValue: 20_640,
+  },
+  {
+    name: 'Binding wire',
+    category: 'Steel',
+    sku: 'BWIRE',
+    unit: 'roll',
+    cost: 88,
+    price: 108,
     minStock: 10,
-    openingQty: 30,
-    openingValue: 156,
+    openingQty: 40,
+    openingValue: 3_520,
   },
   {
-    name: 'Groundnuts 100g',
-    category: 'Snacks',
-    sku: 'NUTS100',
-    unit: 'pack',
-    cost: 2.5,
-    price: 4,
-    minStock: 15,
-    openingQty: 45,
-    openingValue: 112.5,
+    name: 'PVC pipe 4in',
+    category: 'Plumbing',
+    sku: 'PVC4',
+    unit: 'length',
+    cost: 118,
+    price: 142,
+    minStock: 20,
+    openingQty: 90,
+    openingValue: 10_620,
   },
   {
-    name: 'Key Soap',
-    category: 'Household',
-    sku: 'SOAP-KEY',
-    unit: 'bar',
-    cost: 4,
-    price: 6,
-    minStock: 12,
-    openingQty: 36,
-    openingValue: 144,
+    name: 'PVC pipe 2in',
+    category: 'Plumbing',
+    sku: 'PVC2',
+    unit: 'length',
+    cost: 54,
+    price: 68,
+    minStock: 30,
+    openingQty: 140,
+    openingValue: 7_560,
   },
   {
-    name: 'Rice (local)',
-    category: 'Food',
-    sku: 'RICE-KG',
+    name: 'PVC elbow 4in',
+    category: 'Plumbing',
+    sku: 'ELB4',
+    unit: 'pcs',
+    cost: 16,
+    price: 24,
+    minStock: 40,
+    openingQty: 200,
+    openingValue: 3_200,
+  },
+  {
+    name: 'Roofing sheet aluzinc 3m',
+    category: 'Roofing',
+    sku: 'ROOF3M',
+    unit: 'sheet',
+    cost: 182,
+    price: 214,
+    minStock: 40,
+    openingQty: 160,
+    openingValue: 29_120,
+  },
+  {
+    name: 'Roofing nails 3in',
+    category: 'Fixings',
+    sku: 'NAIL3',
     unit: 'kg',
     cost: 14,
     price: 19,
-    minStock: 10,
-    // Fractional unit — proves the milli-unit quantity handling in the UI.
-    openingQty: 25.5,
-    openingValue: 357,
+    minStock: 25,
+    openingQty: 120,
+    openingValue: 1_680,
+  },
+  {
+    name: 'Cartage to site',
+    category: 'Services',
+    sku: 'CARTAGE',
+    unit: 'trip',
+    cost: 0,
+    price: 350,
+    minStock: 0,
+    openingQty: 0,
+    openingValue: 0,
+    service: true,
   },
 ];
 
@@ -174,7 +211,7 @@ export function seedDemoCatalog(db: Db, actor: Actor, businessDate: string): voi
         costPrice: m(demo.cost),
         sellingPrice: m(demo.price),
         minStock: u(demo.minStock),
-        trackInventory: true,
+        trackInventory: demo.service !== true,
       },
       actor,
     );
@@ -182,12 +219,15 @@ export function seedDemoCatalog(db: Db, actor: Actor, businessDate: string): voi
     // Mark the row as demo data so it can be purged wholesale.
     db.update(products).set({ isDemo: true }).where(eq(products.id, productId)).run();
 
-    openingItems.push({
-      productId,
-      direction: 'IN',
-      qty: u(demo.openingQty),
-      totalCost: m(demo.openingValue),
-    });
+    // Nothing to open a service with: no quantity ever sat in the yard.
+    if (demo.service !== true) {
+      openingItems.push({
+        productId,
+        direction: 'IN',
+        qty: u(demo.openingQty),
+        totalCost: m(demo.openingValue),
+      });
+    }
   }
 
   db.update(categories).set({ isDemo: true }).run();

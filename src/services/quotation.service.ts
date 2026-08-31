@@ -436,6 +436,15 @@ export interface ConvertQuotationInput {
   termsDays?: number;
   /** Required when the quote has passed its validity date. */
   overrideReason?: string;
+  /**
+   * Marks the sale this produces as demo data.
+   *
+   * Passed through to `createSale` rather than swept afterwards, so the sale
+   * AND the journal entry behind it are flagged at the moment they are written.
+   * A sweep would reach the sale and miss the entry, and `countRealRecords`
+   * counts both.
+   */
+  isDemo?: boolean;
 }
 
 export interface ConvertedQuotation {
@@ -531,6 +540,7 @@ export function convertQuotation(
         tenders: input.tenders,
         ...(input.termsDays !== undefined ? { termsDays: input.termsDays } : {}),
         note: `From quote ${quote.quoteNo}`,
+        ...(input.isDemo === true ? { isDemo: true } : {}),
         // See the note above. The prices came from a quote the owner issued.
         allowPriceOverride: true,
       },

@@ -96,26 +96,30 @@ export function seedDemoCashbook(db: Db, actor: Actor, today: string): void {
       actor,
     );
 
-  startingFloat(cash.id, 3_000, 'Owner opening cash float');
-  startingFloat(momo.id, 500, 'Owner opening MoMo balance');
-  startingFloat(bank.id, 2_000, 'Owner opening bank balance');
+  // A yard carries far more float than a corner shop: it pays for truckloads.
+  startingFloat(cash.id, 8_000, 'Owner opening cash float');
+  startingFloat(momo.id, 2_000, 'Owner opening MoMo balance');
+  startingFloat(bank.id, 60_000, 'Owner opening bank balance');
 
-  spend(6, 'Rent', 'Shop rent for the month', 450, cash.id);
-  spend(5, 'Electricity', 'ECG prepaid top-up', 120, momo.id, 'MM-8811023');
-  spend(4, 'Transport', 'Taxi to Madina market', 45, cash.id);
-  spend(3, 'Staff Wages', 'Ama — weekly wages', 250, cash.id);
-  spend(3, 'MoMo Charges', 'Withdrawal charges', 8.5, momo.id);
-  spend(2, 'Packaging', 'Carrier bags (2 packs)', 60, cash.id);
-  spend(1, 'Internet & Airtime', 'Airtime for the shop line', 30, momo.id, 'MM-8839912');
-  spend(0, 'Transport', 'Delivery to customer', 25, cash.id);
+  spend(68, 'Rent', 'Yard rent for the month', 2_400, bank.id);
+  spend(60, 'Transport', 'Tipper hire, Adenta delivery', 900, cash.id);
+  spend(52, 'Staff Wages', 'Yard hands — monthly wages', 3_200, cash.id);
+  spend(38, 'Rent', 'Yard rent for the month', 2_400, bank.id);
+  spend(31, 'Electricity', 'ECG prepaid top-up', 380, momo.id, 'MM-8811023');
+  spend(24, 'Transport', 'Forklift diesel', 640, cash.id);
+  spend(19, 'Staff Wages', 'Yard hands — monthly wages', 3_200, cash.id);
+  spend(11, 'MoMo Charges', 'Withdrawal charges', 42, momo.id);
+  spend(7, 'Rent', 'Yard rent for the month', 2_400, bank.id);
+  spend(4, 'Internet & Airtime', 'Airtime for the yard line', 60, momo.id, 'MM-8839912');
+  spend(1, 'Transport', 'Tipper hire, Kasoa delivery', 750, cash.id);
 
   recordIncome(
     db,
     {
-      businessDate: daysBefore(today, 4),
+      businessDate: daysBefore(today, 33),
       categoryAccountId: incomeCategory('Commission'),
-      description: 'MoMo agent commission',
-      amount: m(85),
+      description: 'Weighbridge fee recovered',
+      amount: m(150),
       paymentAccountId: momo.id,
       reference: 'MM-8820447',
       isDemo: true,
@@ -128,8 +132,8 @@ export function seedDemoCashbook(db: Db, actor: Actor, today: string): void {
     {
       businessDate: daysBefore(today, 1),
       categoryAccountId: incomeCategory('Service Income'),
-      description: 'Phone charging service',
-      amount: m(22),
+      description: 'Offloading charged to a customer',
+      amount: m(300),
       paymentAccountId: cash.id,
       isDemo: true,
     },

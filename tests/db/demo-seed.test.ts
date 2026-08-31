@@ -121,14 +121,14 @@ describe('what the seed refuses to overwrite', () => {
       .where(eq(businessSettings.id, 1))
       .get()!;
 
-    expect(settings.businessName).toBe('Adom Provisions');
-    expect(settings.address).toContain('Madina Market');
+    expect(settings.businessName).toBe('Structural Supplies');
+    expect(settings.address).toContain('Spintex Road');
   });
 
   it('writes over its own previous demo name, which nobody chose', async () => {
     context.db
       .update(businessSettings)
-      .set({ businessName: 'Adom Provisions' })
+      .set({ businessName: 'Structural Supplies' })
       .where(eq(businessSettings.id, 1))
       .run();
 
@@ -137,7 +137,7 @@ describe('what the seed refuses to overwrite', () => {
     expect(
       context.db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()!
         .businessName,
-    ).toBe('Adom Provisions');
+    ).toBe('Structural Supplies');
   });
 });
 

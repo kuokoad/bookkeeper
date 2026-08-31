@@ -7,10 +7,12 @@ import { createUser } from '@/services/auth.service';
 import { defaultStaffPermissions } from '@/lib/auth/permissions';
 import { writeAudit } from '@/services/audit.service';
 import { toBusinessDate } from '@/lib/format';
+import { defaultFeatures } from '@/lib/business-type';
 import { seedDemoCatalog } from './demo-catalog';
 import { seedDemoPurchases } from './demo-purchases';
 import { seedDemoSales } from './demo-sales';
 import { seedDemoCashbook } from './demo-cashbook';
+import { seedDemoQuotations } from './demo-quotations';
 import { openOpeningBatches } from './opening-batches';
 
 /**
@@ -26,7 +28,10 @@ import { openOpeningBatches } from './opening-batches';
 const DEFAULT_BUSINESS_NAME = 'My Shop';
 
 /** The demo shop's own name, safe to write over because a previous seed set it. */
-const DEMO_BUSINESS_NAME = 'Adom Provisions';
+const DEMO_BUSINESS_NAME = 'Structural Supplies';
+
+/** What that type switches on, resolved rather than restated. */
+const DEMO_FEATURES = defaultFeatures('building_materials');
 
 export const DEMO_OWNER = {
   username: 'owner',
@@ -96,6 +101,9 @@ export async function seedDemo(db: Db, now: Date = new Date()): Promise<void> {
     // exercises stock, COGS and journal posting exactly as production does.
     seedDemoSales(db, actor, toBusinessDate(now));
     seedDemoCashbook(db, actor, toBusinessDate(now));
+    // After the sales, because converting one produces a sale and the sales
+    // seed refuses to run at all once any sale exists.
+    seedDemoQuotations(db, actor, toBusinessDate(now));
 
     // Give whatever is left on the shelf an opening batch.
     //
@@ -140,8 +148,22 @@ export async function seedDemo(db: Db, now: Date = new Date()): Promise<void> {
           ? {}
           : {
               businessName: DEMO_BUSINESS_NAME,
-              address: 'Shop 4, Madina Market, Accra',
+              tagline: 'Cement, steel, roofing and plumbing',
+              address: 'Plot 12, Spintex Road, Accra',
               phone: '+233 24 000 0000',
+              /*
+                The demo shop IS a building materials yard, so it says so, and
+                the features follow from the type exactly as they would if
+                somebody had chosen it on the setup screen. A yard demo that
+                came up as general retail would hide the Quotations menu the
+                seeded quotes below are sitting in.
+
+                Inside the same guard as the name: a shop that has already told
+                us what it is does not get overruled by a seed.
+              */
+              businessType: 'building_materials',
+              featureExpiryBatches: DEMO_FEATURES.expiry_batches,
+              featureQuotations: DEMO_FEATURES.quotations,
             }),
         hasDemoData: true,
         setupCompletedAt: now,

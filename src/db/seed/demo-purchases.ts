@@ -6,7 +6,7 @@ import { createSupplier } from '@/services/supplier.service';
 import { createPurchase } from '@/services/purchase.service';
 import { recordSupplierPayment } from '@/services/supplier-payment.service';
 import { minor, type Minor } from '@/domain/money';
-import { fromUnits, parseQty, type Qty } from '@/domain/quantity';
+import { fromUnits, type Qty } from '@/domain/quantity';
 import type { Actor } from '@/services/journal.service';
 
 /**
@@ -52,57 +52,55 @@ export function seedDemoPurchases(db: Db, actor: Actor, today: string): void {
     return id;
   };
 
-  const kasapreko = createSupplier(
+  const ghacem = createSupplier(
     db,
     {
-      name: 'Kasapreko Distributors',
+      name: 'Ghacem Depot, Tema',
       contactPerson: 'Mr Adjei',
       phone: '030 222 1100',
-      address: 'Spintex Road, Accra',
+      address: 'Heavy Industrial Area, Tema',
     },
     actor,
   );
-  const marketWholesale = createSupplier(
+  const steelWorks = createSupplier(
     db,
-    { name: 'Madina Market Wholesale', contactPerson: 'Hajia Fati', phone: '024 555 6677' },
+    { name: 'Tema Steel Works', contactPerson: 'Hajia Fati', phone: '024 555 6677' },
     actor,
   );
-  const nestle = createSupplier(
+  const pipesAndSheets = createSupplier(
     db,
-    { name: 'Nestlé Ghana Agent', contactPerson: 'Selorm', phone: '027 909 1234' },
+    { name: 'Amasaman Pipes & Sheets', contactPerson: 'Selorm', phone: '027 909 1234' },
     actor,
   );
   db.update(suppliers).set({ isDemo: true }).run();
 
-  // Paid in full on delivery.
+  // A truckload of cement, paid on delivery.
   createPurchase(
     db,
     {
-      supplierId: kasapreko,
-      businessDate: daysBefore(today, 5),
-      invoiceNo: 'KD-4471',
-      items: [
-        { productId: need('Coca-Cola 350ml'), qty: u(48), unitCost: m(4.6) },
-        { productId: need('Bottled Water 750ml'), qty: u(60), unitCost: m(1.85) },
-      ],
-      tenders: [{ paymentAccountId: cash.id, amount: m(331.8) }],
+      supplierId: ghacem,
+      businessDate: daysBefore(today, 74),
+      invoiceNo: 'GH-4471',
+      items: [{ productId: need('Cement 50kg'), qty: u(600), unitCost: m(84) }],
+      tenders: [{ paymentAccountId: bank.id, amount: m(50_400) }],
       isDemo: true,
     },
     actor,
   );
 
-  // Part paid — leaves a payable, and the higher price re-averages the cost.
+  // Steel, part paid. Leaves a payable, and the higher price re-averages the
+  // cost of every rod already in the yard.
   createPurchase(
     db,
     {
-      supplierId: nestle,
-      businessDate: daysBefore(today, 4),
-      invoiceNo: 'NG-90233',
+      supplierId: steelWorks,
+      businessDate: daysBefore(today, 46),
+      invoiceNo: 'TSW-90233',
       items: [
-        { productId: need('Milo Tin 400g'), qty: u(12), unitCost: m(39.5) },
-        { productId: need('Evaporated Milk 170g'), qty: u(24), unitCost: m(6.8) },
+        { productId: need('Iron rod 12mm'), qty: u(200), unitCost: m(99) },
+        { productId: need('Iron rod 16mm'), qty: u(80), unitCost: m(178) },
       ],
-      tenders: [{ paymentAccountId: bank.id, amount: m(300) }],
+      tenders: [{ paymentAccountId: bank.id, amount: m(20_000) }],
       note: 'Balance due end of month',
       isDemo: true,
     },
@@ -113,16 +111,32 @@ export function seedDemoPurchases(db: Db, actor: Actor, today: string): void {
   createPurchase(
     db,
     {
-      supplierId: marketWholesale,
-      businessDate: daysBefore(today, 2),
-      invoiceNo: 'MW-1188',
+      supplierId: pipesAndSheets,
+      businessDate: daysBefore(today, 17),
+      invoiceNo: 'APS-1188',
       items: [
-        { productId: need('Rice (local)'), qty: parseQty('50'), unitCost: m(13.5) },
-        { productId: need('Key Soap'), qty: u(24), unitCost: m(4.1) },
-        { productId: need('Groundnuts 100g'), qty: u(40), unitCost: m(2.4) },
+        { productId: need('PVC pipe 4in'), qty: u(60), unitCost: m(121) },
+        { productId: need('PVC pipe 2in'), qty: u(80), unitCost: m(55) },
+        { productId: need('Roofing sheet aluzinc 3m'), qty: u(90), unitCost: m(186) },
       ],
-      invoiceDiscount: m(15),
+      invoiceDiscount: m(250),
       tenders: [],
+      isDemo: true,
+    },
+    actor,
+  );
+
+  // A second cement load, after the price moved. Weighted average earns its
+  // keep here: the yard now holds bags bought at two different prices.
+  createPurchase(
+    db,
+    {
+      supplierId: ghacem,
+      businessDate: daysBefore(today, 9),
+      invoiceNo: 'GH-4620',
+      items: [{ productId: need('Cement 50kg'), qty: u(600), unitCost: m(89) }],
+      tenders: [{ paymentAccountId: bank.id, amount: m(30_000) }],
+      note: 'Balance on account',
       isDemo: true,
     },
     actor,
@@ -132,10 +146,10 @@ export function seedDemoPurchases(db: Db, actor: Actor, today: string): void {
   recordSupplierPayment(
     db,
     {
-      supplierId: nestle,
-      businessDate: today,
+      supplierId: steelWorks,
+      businessDate: daysBefore(today, 20),
       paymentAccountId: momo.id,
-      amount: m(100),
+      amount: m(6_000),
       reference: 'MM-8850119',
       isDemo: true,
     },
