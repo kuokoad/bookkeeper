@@ -1,5 +1,6 @@
 import type { PermissionModule } from '@/db/schema/users';
 import type { FeatureKey } from '@/lib/business-type';
+import type { IconName as DrawnIcon } from '@/components/ui/icon';
 
 /**
  * Navigation definition.
@@ -9,6 +10,11 @@ import type { FeatureKey } from '@/lib/business-type';
  * the server check is what actually protects the route.
  */
 
+/**
+ * The icons a MENU entry may use — deliberately narrower than the drawn set.
+ * `icon: 'profit'` should not typecheck here: there is no page called Profit
+ * to put it on, and the card vocabulary is not a list of destinations.
+ */
 export type IconName =
   | 'dashboard'
   | 'sales'
@@ -26,6 +32,15 @@ export type IconName =
   | 'settings'
   | 'search'
   | 'help';
+
+/**
+ * Every name above must actually be drawn. Renaming a path in `ui/icon.tsx`
+ * without renaming it here would otherwise reach the shop as a menu of blank
+ * squares — the icon component looks the name up and gets `undefined`.
+ */
+type NavIconsAreDrawn = IconName extends DrawnIcon ? true : never;
+const _navIconsAreDrawn: NavIconsAreDrawn = true;
+void _navIconsAreDrawn;
 
 export interface NavItem {
   href: string;

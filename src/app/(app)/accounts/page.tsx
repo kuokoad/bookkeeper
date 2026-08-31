@@ -63,11 +63,11 @@ export default async function AccountsPage() {
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
         <Stat
-          label="Total money held"
+          label="Total money held" icon="accounts"
           value={money(totalHeld, { currencyCode: currency })}
           hint="Across all active accounts"
         />
-        <Stat label="Accounts" value={String(active.length)} />
+        <Stat label="Accounts" icon="accounts" value={String(active.length)} />
       </div>
 
       {accounts.length === 0 ? (

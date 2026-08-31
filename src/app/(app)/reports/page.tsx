@@ -126,15 +126,16 @@ export default async function ReportsPage() {
       )}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Sales this month" value={money(pl.netSales)} />
+        <Stat icon="sales" label="Sales this month" value={money(pl.netSales)} />
         <Stat
+          icon="profit"
           label="Profit this month"
           value={money(pl.netProfit)}
           tone={pl.netProfit < 0 ? 'danger' : 'success'}
           hint="After all costs"
         />
-        <Stat label="Stock value" value={money(sheet.inventory)} />
-        <Stat label="Business worth" value={money(sheet.totalEquity)} hint="Assets less what you owe" />
+        <Stat icon="inventory" label="Stock value" value={money(sheet.inventory)} />
+        <Stat icon="books" label="Business worth" value={money(sheet.totalEquity)} hint="Assets less what you owe" />
       </div>
 
       <div className="space-y-6">

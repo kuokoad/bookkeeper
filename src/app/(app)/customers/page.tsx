@@ -97,14 +97,14 @@ export default async function CustomersPage({
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="Customers" value={String(countCustomers(db))} />
+        <Stat label="Customers" icon="customers" value={String(countCustomers(db))} />
         <Stat
-          label="Total owed to you"
+          label="Total owed to you" icon="owed"
           value={money(totalOwed)}
           tone={totalOwed > 0 ? 'warning' : 'default'}
           hint="Accounts receivable"
         />
-        <Stat label="Customers owing" value={String(owingCount)} />
+        <Stat label="Customers owing" icon="owed" value={String(owingCount)} />
       </div>
 
       <FilterBar

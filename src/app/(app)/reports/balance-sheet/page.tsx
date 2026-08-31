@@ -61,9 +61,10 @@ export default async function BalanceSheetPage({
       </form>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="What you own" value={money(sheet.totalAssets)} />
-        <Stat label="What you owe" value={money(sheet.totalLiabilities)} />
+        <Stat icon="accounts" label="What you own" value={money(sheet.totalAssets)} />
+        <Stat icon="owes" label="What you owe" value={money(sheet.totalLiabilities)} />
         <Stat
+          icon="books"
           label="Business worth"
           value={money(sheet.totalEquity)}
           tone={sheet.totalEquity < 0 ? 'danger' : 'success'}

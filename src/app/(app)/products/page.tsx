@@ -165,19 +165,19 @@ export default async function ProductsPage({
 
       {/* The shop as a whole. These do not move with the filter, on purpose. */}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Products" value={String(shop.productCount)} />
+        <Stat label="Products" icon="products" value={String(shop.productCount)} />
         <Stat
-          label="Stock value"
+          label="Stock value" icon="inventory"
           value={money(shop.totalStockValue)}
           hint="At weighted average cost"
         />
         <Stat
-          label="Low stock"
+          label="Low stock" icon="warning"
           value={String(shop.lowStockCount)}
           tone={shop.lowStockCount > 0 ? 'warning' : 'default'}
         />
         <Stat
-          label="Out of stock"
+          label="Out of stock" icon="warning"
           value={String(shop.outOfStockCount)}
           tone={shop.outOfStockCount > 0 ? 'danger' : 'default'}
         />

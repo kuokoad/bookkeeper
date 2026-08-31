@@ -154,11 +154,11 @@ export default async function IncomePage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat
-          label="Transactions"
+          label="Transactions" icon="income"
           value={String(summary.count)}
           hint={describeDateRange(range, preset, today)}
         />
-        <Stat label="Total received" value={money(summary.total, { currencyCode: currency })} />
+        <Stat label="Total received" icon="income" value={money(summary.total, { currencyCode: currency })} />
         <Stat label="Average" value={money(summary.average, { currencyCode: currency })} />
       </div>
 

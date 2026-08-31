@@ -141,9 +141,9 @@ export default async function PurchaseReportPage({
       ) : (
         <>
           <div className="mb-6 grid gap-3 sm:grid-cols-3">
-            <Stat label="Total bought" value={money(total)} />
-            <Stat label="Deliveries" value={String(count)} />
-            <Stat label="Suppliers used" value={String(bySupplier.length)} />
+            <Stat icon="expenses" label="Total bought" value={money(total)} />
+            <Stat icon="purchases" label="Deliveries" value={String(count)} />
+            <Stat icon="suppliers" label="Suppliers used" value={String(bySupplier.length)} />
           </div>
 
           <h2 className="mb-3 text-sm font-semibold text-content">By supplier</h2>

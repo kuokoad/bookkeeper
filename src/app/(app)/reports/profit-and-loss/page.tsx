@@ -46,14 +46,16 @@ export default async function ProfitAndLossPage({
       <FilterBar basePath="/reports/profit-and-loss" dateRange={{ preset, from: period.from, to: period.to }} />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="Net sales" value={money(pl.netSales)} />
+        <Stat icon="income" label="Net sales" value={money(pl.netSales)} />
         <Stat
+          icon="profit"
           label="Gross profit"
           value={money(pl.grossProfit)}
           hint={`Margin ${percent(pl.grossMarginBp)}`}
           tone={pl.grossProfit < 0 ? 'danger' : 'default'}
         />
         <Stat
+          icon="profit"
           label="Net profit"
           value={money(pl.netProfit)}
           hint={`Margin ${percent(pl.netMarginBp)}`}

@@ -1,12 +1,48 @@
-import type { IconName } from './navigation';
-
 /**
  * Inline SVG icon set.
  *
  * Hand-rolled rather than pulled from an icon package: it keeps the client
  * bundle small on a shop's phone over a slow connection, and there are only a
  * dozen of them.
+ *
+ * A primitive, and it lives here rather than in `shared/` because `Stat` needs
+ * it: `shared/` may import from `ui/`, never the other way round. The union
+ * below is declared here too, so nothing in this file knows the menu exists.
+ * `navigation.ts` keeps its own narrower list — a menu entry should not be
+ * able to choose `profit`, because there is no page by that name — and proves
+ * at compile time that every icon it names is one of these.
  */
+
+/**
+ * The vocabulary. Icons say what KIND of thing a figure is — money out, owed
+ * to you, stock, people — so two cards showing the same kind carry the same
+ * mark. That repetition is the vocabulary working; a unique glyph per label
+ * would mean inventing pictures for things like "Average expense".
+ */
+export type IconName =
+  | 'dashboard'
+  | 'sales'
+  | 'purchases'
+  | 'products'
+  | 'inventory'
+  | 'customers'
+  | 'suppliers'
+  | 'expenses'
+  | 'income'
+  | 'accounts'
+  | 'reports'
+  | 'quotations'
+  | 'users'
+  | 'settings'
+  | 'search'
+  | 'help'
+  | 'cashflow'
+  | 'profit'
+  | 'owed'
+  | 'owes'
+  | 'discount'
+  | 'warning'
+  | 'books';
 
 const PATHS: Record<IconName, string> = {
   dashboard: 'M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z',
@@ -40,6 +76,31 @@ const PATHS: Record<IconName, string> = {
     'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM9 9.2a3 3 0 0 1 6 0c0 2.4-2.2 2.4-2.2 4v1.2h-1.6v-1.6c0-2.2 2.2-2 2.2-3.6a1.4 1.4 0 0 0-2.8 0Zm1.9 7h2.2v2.2h-2.2v-2.2Z',
   settings:
     'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9.4 4a7.6 7.6 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L16.5 3h-4l-.4 2.6c-.7.3-1.4.7-2 1.2l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2l.4 2.6h4l.4-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z',
+
+  /*
+    The four below are drawn only for dashboard cards. Straight edges and
+    circles on purpose: at 16px a clever glyph is a smudge, and these have to
+    survive being the small quiet mark beside a label.
+  */
+
+  /** Money in and money out: two arrows, opposite ways. */
+  cashflow: 'M3 7h11V3.6l6.5 4.9L14 13.4V10H3V7Zm18 7H10v-3.4L3.5 15.5 10 20.4V17h11v-3Z',
+  /** What is left over: a line going up and to the right. */
+  profit: 'M13 4h7v7h-2V7.4l-12 12-1.4-1.4 12-12H13V4Z',
+  /** Owed to the shop: money still on its way in. */
+  owed:
+    'M11 3h2v5h2.5L12 12.5 8.5 8H11V3Zm-8 11h5l1.2 2.4a1 1 0 0 0 .9.6h3.8a1 1 0 0 0 .9-.6L16 14h5v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z',
+  /** Owed BY the shop: the same tray, the arrow going the other way. */
+  owes:
+    'M12 2.5 15.5 7H13v5.5h-2V7H8.5L12 2.5ZM3 14h5l1.2 2.4a1 1 0 0 0 .9.6h3.8a1 1 0 0 0 .9-.6L16 14h5v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z',
+  /** Money taken off a price. */
+  discount:
+    'M7.5 4.9a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2Zm9 9a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2ZM16.1 3.9l1.8 1.2-10 15-1.8-1.2 10-15Z',
+  /** Something wants looking at. The exclamation is a hole, not a second fill. */
+  warning: 'M12 3 22.5 21H1.5L12 3Zm-1 5v6.5h2V8h-2Zm0 8v2h2v-2h-2Z',
+  /** Do the books balance: a scale, level. */
+  books:
+    'M12 2.6a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2ZM3 6.4h18V8H3V6.4Zm8.2 1.6h1.6v10.4h-1.6V8Zm-4.2 10.4h10v2.2H7v-2.2ZM2.6 9h6.8L6 15.4 2.6 9Zm12 0h6.8L18 15.4 14.6 9Z',
 };
 
 export interface IconProps {

@@ -190,15 +190,15 @@ export default async function InventoryPage({
       )}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Stock value" value={money(summary.totalStockValue)} hint="Weighted average cost" />
-        <Stat label="Tracked products" value={String(summary.trackedCount)} />
+        <Stat label="Stock value" icon="inventory" value={money(summary.totalStockValue)} hint="Weighted average cost" />
+        <Stat label="Tracked products" icon="products" value={String(summary.trackedCount)} />
         <Stat
-          label="Low stock"
+          label="Low stock" icon="warning"
           value={String(summary.lowStockCount)}
           tone={summary.lowStockCount > 0 ? 'warning' : 'default'}
         />
         <Stat
-          label="Out of stock"
+          label="Out of stock" icon="warning"
           value={String(summary.outOfStockCount)}
           tone={summary.outOfStockCount > 0 ? 'danger' : 'default'}
         />

@@ -93,14 +93,14 @@ export default async function SuppliersPage({
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="Suppliers" value={String(countSuppliers(db))} />
+        <Stat label="Suppliers" icon="suppliers" value={String(countSuppliers(db))} />
         <Stat
-          label="Total you owe"
+          label="Total you owe" icon="owes"
           value={money(payables)}
           tone={payables > 0 ? 'warning' : 'default'}
           hint="Accounts payable"
         />
-        <Stat label="Suppliers owed" value={String(owedCount)} />
+        <Stat label="Suppliers owed" icon="owes" value={String(owedCount)} />
       </div>
 
       <FilterBar

@@ -177,21 +177,25 @@ export default async function InventoryReportPage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
+          icon="inventory"
           label="Stock at cost"
           value={money(valuation.totalCostValue)}
           hint="What you paid for it"
         />
         <Stat
+          icon="inventory"
           label="Stock at selling price"
           value={money(valuation.totalRetailValue)}
           hint="If it all sold"
         />
         <Stat
+          icon="profit"
           label="Profit if all sold"
           value={money(valuation.totalPotentialProfit)}
           tone="success"
         />
         <Stat
+          icon="warning"
           label="Needs attention"
           value={String(valuation.lowStockCount + valuation.outOfStockCount)}
           tone={valuation.outOfStockCount > 0 ? 'danger' : valuation.lowStockCount > 0 ? 'warning' : 'default'}

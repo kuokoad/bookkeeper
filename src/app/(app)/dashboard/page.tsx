@@ -25,6 +25,7 @@ import { Alert } from '@/components/ui/alert';
 import { Donut, PairedBars, SplitBar, TrendLine } from '@/components/ui/chart';
 import { Clock } from '@/components/shared/clock';
 import { Greeting } from '@/components/shared/greeting';
+import { Icon, type IconName } from '@/components/ui/icon';
 import { formatClockDate, formatClockTime } from '@/lib/clock-format';
 import { bandFor } from '@/lib/greeting';
 
@@ -62,20 +63,47 @@ function daysBefore(date: string, days: number): string {
 
 function Card({
   title,
+  icon,
   control,
   children,
 }: {
   title: string;
+  /**
+   * Decorative, and `Icon` marks it `aria-hidden`. The title is what says
+   * which card this is; the mark only helps the eye find it again on a screen
+   * of nine. Nothing here is available as a picture alone.
+   */
+  icon: IconName;
   control?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  // Chrome from the card tokens, the same as `Stat` and the shared `Card`.
+  // Hard-coded `rounded-xl` looked identical only because that IS the default
+  // look's radius — under Ledger every other card on the app picked up paper
+  // corners and a shadow while the dashboard stayed flat.
   return (
-    <section className="flex flex-col rounded-xl border border-line bg-surface-raised p-4">
-      <div className="mb-3 flex items-start justify-between gap-2">
+    <section
+      className="flex flex-col border border-line bg-surface-raised p-4"
+      style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-content-subtle">
           {title}
         </h2>
-        {control}
+        {/*
+          The control keeps the corner it has always had and the tile sits
+          outboard of it, so the two cards with a range picker do not have it
+          move somewhere else than the seven without one.
+        */}
+        <div className="flex shrink-0 items-center gap-2">
+          {control}
+          <span
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-accent"
+            aria-hidden="true"
+          >
+            <Icon name={icon} className="h-[18px] w-[18px]" />
+          </span>
+        </div>
       </div>
       {children}
     </section>
@@ -246,7 +274,7 @@ export default async function DashboardPage({
 
       <div className="grid gap-4 lg:grid-cols-3">
         {shows.money && (
-        <Card title="Cash flow">
+        <Card title="Cash flow" icon="cashflow">
           <Headline value={money(cashHeld)} note="Held across all your accounts" />
           <PairedBars
             data={moneyMonths.map((month) => ({
@@ -260,7 +288,7 @@ export default async function DashboardPage({
         )}
 
         {shows.sales && rangeSales !== null && todaySales !== null && (
-        <Card title="Sales" control={<RangePicker param="sales" current={salesRange} />}>
+        <Card title="Sales" icon="sales" control={<RangePicker param="sales" current={salesRange} />}>
           <Headline
             value={money(rangeSales.total)}
             note={`${rangeSales.count} sale${rangeSales.count === 1 ? '' : 's'} · ${RANGES[salesRange].label.toLowerCase()}`}
@@ -283,7 +311,7 @@ export default async function DashboardPage({
           words below instead.
         */}
         {shows.sales && (
-        <Card title="Top selling product">
+        <Card title="Top selling product" icon="products">
           {topProduct === null ? (
             <>
               <p className="mb-1 text-2xl font-semibold text-content-muted">Nothing yet</p>
@@ -322,7 +350,7 @@ export default async function DashboardPage({
         )}
 
         {shows.spending && spend !== null && (
-        <Card title="Spending" control={<RangePicker param="spend" current={spendRange} />}>
+        <Card title="Spending" icon="expenses" control={<RangePicker param="spend" current={spendRange} />}>
           <Headline value={money(spend)} note={RANGES[spendRange].label} />
           {topCategories.length > 0 ? (
             <Donut
@@ -339,7 +367,7 @@ export default async function DashboardPage({
           monthNet !== null &&
           monthSales !== null &&
           monthExpenses !== null && (
-        <Card title="Profit this month">
+        <Card title="Profit this month" icon="profit">
           <Headline
             value={money(monthNet)}
             note="Sales profit plus other income, less running costs"
@@ -366,7 +394,7 @@ export default async function DashboardPage({
         )}
 
         {shows.owed && receivables !== null && notYetDue !== null && (
-        <Card title="Money owed to you">
+        <Card title="Money owed to you" icon="owed">
           <Headline value={money(receivables)} note="Across all customers" />
           {receivables > 0 ? (
             <>
@@ -411,7 +439,7 @@ export default async function DashboardPage({
         )}
 
         {shows.money && (
-        <Card title="Money accounts">
+        <Card title="Money accounts" icon="accounts">
           <ul className="space-y-2.5">
             {paymentAccounts.map((account) => (
               <li key={account.id} className="flex items-baseline justify-between gap-3">
@@ -432,7 +460,7 @@ export default async function DashboardPage({
         )}
 
         {shows.stock && stock !== null && (
-        <Card title="Stock">
+        <Card title="Stock" icon="inventory">
           <Headline value={money(stock.totalStockValue)} note="At weighted average cost" />
           <dl className="grid grid-cols-3 gap-2 text-sm">
             <div>
@@ -508,7 +536,7 @@ export default async function DashboardPage({
         )}
 
         {shows.money && trialBalance !== null && (
-        <Card title="Books check">
+        <Card title="Books check" icon="books">
           {/*
             Label left, figure right, one per row — the same shape the Money
             accounts card above uses. It was three across while this card

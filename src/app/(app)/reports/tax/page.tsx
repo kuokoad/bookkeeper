@@ -63,11 +63,13 @@ export default async function TaxReturnPage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
+          icon="owes"
           label="Tax you charged"
           value={money(taxReturn.totalOutput)}
           hint="On sales, less returns"
         />
         <Stat
+          icon="owed"
           label="Tax you can reclaim"
           value={money(taxReturn.totalRecoverableInput)}
           hint="On purchases, less returns"
@@ -78,6 +80,7 @@ export default async function TaxReturnPage({
           screen teaches people not to read it.
         */}
         <Stat
+          icon={owed ? 'owes' : reclaimable ? 'owed' : undefined}
           label={owed ? 'You owe' : reclaimable ? 'Reclaimable' : 'Nothing owed'}
           value={money(Math.abs(taxReturn.netPayable) as typeof taxReturn.netPayable)}
           tone={owed ? 'warning' : reclaimable ? 'success' : 'default'}
@@ -90,6 +93,7 @@ export default async function TaxReturnPage({
           }
         />
         <Stat
+          icon="sales"
           label="Sales it was charged on"
           value={money(taxReturn.taxableSalesMinor)}
           hint={`${taxReturn.saleCount} document${taxReturn.saleCount === 1 ? '' : 's'}`}

@@ -88,10 +88,11 @@ export default async function CashFlowPage({
       )}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-4">
-        <Stat label="Started with" value={money(flow.openingBalance)} />
-        <Stat label="Money in" value={money(flow.totalIn)} tone="success" />
-        <Stat label="Money out" value={money(flow.totalOut)} tone="warning" />
+        <Stat icon="accounts" label="Started with" value={money(flow.openingBalance)} />
+        <Stat icon="income" label="Money in" value={money(flow.totalIn)} tone="success" />
+        <Stat icon="expenses" label="Money out" value={money(flow.totalOut)} tone="warning" />
         <Stat
+          icon="accounts"
           label="Ended with"
           value={money(flow.closingBalance)}
           tone={flow.closingBalance < 0 ? 'danger' : 'default'}

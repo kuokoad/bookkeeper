@@ -176,11 +176,11 @@ export default async function ExpensesPage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat
-          label="Expenses"
+          label="Expenses" icon="expenses"
           value={String(summary.count)}
           hint={describeDateRange(range, preset, today)}
         />
-        <Stat label="Total spent" value={money(summary.total, { currencyCode: currency })} />
+        <Stat label="Total spent" icon="expenses" value={money(summary.total, { currencyCode: currency })} />
         <Stat label="Average expense" value={money(summary.average, { currencyCode: currency })} />
       </div>
 

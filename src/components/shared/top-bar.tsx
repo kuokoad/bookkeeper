@@ -5,7 +5,7 @@ import { logoutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { ThemeSwitch } from './theme-switch';
 import { SearchBox } from './search-box';
-import { Icon } from './icon';
+import { Icon } from '@/components/ui/icon';
 
 /**
  * The utility bar above the working area.

@@ -207,9 +207,9 @@ export default async function SalesReportPage({
       ) : (
         <>
           <div className="mb-6 grid gap-3 sm:grid-cols-4">
-            <Stat label={byLine ? 'Product revenue (net)' : 'Total sales'} value={money(totalSales)} />
-            <Stat label="Gross profit" value={money(totalProfit)} tone="success" />
-            <Stat label={byLine ? 'Receipts involved' : 'Number of sales'} value={String(saleCount)} />
+            <Stat icon="income" label={byLine ? 'Product revenue (net)' : 'Total sales'} value={money(totalSales)} />
+            <Stat icon="profit" label="Gross profit" value={money(totalProfit)} tone="success" />
+            <Stat icon="sales" label={byLine ? 'Receipts involved' : 'Number of sales'} value={String(saleCount)} />
             <Stat
               label={byLine ? 'Average per receipt' : 'Average sale'}
               value={money(saleCount === 0 ? totalSales : mulDiv(totalSales, 1, saleCount))}

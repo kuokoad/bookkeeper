@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { cn } from '@/lib/cn';
-import { Icon } from './icon';
+import { Icon } from '@/components/ui/icon';
 import type { NavItem, NavSection } from './navigation';
 
 function isActive(pathname: string, href: string): boolean {

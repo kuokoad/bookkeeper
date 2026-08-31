@@ -196,17 +196,46 @@ export default async function SalesPage({
         cash sales in the first fortnight and every one of them narrows with the
         table — a filtered list under unfiltered totals is a page that lies.
       */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Sales" value={String(summary.count)} hint={describeDateRange(range, preset, today)} />
-        <Stat label="Items sold" value={quantity(summary.quantity)} />
-        <Stat label="Revenue" value={money(summary.revenue)} />
-        <Stat label="Discount" value={money(summary.discount, { bare: true })} />
-        <Stat label="Cost of goods" value={money(summary.cogs, { bare: true })} />
+      {/*
+        The three an owner opens this page for, at reading size; the three that
+        explain them, beneath. Both rows are the same card — only the figure
+        changes size — so a glance still takes them in as one set of totals.
+
+        The notes say nothing that needs its own sum. A margin percentage was
+        the obvious one to add and is the reason there isn't one: `revenue` is
+        SUM(total_minor), and the schema's own CHECK has total = subtotal -
+        discount + tax, so profit over revenue would divide by a tax-inclusive
+        figure and quietly understate the margin on every taxed sale.
+      */}
+      <div className="mb-3 grid gap-3 sm:grid-cols-3">
         <Stat
-          label="Gross profit"
+          label="Revenue" icon="income"
+          value={money(summary.revenue)}
+          hint={
+            summary.outstanding > 0
+              ? `${money(summary.outstanding, { bare: true })} still owing`
+              : summary.count > 0
+                ? 'All settled'
+                : undefined
+          }
+        />
+        <Stat
+          label="Gross profit" icon="profit"
           value={money(summary.grossProfit, { bare: true })}
           tone={summary.grossProfit < 0 ? 'danger' : 'success'}
+          hint="Revenue less ledger cost"
         />
+        <Stat
+          label="Sales" icon="sales"
+          value={String(summary.count)}
+          hint={describeDateRange(range, preset, today)}
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        <Stat size="compact" label="Items sold" icon="products" value={quantity(summary.quantity)} />
+        <Stat size="compact" label="Discount" icon="discount" value={money(summary.discount, { bare: true })} />
+        <Stat size="compact" label="Cost of goods" icon="expenses" value={money(summary.cogs, { bare: true })} />
       </div>
 
       <FilterBar

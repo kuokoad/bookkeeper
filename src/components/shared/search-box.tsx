@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import type { SearchHit, SearchResults } from '@/services/search.service';
-import { Icon } from './icon';
+import { Icon } from '@/components/ui/icon';
 
 /**
  * The search box in the top bar.

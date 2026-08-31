@@ -181,19 +181,19 @@ export default async function PurchasesPage({
       */}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat
-          label="Deliveries"
+          label="Deliveries" icon="purchases"
           value={String(summary.count)}
           hint={describeDateRange(range, preset, today)}
         />
-        <Stat label="Total cost" value={money(summary.total)} />
-        <Stat label="Paid" value={money(summary.paid, { bare: true })} />
+        <Stat label="Total cost" icon="expenses" value={money(summary.total)} />
+        <Stat label="Paid" icon="accounts" value={money(summary.paid, { bare: true })} />
         <Stat
-          label="Owing on these"
+          label="Owing on these" icon="owes"
           value={money(summary.outstanding, { bare: true })}
           tone={summary.outstanding > 0 ? 'warning' : 'default'}
         />
         <Stat
-          label="You owe suppliers"
+          label="You owe suppliers" icon="suppliers"
           value={money(payables)}
           tone={payables > 0 ? 'warning' : 'default'}
           hint="Accounts payable, whole shop"
