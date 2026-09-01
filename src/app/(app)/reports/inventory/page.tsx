@@ -21,7 +21,7 @@ import { FilterBar } from '@/components/shared/filter-bar';
 import { countProducts, listCategories } from '@/services/catalog.service';
 import { getSettings } from '@/services/settings.service';
 import { listSupplierOptions } from '@/services/supplier.service';
-import { buildQuery, type ActiveFilter } from '@/lib/filters';
+import { filterValueName, buildQuery, type ActiveFilter } from '@/lib/filters';
 import { parseInventoryReportFilters, parseReportPeriod, type SearchParams } from '@/lib/list-filters';
 import { ReportActions } from '@/components/shared/report-actions';
 
@@ -83,18 +83,14 @@ export default async function InventoryReportPage({
     active.push({
       key: 'category',
       label: 'Category',
-      value:
-        categories.find((item) => item.id === filters.categoryId)?.name ??
-        String(filters.categoryId),
+      value: filterValueName(categories, filters.categoryId),
     });
   }
   if (filters.supplierId !== undefined) {
     active.push({
       key: 'supplier',
       label: 'Supplier',
-      value:
-        suppliers.find((item) => item.id === filters.supplierId)?.name ??
-        String(filters.supplierId),
+      value: filterValueName(suppliers, filters.supplierId),
     });
   }
   if (filters.stockStatus !== undefined) {

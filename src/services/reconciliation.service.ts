@@ -2,10 +2,10 @@ import { and, desc, eq, lte } from 'drizzle-orm';
 import { writeTransaction } from '@/db/transaction';
 
 import type { Db } from '@/db/types';
-import { accounts, paymentAccounts, reconciliations } from '@/db/schema';
+import { accounts, businessSettings, paymentAccounts, reconciliations } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
-import { absolute, isZero, minor, subtract, type Minor } from '@/domain/money';
+import { absolute, formatMoney, isZero, minor, subtract, type Minor } from '@/domain/money';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
@@ -139,6 +139,14 @@ export function createReconciliation(
     const expected = getPaymentAccountBalance(tx, input.paymentAccountId, input.businessDate);
     const difference = subtract(input.actual, expected);
 
+    // The audit summary is written once and never revised, so the figure in it
+    // has to read the way the shop reads money. Settings refuses a currency
+    // change once anything is posted, so the code recorded here can never come
+    // to disagree with the books it describes.
+    const currencyCode =
+      tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()?.currencyCode ??
+      'GHS';
+
     const explanation = input.explanation?.trim() ?? '';
     if (!isZero(difference) && explanation.length === 0) {
       throw new ValidationError(
@@ -241,7 +249,7 @@ export function createReconciliation(
       username: actor.username,
       summary: isZero(difference)
         ? `${reconciliationNo}: ${account.name} counted and agreed exactly`
-        : `${reconciliationNo}: ${account.name} ${difference > 0 ? 'over' : 'short'} by ${absolute(difference)}${adjusted ? ' (adjusted)' : ' (left open)'}`,
+        : `${reconciliationNo}: ${account.name} ${difference > 0 ? 'over' : 'short'} by ${formatMoney(absolute(difference), currencyCode)}${adjusted ? ' (adjusted)' : ' (left open)'}`,
       metadata: {
         expectedMinor: expected,
         actualMinor: input.actual,

@@ -21,10 +21,11 @@ import { listUsers } from '@/services/user.service';
 import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
 import { MOVEMENT_TYPES } from '@/db/schema/inventory';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
-import { formatDate, formatDateTime, money, quantity, toBusinessDate } from '@/lib/format';
+import { formatDate, formatTime, money, quantity, toBusinessDate } from '@/lib/format';
 import { qty as makeQty } from '@/domain/quantity';
 import { minor } from '@/domain/money';
 import {
+  filterValueName,
   buildQuery,
   clampPage,
   describeDateRange,
@@ -108,16 +109,14 @@ export default async function InventoryPage({
     active.push({
       key: 'product',
       label: 'Product',
-      value: focusProduct?.name ?? String(filterProductId),
+      value: focusProduct?.name ?? 'no longer listed',
     });
   }
   if (filters.categoryId !== undefined) {
     active.push({
       key: 'category',
       label: 'Category',
-      value:
-        categories.find((item) => item.id === filters.categoryId)?.name ??
-        String(filters.categoryId),
+      value: filterValueName(categories, filters.categoryId),
     });
   }
   if (filters.movementType !== undefined) {
@@ -131,7 +130,7 @@ export default async function InventoryPage({
     active.push({
       key: 'user',
       label: 'By',
-      value: staff.find((item) => item.id === filters.userId)?.displayName ?? String(filters.userId),
+      value: filterValueName(staff, filters.userId),
     });
   }
   if (preset !== 'all') {
@@ -415,8 +414,17 @@ export default async function InventoryPage({
                 {ledger.map((row) => (
                   <TR key={row.id}>
                     <TD>
+                      {/*
+                        The day the stock actually moved, which is the column
+                        this list is filtered and sorted on and the one the CSV
+                        has always exported. Showing `occurredAt` as the date
+                        instead stamped every row with the moment it was
+                        written: filtering to June returned June's movements and
+                        then dated them all to the day the database was seeded.
+                        Only the time of day comes from `occurredAt`.
+                      */}
                       <span className="whitespace-nowrap text-content-muted">
-                        {formatDateTime(row.occurredAt)}
+                        {formatDate(row.businessDate)} {formatTime(row.occurredAt)}
                       </span>
                     </TD>
                     <TD>

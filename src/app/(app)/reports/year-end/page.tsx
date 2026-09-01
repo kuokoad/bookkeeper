@@ -347,7 +347,7 @@ export default async function YearEndPackPage({
       {pack.receivables.length > 0 && (
         <Statement
           title="Owed by Customers"
-          note={`Outstanding at ${formatDate(pack.year.end)}, by how long it has been owed`}
+          note={`Outstanding at ${formatDate(pack.ageingAsAt)}, by how long it has been owed`}
           headers={['Customer', 'Over 90 days', 'Total']}
         >
           {pack.receivables.map((row) => (
@@ -374,7 +374,7 @@ export default async function YearEndPackPage({
       {pack.payables.length > 0 && (
         <Statement
           title="Owed to Suppliers"
-          note={`Outstanding at ${formatDate(pack.year.end)}, by how long it has been owed`}
+          note={`Outstanding at ${formatDate(pack.ageingAsAt)}, by how long it has been owed`}
           headers={['Supplier', 'Over 90 days', 'Total']}
         >
           {pack.payables.map((row) => (
@@ -466,9 +466,25 @@ export default async function YearEndPackPage({
       <section className="break-inside-avoid border-t border-line pt-4">
         <h2 className="mb-2 text-sm font-semibold text-content">Checks performed</h2>
         <ul className="space-y-1 text-sm text-content-muted">
+          {/*
+            Certifies the Trial Balance printed above, so it quotes THAT table's
+            totals. `integrity` sums every journal line ever posted, gross and
+            undated; the table sums net account balances as at the year end.
+            Both are true and both prove balance, but a check line carrying one
+            figure under a table showing the other reads as an error in the
+            pack — and it is the accountant, who cannot see the code, who has to
+            resolve it. The whole-ledger check keeps its own line below, worded
+            so the two cannot be mistaken for each other.
+          */}
           <li>
-            Trial balance {pack.integrity.trialBalanced ? 'balances' : 'DOES NOT BALANCE'} — debits{' '}
-            {moneyAccounting(pack.integrity.totalDebit, { currencyCode: c })}, credits{' '}
+            Trial balance {pack.trialBalance.balanced ? 'balances' : 'DOES NOT BALANCE'} — debits{' '}
+            {moneyAccounting(pack.trialBalance.totalDebit, { currencyCode: c })}, credits{' '}
+            {moneyAccounting(pack.trialBalance.totalCredit, { currencyCode: c })}
+          </li>
+          <li>
+            Every entry ever posted{' '}
+            {pack.integrity.trialBalanced ? 'balances' : 'DOES NOT BALANCE'} — gross debits{' '}
+            {moneyAccounting(pack.integrity.totalDebit, { currencyCode: c })}, gross credits{' '}
             {moneyAccounting(pack.integrity.totalCredit, { currencyCode: c })}
           </li>
           <li>Balance sheet {bs.balances ? 'balances' : 'DOES NOT BALANCE'}</li>

@@ -1636,11 +1636,28 @@ export function getStockLedger(db: Db, query: LedgerQuery = {}) {
     .from(stockLedger)
     .innerJoin(products, eq(products.id, stockLedger.productId));
 
-  return (conditions.length > 0 ? base.where(and(...conditions)) : base)
-    .orderBy(sql`${stockLedger.occurredAt} DESC`, sql`${stockLedger.id} DESC`)
-    .limit(Math.min(query.limit ?? 100, 500))
-    .offset(query.offset ?? 0)
-    .all();
+  return (
+    (conditions.length > 0 ? base.where(and(...conditions)) : base)
+      /**
+       * Newest trading day first, and within a day the order the cost chain was
+       * built.
+       *
+       * `businessDate` because that is what this list is filtered on and what
+       * each row shows; ordering on `occurredAt` instead put a movement where
+       * the row happened to be WRITTEN rather than where it belongs, so a sale
+       * backdated to the 1st sorted above one made on the 30th.
+       *
+       * `id` as the tiebreak, not `occurredAt`: id is insertion order, which is
+       * the order the weighted average was actually applied, so the balance
+       * each row carries reads in sequence within the day. Two movements can
+       * share an `occurredAt` to the millisecond — the demo seed writes a whole
+       * shop's history inside one second — and then only the id separates them.
+       */
+      .orderBy(sql`${stockLedger.businessDate} DESC`, sql`${stockLedger.id} DESC`)
+      .limit(Math.min(query.limit ?? 100, 500))
+      .offset(query.offset ?? 0)
+      .all()
+  );
 }
 
 /** How many movements match, ignoring the page. */

@@ -19,12 +19,23 @@ export function AgeingTable({
   emptyTitle,
   emptyDescription,
   nameHeading,
+  dateHeading,
 }: {
   rows: AgeingRow[];
   hrefBase: string;
   emptyTitle: string;
   emptyDescription: string;
   nameHeading: string;
+  /**
+   * What the date column holds, which is not the same thing on both pages.
+   *
+   * Receivables age from the due date and fall back to the sale date only when
+   * a sale carried no terms; payables age from the delivery date. Labelling
+   * both "Oldest" read as the oldest transaction, so a customer whose only
+   * unpaid invoice is dated 10 August showed 09 September — its due date, a
+   * month in the future, under a heading that implied the past.
+   */
+  dateHeading: string;
 }) {
   if (rows.length === 0) {
     return <EmptyState title={emptyTitle} description={emptyDescription} />;
@@ -43,7 +54,7 @@ export function AgeingTable({
     <TableWrap>
       <THead>
         <TH>{nameHeading}</TH>
-        <TH>Oldest</TH>
+        <TH>{dateHeading}</TH>
         <TH numeric>Not due</TH>
         <TH numeric>1–30 days</TH>
         <TH numeric>31–60</TH>

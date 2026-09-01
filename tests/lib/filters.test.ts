@@ -192,6 +192,21 @@ describe('scalar parsers', () => {
     expect(parseAmount(undefined)).toBeUndefined();
   });
 
+  /**
+   * Nothing these boxes filter can be negative — sale totals, deliveries,
+   * expenses and account movements are all held as positive figures, and a void
+   * is its own document rather than a negative one. `?max=-5` was accepted, so
+   * it emptied the table and every total above it while the chip explained
+   * itself as "Amount: under -5.00".
+   */
+  it('drops a negative bound rather than filtering everything away', () => {
+    expect(parseAmount('-5')).toBeUndefined();
+    expect(parseAmount('-1,250.50')).toBeUndefined();
+    expect(parseAmount('0')).toBe(0);
+    expect(parseAmountRange('-5', '100')).toEqual({ maxAmount: 10_000 });
+    expect(parseAmountRange('-10', '-5')).toEqual({});
+  });
+
   it('puts an amount range back in order when it is entered backwards', () => {
     expect(parseAmountRange('500', '100')).toEqual({ minAmount: 10_000, maxAmount: 50_000 });
     expect(parseAmountRange('100', undefined)).toEqual({ minAmount: 10_000 });

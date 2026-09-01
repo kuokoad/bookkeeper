@@ -15,6 +15,7 @@ import { listPaymentAccountOptions } from '@/services/payment-account.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import {
+  filterValueName,
   buildQuery,
   chipAmount,
   clampPage,
@@ -68,39 +69,34 @@ export default async function PurchasesPage({
   const sort = filters.sort ?? 'date';
   const direction = filters.direction ?? 'desc';
 
-  const nameOf = <T extends { id: number; name: string }>(
-    list: T[],
-    id: number | undefined,
-  ): string | undefined => (id === undefined ? undefined : list.find((item) => item.id === id)?.name);
-
   const active: ActiveFilter[] = [];
   if (filters.search) active.push({ key: 'q', label: 'Search', value: filters.search });
   if (filters.supplierId !== undefined) {
     active.push({
       key: 'supplier',
       label: 'Supplier',
-      value: nameOf(suppliers, filters.supplierId) ?? String(filters.supplierId),
+      value: filterValueName(suppliers, filters.supplierId),
     });
   }
   if (filters.categoryId !== undefined) {
     active.push({
       key: 'category',
       label: 'Category',
-      value: nameOf(categories, filters.categoryId) ?? String(filters.categoryId),
+      value: filterValueName(categories, filters.categoryId),
     });
   }
   if (filters.productId !== undefined) {
     active.push({
       key: 'product',
       label: 'Product',
-      value: nameOf(products, filters.productId) ?? String(filters.productId),
+      value: filterValueName(products, filters.productId),
     });
   }
   if (filters.paymentAccountId !== undefined) {
     active.push({
       key: 'account',
       label: 'Paid from',
-      value: nameOf(accounts, filters.paymentAccountId) ?? String(filters.paymentAccountId),
+      value: filterValueName(accounts, filters.paymentAccountId),
     });
   }
   if (filters.paymentKind !== undefined) {

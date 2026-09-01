@@ -21,7 +21,7 @@ import { FilterBar } from '@/components/shared/filter-bar';
 import { listCategories, listProductOptions } from '@/services/catalog.service';
 import { listCustomerOptions } from '@/services/customer.service';
 import { listPaymentAccountOptions } from '@/services/payment-account.service';
-import { buildQuery, type ActiveFilter } from '@/lib/filters';
+import { filterValueName, buildQuery, type ActiveFilter } from '@/lib/filters';
 import { parseSalesReportFilters, type SearchParams } from '@/lib/list-filters';
 
 export const metadata: Metadata = { title: 'Sales report' };
@@ -103,38 +103,33 @@ export default async function SalesReportPage({
   const products = listProductOptions(db, true);
   const accounts = listPaymentAccountOptions(db, true);
 
-  const nameOf = <T extends { id: number; name: string }>(
-    list: T[],
-    id: number | undefined,
-  ): string | undefined => (id === undefined ? undefined : list.find((item) => item.id === id)?.name);
-
   const active: ActiveFilter[] = [];
   if (filters.customerId !== undefined) {
     active.push({
       key: 'customer',
       label: 'Customer',
-      value: nameOf(customers, filters.customerId) ?? String(filters.customerId),
+      value: filterValueName(customers, filters.customerId),
     });
   }
   if (filters.categoryId !== undefined) {
     active.push({
       key: 'category',
       label: 'Category',
-      value: nameOf(categories, filters.categoryId) ?? String(filters.categoryId),
+      value: filterValueName(categories, filters.categoryId),
     });
   }
   if (filters.productId !== undefined) {
     active.push({
       key: 'product',
       label: 'Product',
-      value: nameOf(products, filters.productId) ?? String(filters.productId),
+      value: filterValueName(products, filters.productId),
     });
   }
   if (filters.paymentAccountId !== undefined) {
     active.push({
       key: 'account',
       label: 'Payment method',
-      value: nameOf(accounts, filters.paymentAccountId) ?? String(filters.paymentAccountId),
+      value: filterValueName(accounts, filters.paymentAccountId),
     });
   }
   if (preset !== 'month') {

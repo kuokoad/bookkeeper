@@ -13,7 +13,7 @@ import {
 } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
-import { subtract, type Minor } from '@/domain/money';
+import { formatMoney, subtract, type Minor } from '@/domain/money';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
@@ -79,13 +79,13 @@ export function recordSupplierPayment(
     // mistyped figure is to correct. Switched on, the excess stays on the
     // supplier's account and settles against the next delivery.
     const currentBalance = getSupplierBalance(tx, input.supplierId);
-    const allowOverpayment =
-      tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()
-        ?.allowOverpayment ?? false;
+    const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
+    const allowOverpayment = settings?.allowOverpayment ?? false;
+    const currencyCode = settings?.currencyCode ?? 'GHS';
 
     if (input.amount > currentBalance && !allowOverpayment) {
       throw new ValidationError(
-        `You owe ${supplier.name} ${formatForError(currentBalance)}. You cannot pay more than that. ` +
+        `You owe ${supplier.name} ${formatMoney(currentBalance, currencyCode)}. You cannot pay more than that. ` +
           'To pay in advance, switch on "Allow paying more than is owed" in Settings.',
         { currentBalance, amount: input.amount },
       );
@@ -184,7 +184,7 @@ export function recordSupplierPayment(
       entityId: payment.id,
       userId: actor.id,
       username: actor.username,
-      summary: `${paymentNo}: paid ${input.amount} to ${supplier.name}`,
+      summary: `${paymentNo}: paid ${formatMoney(input.amount, currencyCode)} to ${supplier.name}`,
       metadata: { amountMinor: input.amount, entryNo: posted.entryNo },
       at: occurredAt,
     });
@@ -217,12 +217,6 @@ function accountIdByCode(db: Db, code: string): number {
   const account = db.select({ id: accounts.id }).from(accounts).where(eq(accounts.code, code)).get();
   if (!account) throw new NotFoundError('Account', code);
   return account.id;
-}
-
-function formatForError(value: Minor): string {
-  const digits = Math.abs(value).toString().padStart(3, '0');
-  const whole = digits.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${value < 0 ? '-' : ''}${whole}.${digits.slice(-2)}`;
 }
 
 export function voidSupplierPayment(

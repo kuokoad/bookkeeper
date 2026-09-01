@@ -22,6 +22,7 @@ import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
 import {
   add,
   allocate,
+  formatMoney,
   isZero,
   minor,
   subtract,
@@ -407,7 +408,7 @@ export function createPurchase(
       entityId: purchase.id,
       userId: actor.id,
       username: actor.username,
-      summary: `${purchaseNo}: ${input.items.length} line(s) from ${supplier.name}, total ${total}`,
+      summary: `${purchaseNo}: ${input.items.length} line(s) from ${supplier.name}, total ${formatMoney(total, settings.currencyCode)}`,
       metadata: {
         totalMinor: total,
         paidMinor: tendered,
@@ -1013,7 +1014,11 @@ function purchaseOrderBy(query: PurchaseListQuery): SQL[] {
     case 'reference':
       return [dir(sql`${purchases.purchaseNo}`), sql`${PURCHASE_ID} DESC`];
     default:
-      return [dir(sql`${purchases.occurredAt}`), dir(sql`${PURCHASE_ID}`)];
+      // Same reasoning as `saleOrderBy`: the delivery date the row shows and is
+      // filtered on, not the moment it was keyed in. The demo data never
+      // exposed this one because its purchases happen to have been written in
+      // date order — a delivery booked in late is all it takes.
+      return [dir(sql`${purchases.businessDate}`), dir(sql`${PURCHASE_ID}`)];
   }
 }
 

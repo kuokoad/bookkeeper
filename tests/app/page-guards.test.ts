@@ -195,7 +195,11 @@ describe('the dashboard shows only what the person may see', () => {
     // must sit behind its gate rather than run unconditionally.
     for (const call of [
       'getPaymentAccountBalances(db)',
-      'getTrialBalance(db)',
+      // Was `getTrialBalance(db)`. The Books check card now uses the same
+      // measure as the Accounting hub and the Trial balance page, which were
+      // showing a different figure under the same "Total debits" label. The
+      // gate is what this test is about, and it is unchanged.
+      'checkBooksIntegrity(db)',
       'getTotalReceivables(db)',
       'getTotalPayables(db)',
     ]) {

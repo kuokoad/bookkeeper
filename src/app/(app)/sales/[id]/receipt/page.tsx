@@ -7,7 +7,7 @@ import { db } from '@/db/client';
 import { businessSettings } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { getSale } from '@/services/sale.service';
-import { formatDateTime, money, quantity } from '@/lib/format';
+import { formatDate, formatTime, money, quantity } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { saleDocumentTotals } from '@/domain/sales/present';
 import { qty as makeQty } from '@/domain/quantity';
@@ -124,7 +124,19 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           </div>
           <div className="flex justify-between">
             <span className="text-content-muted">Date</span>
-            <span className="text-content">{formatDateTime(sale.occurredAt)}</span>
+            {/*
+              The trading date, not the moment the row was written. `occurredAt`
+              defaults to `new Date()` at the till, so the two agree on a sale
+              rung up as it happens and diverge on every one that is not —
+              yesterday's takings entered this morning, or a quotation converted
+              today for the day it was agreed. The date belongs to the sale, so
+              it comes from `businessDate`, the same column every list, report
+              and filter reads; only the time of day comes from `occurredAt`.
+              This is the format the sales list already prints.
+            */}
+            <span className="text-content">
+              {formatDate(sale.businessDate)} {formatTime(sale.occurredAt)}
+            </span>
           </div>
           {sale.customerName && (
             <div className="flex justify-between">

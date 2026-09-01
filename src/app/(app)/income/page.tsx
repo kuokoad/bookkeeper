@@ -19,6 +19,7 @@ import {
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import {
+  filterValueName,
   buildQuery,
   chipAmount,
   clampPage,
@@ -76,18 +77,14 @@ export default async function IncomePage({
     active.push({
       key: 'category',
       label: 'Category',
-      value:
-        categories.find((item) => item.id === filters.categoryAccountId)?.name ??
-        String(filters.categoryAccountId),
+      value: filterValueName(categories, filters.categoryAccountId),
     });
   }
   if (filters.paymentAccountId !== undefined) {
     active.push({
       key: 'account',
       label: 'Received into',
-      value:
-        accounts.find((item) => item.id === filters.paymentAccountId)?.name ??
-        String(filters.paymentAccountId),
+      value: filterValueName(accounts, filters.paymentAccountId),
     });
   }
   if (filters.status !== undefined) {
