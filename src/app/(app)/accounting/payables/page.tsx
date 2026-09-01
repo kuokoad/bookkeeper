@@ -104,13 +104,15 @@ export default async function PayablesPage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat
+          icon="owes"
           label={active.length > 0 ? 'Owed, as filtered' : 'Total you owe'}
           value={money(shown)}
           tone={shown > 0 ? 'warning' : 'default'}
           {...(active.length > 0 ? { hint: `of ${money(ageingTotal)} in total` } : {})}
         />
-        <Stat label="Suppliers owed" value={String(rows.length)} />
+        <Stat icon="suppliers" label="Suppliers owed" value={String(rows.length)} />
         <Stat
+          icon="warning"
           label="Over 90 days"
           value={money(overdue)}
           tone={overdue > 0 ? 'danger' : 'default'}

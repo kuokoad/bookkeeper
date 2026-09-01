@@ -83,16 +83,18 @@ export default async function ReconciliationPage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat
+          icon="accounts"
           label="Accounts"
           value={String(overview.length)}
           hint={neverCounted.length > 0 ? `${neverCounted.length} never counted` : 'All counted'}
         />
         <Stat
+          icon="warning"
           label="Unresolved differences"
           value={money(unresolved)}
           tone={unresolved !== 0 ? 'warning' : 'success'}
         />
-        <Stat label="Counts recorded" value={String(history.length)} />
+        <Stat icon="books" label="Counts recorded" value={String(history.length)} />
       </div>
 
       <h2 className="mb-3 text-sm font-semibold text-content">Where each account stands</h2>

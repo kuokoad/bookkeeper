@@ -42,6 +42,7 @@ export type IconName =
   | 'owes'
   | 'discount'
   | 'warning'
+  | 'check'
   | 'books';
 
 const PATHS: Record<IconName, string> = {
@@ -98,6 +99,8 @@ const PATHS: Record<IconName, string> = {
     'M7.5 4.9a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2Zm9 9a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2ZM16.1 3.9l1.8 1.2-10 15-1.8-1.2 10-15Z',
   /** Something wants looking at. The exclamation is a hole, not a second fill. */
   warning: 'M12 3 22.5 21H1.5L12 3Zm-1 5v6.5h2V8h-2Zm0 8v2h2v-2h-2Z',
+  /** Nothing wrong here. */
+  check: 'M9.5 18 4 12.5l1.9-1.9 3.6 3.6 8.6-8.6 1.9 1.9L9.5 18Z',
   /** Do the books balance: a scale, level. */
   books:
     'M12 2.6a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2ZM3 6.4h18V8H3V6.4Zm8.2 1.6h1.6v10.4h-1.6V8Zm-4.2 10.4h10v2.2H7v-2.2ZM2.6 9h6.8L6 15.4 2.6 9Zm12 0h6.8L18 15.4 14.6 9Z',

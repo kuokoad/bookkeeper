@@ -107,12 +107,13 @@ export default async function SupplierDetailPage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat
+          icon="owes"
           label="You currently owe"
           value={money(supplier.balance, { currencyCode: currency })}
           tone={supplier.balance > 0 ? 'warning' : 'default'}
         />
-        <Stat label="Total bought" value={money(minor(totalBought), { bare: true })} />
-        <Stat label="Total paid later" value={money(minor(totalPaid), { bare: true })} />
+        <Stat icon="expenses" label="Total bought" value={money(minor(totalBought), { bare: true })} />
+        <Stat icon="expenses" label="Total paid later" value={money(minor(totalPaid), { bare: true })} />
       </div>
 
       {supplier.balance > 0 && can(user, 'suppliers', 'create') && (

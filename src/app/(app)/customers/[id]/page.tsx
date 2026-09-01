@@ -129,13 +129,15 @@ export default async function CustomerDetailPage({
 
       <div className="mb-6 grid gap-3 sm:grid-cols-4">
         <Stat
+          icon="owed"
           label="Currently owes"
           value={money(customer.balance, { currencyCode: currency })}
           tone={customer.balance > 0 ? 'warning' : 'default'}
         />
-        <Stat label="Total bought" value={money(minor(totalBought), { bare: true })} />
-        <Stat label="Total paid later" value={money(minor(totalPaid), { bare: true })} />
+        <Stat icon="sales" label="Total bought" value={money(minor(totalBought), { bare: true })} />
+        <Stat icon="income" label="Total paid later" value={money(minor(totalPaid), { bare: true })} />
         <Stat
+          icon="owed"
           label="Credit limit"
           value={
             customer.creditLimit === null ? 'No limit' : money(customer.creditLimit, { bare: true })

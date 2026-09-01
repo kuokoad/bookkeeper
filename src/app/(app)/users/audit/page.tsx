@@ -141,9 +141,9 @@ export default async function AuditLogPage({
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="Records found" value={String(total)} />
+        <Stat icon="search" label="Records found" value={String(total)} />
         <Stat label="Showing" value={`${entries.length} of ${total}`} hint={`Page ${page} of ${totalPages}`} />
-        <Stat label="People" value={String(users.length)} />
+        <Stat icon="users" label="People" value={String(users.length)} />
       </div>
 
       <form action="/users/audit" className="mb-4 flex flex-wrap items-end gap-2">

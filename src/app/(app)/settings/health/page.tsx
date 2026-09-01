@@ -104,13 +104,15 @@ export default async function HealthPage() {
       </Card>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="Checks passed" value={String(checks.length - failures.length - warnings.length)} />
+        <Stat icon="check" label="Checks passed" value={String(checks.length - failures.length - warnings.length)} />
         <Stat
+          icon="warning"
           label="Problems"
           value={String(failures.length)}
           {...(failures.length > 0 ? { tone: 'danger' as const } : {})}
         />
         <Stat
+          icon="warning"
           label="Worth checking"
           value={String(warnings.length)}
           {...(warnings.length > 0 ? { tone: 'warning' as const } : {})}

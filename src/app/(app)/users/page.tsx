@@ -58,9 +58,10 @@ export default async function UsersPage() {
       )}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="People" value={String(users.filter((user) => user.isActive).length)} />
-        <Stat label="Owners" value={String(owners.length)} />
+        <Stat icon="users" label="People" value={String(users.filter((user) => user.isActive).length)} />
+        <Stat icon="users" label="Owners" value={String(owners.length)} />
         <Stat
+          icon="users"
           label="Switched off"
           value={String(users.filter((user) => !user.isActive).length)}
         />

@@ -66,10 +66,11 @@ export default async function GeneralLedgerPage({
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-4">
-        <Stat label="Opening" value={money(openingBalance, { bare: true })} />
-        <Stat label="Debits" value={money(totalDebit, { bare: true })} />
-        <Stat label="Credits" value={money(totalCredit, { bare: true })} />
+        <Stat icon="accounts" label="Opening" value={money(openingBalance, { bare: true })} />
+        <Stat icon="books" label="Debits" value={money(totalDebit, { bare: true })} />
+        <Stat icon="books" label="Credits" value={money(totalCredit, { bare: true })} />
         <Stat
+          icon="accounts"
           label="Balance"
           value={money(closingBalance)}
           tone={closingBalance < 0 ? 'danger' : 'default'}

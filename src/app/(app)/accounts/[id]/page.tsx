@@ -208,20 +208,23 @@ export default async function AccountDetailPage({
 
       <div className="mb-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat
+          icon="accounts"
           label="Opening balance"
           value={money(statement.opening, { bare: true })}
           hint={`Before ${formatDate(range.from)}`}
           tone={statement.opening < 0 ? 'danger' : 'default'}
         />
-        <Stat label="Money in" value={money(statement.moneyIn, { bare: true })} tone="success" />
-        <Stat label="Money out" value={money(statement.moneyOut, { bare: true })} tone="warning" />
+        <Stat icon="income" label="Money in" value={money(statement.moneyIn, { bare: true })} tone="success" />
+        <Stat icon="expenses" label="Money out" value={money(statement.moneyOut, { bare: true })} tone="warning" />
         <Stat
+          icon="accounts"
           label="Closing balance"
           value={money(statement.closing, { bare: true })}
           hint={`At ${formatDate(range.to)}`}
           tone={statement.closing < 0 ? 'danger' : 'default'}
         />
         <Stat
+          icon="accounts"
           label="Balance now"
           value={money(account.balance, { currencyCode: currency })}
           tone={account.balance < 0 ? 'danger' : 'default'}

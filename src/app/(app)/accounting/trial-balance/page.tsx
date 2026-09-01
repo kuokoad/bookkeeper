@@ -93,9 +93,10 @@ export default async function TrialBalancePage({
       </form>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="Total debits" value={money(totalDebit)} />
-        <Stat label="Total credits" value={money(totalCredit)} />
+        <Stat icon="books" label="Total debits" value={money(totalDebit)} />
+        <Stat icon="books" label="Total credits" value={money(totalCredit)} />
         <Stat
+          icon={balanced ? 'books' : 'warning'}
           label="Status"
           value={balanced ? 'Balanced' : 'Out of balance'}
           tone={balanced ? 'success' : 'danger'}

@@ -117,16 +117,19 @@ export default async function AccountingPage() {
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat
+          icon="books"
           label="Total debits"
           value={money(integrity.totalDebit)}
           hint={`= credits ${money(integrity.totalCredit, { bare: true })}`}
         />
         <Stat
+          icon="owed"
           label="Customers owe you"
           value={money(receivables)}
           tone={receivables > 0 ? 'warning' : 'default'}
         />
         <Stat
+          icon="owes"
           label="You owe suppliers"
           value={money(payables)}
           tone={payables > 0 ? 'warning' : 'default'}
