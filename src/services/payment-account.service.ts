@@ -525,16 +525,27 @@ export function getAccountStatement(
         SQLite computes window functions after WHERE and before ORDER BY and
         LIMIT, so this accumulates across the whole filtered window even though
         only one page of rows comes back.
+
+        Accumulated by `entryDate`, on purpose and not by `occurredAt`. The
+        opening balance twenty lines up counts everything with an `entryDate`
+        before the window, and the filter selects on `entryDate` too — so
+        adding movements up in a different order made the running balance
+        answer a question nobody asked. On an entry keyed in late, the balance
+        printed beside it silently included trading that came after it.
+
+        This ORDER BY and the display ORDER BY below must stay exact mirrors of
+        each other, or the column stops reading down the page.
       */
       runningBalance: sql<number>`(${opening} + SUM(${journalLines.debitMinor} - ${journalLines.creditMinor})
-        OVER (ORDER BY ${journalEntries.occurredAt} ASC, ${journalEntries.id} ASC, ${journalLines.id} ASC
+        OVER (ORDER BY ${journalEntries.entryDate} ASC, ${journalEntries.id} ASC, ${journalLines.id} ASC
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))`,
     })
     .from(journalLines)
     .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
     .where(and(...conditions))
+    // The mirror of the window above. Change one and you must change both.
     .orderBy(
-      sql`${journalEntries.occurredAt} DESC`,
+      sql`${journalEntries.entryDate} DESC`,
       sql`${journalEntries.id} DESC`,
       sql`${journalLines.id} DESC`,
     )

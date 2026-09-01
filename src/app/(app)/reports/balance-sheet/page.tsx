@@ -234,7 +234,18 @@ export default async function BalanceSheetPage({
         {sheet.balances
           ? 'What the business owns exactly equals what it owes plus your stake in it. That is the check that the books are sound.'
           : 'WARNING: this statement does not balance.'}{' '}
-        Profit is folded straight into your stake — there is no year-end closing step to run.
+        {/*
+          This said "there is no year-end closing step to run", which the shop
+          is told to run by the banner at the top of the same page — and which
+          `domain/accounting/year-end-close.ts` does perform, sweeping revenue
+          and expenses to zero and carrying the profit to Retained Earnings.
+          What is true, and what the sentence was reaching for, is that this
+          statement is right either way: closing moves profit WITHIN your stake,
+          so nothing here waits on it.
+        */}
+        Profit is inside your stake whether or not the year has been closed, so this statement is
+        correct either way. Closing the year moves it into Retained Earnings and locks the period
+        against later entries; it does not change what the business is worth.
       </p>
     </div>
   );

@@ -13,14 +13,13 @@ import {
 } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
-import { subtract, sum, type Minor } from '@/domain/money';
+import { formatMoney, minor, subtract, sum, type Minor } from '@/domain/money';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { getCustomerBalance } from './customer.service';
 import { getOutstandingBySale, getSaleOutstanding } from './sale.service';
-import { minor } from '@/domain/money';
 
 /**
  * Receiving money from a customer against what they owe.
@@ -89,13 +88,13 @@ export function recordCustomerPayment(
     // customer is still standing there. Switched on, the excess stays on the
     // account as a credit and settles against their next purchase.
     const currentBalance = getCustomerBalance(tx, input.customerId);
-    const allowOverpayment =
-      tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get()
-        ?.allowOverpayment ?? false;
+    const settings = tx.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
+    const allowOverpayment = settings?.allowOverpayment ?? false;
+    const currencyCode = settings?.currencyCode ?? 'GHS';
 
     if (input.amount > currentBalance && !allowOverpayment) {
       throw new ValidationError(
-        `${customer.name} owes ${formatForError(currentBalance)}. You cannot receive more than that. ` +
+        `${customer.name} owes ${formatMoney(currentBalance, currencyCode)}. You cannot receive more than that. ` +
           'To accept advance payments, switch on "Allow paying more than is owed" in Settings.',
         { currentBalance, amount: input.amount },
       );
@@ -200,7 +199,7 @@ export function recordCustomerPayment(
       entityId: payment.id,
       userId: actor.id,
       username: actor.username,
-      summary: `${paymentNo}: received ${input.amount} from ${customer.name}`,
+      summary: `${paymentNo}: received ${formatMoney(input.amount, currencyCode)} from ${customer.name}`,
       metadata: {
         amountMinor: input.amount,
         paymentAccount: account.name,
@@ -251,13 +250,6 @@ function accountIdByCode(tx: Db, code: string): number {
   const account = tx.select({ id: accounts.id }).from(accounts).where(eq(accounts.code, code)).get();
   if (!account) throw new NotFoundError('Account', code);
   return account.id;
-}
-
-function formatForError(value: Minor): string {
-  const negative = value < 0;
-  const digits = Math.abs(value).toString().padStart(3, '0');
-  const whole = digits.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${negative ? '-' : ''}${whole}.${digits.slice(-2)}`;
 }
 
 /**

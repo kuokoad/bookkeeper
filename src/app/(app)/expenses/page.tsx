@@ -22,6 +22,7 @@ import {
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import {
+  filterValueName,
   buildQuery,
   chipAmount,
   clampPage,
@@ -82,25 +83,21 @@ export default async function ExpensesPage({
     active.push({
       key: 'category',
       label: 'Category',
-      value:
-        categories.find((item) => item.id === filters.categoryAccountId)?.name ??
-        String(filters.categoryAccountId),
+      value: filterValueName(categories, filters.categoryAccountId),
     });
   }
   if (filters.paymentAccountId !== undefined) {
     active.push({
       key: 'account',
       label: 'Paid from',
-      value:
-        accounts.find((item) => item.id === filters.paymentAccountId)?.name ??
-        String(filters.paymentAccountId),
+      value: filterValueName(accounts, filters.paymentAccountId),
     });
   }
   if (filters.staffId !== undefined) {
     active.push({
       key: 'staff',
       label: 'Recorded by',
-      value: staff.find((item) => item.id === filters.staffId)?.displayName ?? String(filters.staffId),
+      value: filterValueName(staff, filters.staffId),
     });
   }
   if (filters.status !== undefined) {

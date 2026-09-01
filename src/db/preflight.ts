@@ -15,6 +15,17 @@ import Database from 'better-sqlite3';
 import { configureConnection } from '@/db/pragmas';
 import { isDirectRun } from '@/db/_cli';
 import { env } from '@/lib/env';
+import { minor, toDecimalString } from '@/domain/money';
+
+/**
+ * A stored pesewa figure, written the way the shop reads money.
+ *
+ * No currency code, deliberately. Preflight runs against a database that may be
+ * broken in exactly the ways it exists to find, and reading `business_settings`
+ * for the code would add a query that can throw during the diagnosis. The
+ * screen and the terminal both give the figures their context.
+ */
+const money = (minorUnits: number): string => toDecimalString(minor(minorUnits));
 
 export type CheckStatus = 'pass' | 'warn' | 'fail';
 
@@ -126,12 +137,27 @@ export function runPreflight(databasePath: string = env.DATABASE_PATH): Check[] 
     const totals = connection
       .prepare('SELECT COALESCE(SUM(debit_minor),0) AS debits, COALESCE(SUM(credit_minor),0) AS credits FROM journal_lines')
       .get() as { debits: number; credits: number };
+    /**
+     * Read by a shop owner on the Health screen, not only by a developer at a
+     * terminal, so the figures are formatted the way the rest of the shop reads
+     * money. `toDecimalString` is the domain's own formatter: exact integer
+     * arithmetic on the stored pesewas, grouped, rather than `/100` through a
+     * float.
+     *
+     * The failure branch matters more than the pass branch and was the worse of
+     * the two — it printed raw minor units, so a GHS 6,000.00 discrepancy read
+     * "600000" in the one message that fires when the books are broken and
+     * somebody is trying to work out by how much.
+     */
+    const balanced = totals.debits === totals.credits;
     add(
       'The books balance',
-      totals.debits === totals.credits ? 'pass' : 'fail',
-      totals.debits === totals.credits
-        ? `debits and credits both ${(totals.debits / 100).toFixed(2)}`
-        : `debits ${totals.debits} vs credits ${totals.credits} — do NOT trade on these books`,
+      balanced ? 'pass' : 'fail',
+      balanced
+        ? `debits and credits both ${money(totals.debits)}`
+        : `debits ${money(totals.debits)} vs credits ${money(totals.credits)} — ` +
+          `a difference of ${money(Math.abs(totals.debits - totals.credits))}. ` +
+          'Do NOT trade on these books.',
     );
 
     // Stock: replay EVERY movement and compare with the cached figures.

@@ -557,7 +557,7 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
       entityId: sale.id,
       userId: actor.id,
       username: actor.username,
-      summary: `${receiptNo}: ${input.items.length} item(s), total ${totals.total}`,
+      summary: `${receiptNo}: ${input.items.length} item(s), total ${formatMoney(totals.total, settings.currencyCode)}`,
       metadata: {
         totalMinor: totals.total,
         cogsMinor: cogs,
@@ -1131,7 +1131,18 @@ function saleOrderBy(query: SaleListQuery): SQL[] {
     case 'receipt':
       return [dir(sql`${sales.receiptNo}`), sql`${sales.id} DESC`];
     default:
-      return [dir(sql`${sales.occurredAt}`), dir(sql`${sales.id}`)];
+      /**
+       * By the day the shop traded, which is the date the column shows and the
+       * one `saleConditions` filters on.
+       *
+       * `occurredAt` here sorted by when the row was WRITTEN, so a sale keyed in
+       * out of sequence landed in the wrong place under a date that said
+       * otherwise: a quote converted today for the 1st sat above a sale made on
+       * the 30th, in both directions. The id is the tiebreak because sales
+       * entered on the same day should read in the order they were rung up, and
+       * because two sales can share an `occurredAt` to the millisecond.
+       */
+      return [dir(sql`${sales.businessDate}`), dir(sql`${sales.id}`)];
   }
 }
 

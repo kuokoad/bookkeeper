@@ -67,7 +67,7 @@ account. That screen closes permanently once an owner exists.
 | Owner | `owner`  | `demo-owner-2026` | —        |
 | Staff | `ama`    | `demo-staff-2026` | `8351`   |
 
-The PIN signs in on the **Sign in with PIN** tab, which is what the counter
+The PIN signs in on the **Till PIN** tab, which is what the counter
 machine uses. Only the staff account has one: the owner signs in with a
 password.
 

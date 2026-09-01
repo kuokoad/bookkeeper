@@ -54,7 +54,12 @@ const product = (overrides: ProductOverrides = {}) => ({
 
 function renderTill(
   overrides: ProductOverrides = {},
-  props: { maySellExpired?: boolean; expiryBlocksSales?: boolean } = {},
+  props: {
+    maySellExpired?: boolean;
+    expiryBlocksSales?: boolean;
+    /** The whole-sale discount box is only shown to someone who may set prices. */
+    mayOverridePrice?: boolean;
+  } = {},
 ) {
   return render(
     <Pos
@@ -65,7 +70,7 @@ function renderTill(
       currencyCode="GHS"
       taxComponents={[]}
       taxInclusive={false}
-      mayOverridePrice={false}
+      mayOverridePrice={props.mayOverridePrice ?? false}
       maySellExpired={props.maySellExpired ?? false}
       expiryBlocksSales={props.expiryBlocksSales ?? true}
       cartSeed="seed-abcdefgh"
@@ -268,5 +273,160 @@ describe('the cart', () => {
     setQuantity('5');
 
     expect(screen.getByText(/Only 2 tin in stock/i)).toBeDefined();
+  });
+});
+
+describe('a discount bigger than the sale', () => {
+  /**
+   * `domain/sales/calculate.ts` refuses an invoice discount larger than the
+   * subtotal. The till clamped the total to zero instead, so the summary read
+   * Subtotal 15.00, Discount −100.00, Total 0.00 — three figures that do not
+   * reconcile — and left the button enabled to fail on press.
+   *
+   * The cashier is the person standing in front of the customer. Finding out
+   * from a server error that the sale was never possible is the worst moment to
+   * find out.
+   */
+  const setInvoiceDiscount = (value: string) => {
+    fireEvent.change(screen.getByLabelText(/discount on the whole sale/i), {
+      target: { value },
+    });
+  };
+
+  it('is refused at the till, the way the server refuses it', () => {
+    renderTill({}, { mayOverridePrice: true });
+    addToCart();
+    setQuantity("3");
+    setInvoiceDiscount('100');
+
+    expect(screen.getByText(/discount is more than the sale is worth/i)).toBeDefined();
+    expect(submitButton()).toHaveProperty('disabled', true);
+  });
+
+  it('names the largest discount that would be allowed', () => {
+    renderTill({}, { mayOverridePrice: true });
+    addToCart();
+    setQuantity("3");
+    setInvoiceDiscount('100');
+
+    // 3 tins at 5.00 — so 15.00 is the most that can come off.
+    expect(screen.getByText(/15\.00 or less/i)).toBeDefined();
+  });
+
+  it('allows a discount that takes the sale exactly to zero', () => {
+    renderTill({}, { mayOverridePrice: true });
+    addToCart();
+    setQuantity("3");
+    setInvoiceDiscount('15');
+
+    expect(screen.queryByText(/discount is more than the sale is worth/i)).toBeNull();
+    expect(submitButton()).toHaveProperty('disabled', false);
+  });
+
+  it('clears the refusal when the discount comes back down', () => {
+    renderTill({}, { mayOverridePrice: true });
+    addToCart();
+    setQuantity("3");
+    setInvoiceDiscount('100');
+    expect(submitButton()).toHaveProperty('disabled', true);
+
+    setInvoiceDiscount('2');
+    expect(screen.queryByText(/discount is more than the sale is worth/i)).toBeNull();
+
+    // 15.00 less 2.00. Tendered, so nothing else is holding the button.
+    payExact();
+    expect(submitButton().textContent).toContain('13.00');
+    expect(submitButton()).toHaveProperty('disabled', false);
+  });
+});
+
+describe('the sale summary always adds up', () => {
+  const setInvoiceDiscount = (value: string) => {
+    fireEvent.change(screen.getByLabelText(/discount on the whole sale/i), {
+      target: { value },
+    });
+  };
+
+  /**
+   * The reported symptom. Subtotal 15.00, Discount −100.00, Total 0.00 were all
+   * on screen together, and no two of them agreed. A refused discount is now
+   * simply not applied, so what is shown is what the sale is worth.
+   */
+  it('does not show a discount it has refused to apply', () => {
+    renderTill({}, { mayOverridePrice: true });
+    addToCart();
+    setQuantity('3');
+    setInvoiceDiscount('100');
+
+    expect(screen.queryByText('−100.00')).toBeNull();
+    // Still worth 15.00 until a discount the shop will take is entered.
+    expect(submitButton().textContent).toContain('15.00');
+    expect(submitButton().textContent).not.toContain('0.00');
+  });
+
+  it('applies a discount it accepts, and the rows reconcile', () => {
+    renderTill({}, { mayOverridePrice: true });
+    addToCart();
+    setQuantity('3');
+    setInvoiceDiscount('4');
+
+    expect(screen.getByText('−4.00')).toBeDefined();
+    expect(submitButton().textContent).toContain('11.00');
+  });
+});
+
+describe('the reference field asks for the right thing', () => {
+  /**
+   * The placeholder was hard-coded to "MoMo transaction id", so the commonest
+   * sale in the shop — cash across the counter — prompted the cashier for a
+   * mobile money id that does not exist.
+   */
+  const reference = () => screen.getByLabelText(/reference \(optional\)/i);
+
+  it('suggests nothing for a cash sale', () => {
+    renderTill();
+    addToCart();
+
+    expect(reference().getAttribute('placeholder')).toBe('');
+  });
+
+  it('asks for the transaction id when the money came by mobile money', () => {
+    render(
+      <Pos
+        products={[product()]}
+        customers={[]}
+        accounts={[{ id: 2, name: 'MTN MoMo', kind: 'MOBILE_MONEY', isDefault: true }]}
+        today="2026-08-26"
+        currencyCode="GHS"
+        taxComponents={[]}
+        taxInclusive={false}
+        mayOverridePrice={false}
+        maySellExpired={false}
+        expiryBlocksSales
+        cartSeed="seed-abcdefgh"
+      />,
+    );
+
+    expect(reference().getAttribute('placeholder')).toBe('MoMo transaction id');
+  });
+
+  it('asks for a cheque or transfer number when the money came by bank', () => {
+    render(
+      <Pos
+        products={[product()]}
+        customers={[]}
+        accounts={[{ id: 3, name: 'Bank Account', kind: 'BANK', isDefault: true }]}
+        today="2026-08-26"
+        currencyCode="GHS"
+        taxComponents={[]}
+        taxInclusive={false}
+        mayOverridePrice={false}
+        maySellExpired={false}
+        expiryBlocksSales
+        cartSeed="seed-abcdefgh"
+      />,
+    );
+
+    expect(reference().getAttribute('placeholder')).toBe('Cheque or transfer number');
   });
 });

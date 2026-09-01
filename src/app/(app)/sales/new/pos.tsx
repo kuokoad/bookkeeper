@@ -286,7 +286,29 @@ export function Pos({
     }
 
     const discount = invoiceDiscount ? toMinor(invoiceDiscount) : 0;
-    const net = Math.max(0, subtotal - (Number.isNaN(discount) ? 0 : discount));
+    /**
+     * A discount bigger than the sale is refused, not quietly capped.
+     *
+     * `domain/sales/calculate.ts` throws on it, so clamping the total to zero
+     * here previewed a sale the server was always going to reject: the summary
+     * read Subtotal 672.00, Discount −10,000.00, Total 0.00 — three figures
+     * that do not reconcile — and left "Complete sale" enabled to fail on
+     * press. Marking it invalid puts the till and the ledger back in agreement
+     * about what is a sale, which is what the comment below is for.
+     */
+    const discountTooLarge = !Number.isNaN(discount) && discount > subtotal;
+    if (discountTooLarge) invalid = true;
+    /**
+     * A refused discount is not applied, so the summary still adds up.
+     *
+     * Clamping it to the subtotal instead would show "−672.00" to a cashier who
+     * typed 10,000 and hide the typo; leaving it applied showed Subtotal
+     * 672.00, Discount −10,000.00, Total 0.00, three figures that cannot all be
+     * true. The sale is worth what it is worth until a discount the shop will
+     * accept is entered, and the warning below says which one that would be.
+     */
+    const appliedDiscount = Number.isNaN(discount) || discountTooLarge ? 0 : discount;
+    const net = Math.max(0, subtotal - appliedDiscount);
     /**
      * Priced by the SAME domain functions the server uses, not by a second
      * implementation of the arithmetic here. Ghana charges three taxes on one
@@ -315,7 +337,8 @@ export function Pos({
 
     return {
       subtotal,
-      discount: Number.isNaN(discount) ? 0 : discount,
+      discount: appliedDiscount,
+      discountTooLarge,
       taxLines,
       tax,
       total,
@@ -325,6 +348,25 @@ export function Pos({
       invalid,
     };
   }, [lines, invoiceDiscount, tenderAmount, secondAmount, taxComponents, taxInclusive]);
+
+  /**
+   * What a reference would be, for the way this sale is actually being paid.
+   *
+   * Hard-coded to "MoMo transaction id", it asked a cashier taking cash for a
+   * mobile money id — the commonest sale in the shop, prompted for a number
+   * that does not exist. The field is optional and one reference covers the
+   * whole sale, so a split naming any electronic method takes that method's
+   * wording, and a cash-only sale is left with no suggestion at all rather than
+   * a wrong one.
+   */
+  const kindOf = (id: string): string | undefined =>
+    accounts.find((account) => String(account.id) === id)?.kind;
+  const tenderKinds = [kindOf(tenderAccountId), kindOf(secondAccountId)];
+  const referencePlaceholder = tenderKinds.includes('MOBILE_MONEY')
+    ? 'MoMo transaction id'
+    : tenderKinds.includes('BANK')
+      ? 'Cheque or transfer number'
+      : '';
 
   const overselling = lines.filter(
     (line) => line.trackInventory && toMilli(line.qty) > line.qtyOnHandMilli,
@@ -836,7 +878,7 @@ export function Pos({
                   id="reference"
                   value={reference}
                   onChange={(event) => setReference(event.target.value)}
-                  placeholder="MoMo transaction id"
+                  placeholder={referencePlaceholder}
                   className="h-10"
                 />
               </div>
@@ -903,6 +945,13 @@ export function Pos({
             <Alert tone="warning">
               Some items are more than you have in stock. The sale will be refused unless negative
               stock is switched on in Settings.
+            </Alert>
+          )}
+
+          {totals.discountTooLarge && (
+            <Alert tone="warning">
+              The discount is more than the sale is worth. Lower it to {fmt(totals.subtotal)} or
+              less, or take the items off the sale.
             </Alert>
           )}
 

@@ -202,7 +202,17 @@ export function parseSearch(value: string | undefined, maxLength = 100): string 
 export function parseAmount(value: string | undefined): Minor | undefined {
   if (value === undefined || value.trim() === '') return undefined;
   try {
-    return parseMoney(value);
+    const parsed = parseMoney(value);
+    /**
+     * A negative bound is dropped, not applied.
+     *
+     * Nothing these boxes filter can be negative — a sale total, a delivery, an
+     * expense, money in or out of an account are all held as positive figures,
+     * and a void is its own document rather than a negative one. So `?max=-5`
+     * is a filter nobody could have meant, and applying it emptied the table
+     * and every total above it while the chip read "Amount: under -5.00".
+     */
+    return parsed < 0 ? undefined : parsed;
   } catch {
     return undefined;
   }
@@ -370,6 +380,28 @@ export function parseSort<T extends string>(
 }
 
 // --- active filter reporting ----------------------------------------------
+
+/**
+ * What a chip should call the record an id filter points at.
+ *
+ * Every list page had its own copy of this lookup, each falling back to
+ * `String(id)` when nothing matched — so a stale link or a hand-edited query
+ * string produced a chip reading `Customer: 999999` above an empty table. A
+ * bare number describes a filter nobody set in terms nobody can act on, and
+ * leaves the owner unable to tell an archived customer from a broken link.
+ *
+ * A well-formed id for a record that is not there is not junk to be dropped —
+ * "sales for customer 999999" honestly has no rows, the same way `/customers/
+ * 999999` honestly 404s. So the filter stands and the chip says plainly that it
+ * matched nothing, with its ✕ still there to clear it.
+ */
+export function filterValueName<T extends { id: number; name?: string; displayName?: string }>(
+  list: readonly T[],
+  id: number,
+): string {
+  const found = list.find((item) => item.id === id);
+  return found?.name ?? found?.displayName ?? 'no longer listed';
+}
 
 export interface ActiveFilter {
   /** The query key to clear when the chip is dismissed. */

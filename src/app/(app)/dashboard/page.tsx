@@ -5,13 +5,12 @@ import { db } from '@/db/client';
 import {
   countJournalEntries,
   getPaymentAccountBalances,
-  getTrialBalance,
 } from '@/services/reporting/balances.service';
 import { getExpirySummary, getStockSummary, listProducts } from '@/services/catalog.service';
 import { getSalesSummary } from '@/services/sale.service';
 import { getSalesByDay, getTopProductByRevenue } from '@/services/reporting/operations.service';
 import { getMoneyByMonth } from '@/services/reporting/money-trend';
-import { getReceivablesAgeing } from '@/services/reporting/ledger.service';
+import { checkBooksIntegrity, getReceivablesAgeing } from '@/services/reporting/ledger.service';
 import { getTotalReceivables } from '@/services/customer.service';
 import { getTotalPayables } from '@/services/supplier.service';
 import { getExpensesByCategory, getExpensesTotal, getIncomesTotal } from '@/services/cashbook.service';
@@ -188,7 +187,22 @@ export default async function DashboardPage({
   const monthStart = `${today.slice(0, 7)}-01`;
 
   const paymentAccounts = shows.money ? getPaymentAccountBalances(db) : [];
-  const trialBalance = shows.money ? getTrialBalance(db) : null;
+  /**
+   * The same measure the rest of the application means by "total debits".
+   *
+   * This card used `getTrialBalance`, which sums each account's NET balance,
+   * while the Accounting hub, the Trial balance page and the health check all
+   * sum the GROSS debits and credits ever posted. Both prove the books balance
+   * and both were labelled "Total debits", so clicking from this card through
+   * to the trial balance showed a different figure under the same words — on a
+   * shop with a year of trading, a difference of hundreds of thousands.
+   *
+   * Aligned on the gross measure because three screens already used it and one
+   * did not. It is also the stronger check: it knows about entries that do not
+   * balance on their own and about subledgers drifting from their control
+   * accounts, neither of which a net total can reveal.
+   */
+  const booksCheck = shows.money ? checkBooksIntegrity(db) : null;
   const entryCount = shows.money ? countJournalEntries(db) : 0;
   const stock = shows.stock ? getStockSummary(db) : null;
   const expiry = shows.stock ? getExpirySummary(db) : null;
@@ -264,10 +278,10 @@ export default async function DashboardPage({
         </Alert>
       )}
 
-      {trialBalance !== null && !trialBalance.balanced && (
+      {booksCheck !== null && !booksCheck.trialBalanced && (
         <Alert tone="danger" title="The books do not balance">
-          Total debits ({money(trialBalance.totalDebit)}) do not equal total credits (
-          {money(trialBalance.totalCredit)}). Difference: {money(trialBalance.difference)}. This
+          Total debits ({money(booksCheck.totalDebit)}) do not equal total credits (
+          {money(booksCheck.totalCredit)}). Difference: {money(booksCheck.difference)}. This
           should never happen — please report it before recording anything else.
         </Alert>
       )}
@@ -464,8 +478,15 @@ export default async function DashboardPage({
           <Headline value={money(stock.totalStockValue)} note="At weighted average cost" />
           <dl className="grid grid-cols-3 gap-2 text-sm">
             <div>
+              {/*
+                Stock-tracked products only, like the Low and Out figures beside
+                it and like the Inventory page. `productCount` counts every
+                product, so a card headed Stock reported 12 while Inventory
+                reported 11 — the difference being a service, "Cartage to site",
+                which is sold but never held.
+              */}
               <dt className="text-xs text-content-muted">Products</dt>
-              <dd className="tabular font-medium text-content">{stock.productCount}</dd>
+              <dd className="tabular font-medium text-content">{stock.trackedCount}</dd>
             </div>
             <div>
               <dt className="text-xs text-content-muted">Low</dt>
@@ -535,7 +556,7 @@ export default async function DashboardPage({
         </Card>
         )}
 
-        {shows.money && trialBalance !== null && (
+        {shows.money && booksCheck !== null && (
         <Card title="Books check" icon="books">
           {/*
             Label left, figure right, one per row — the same shape the Money
@@ -547,23 +568,23 @@ export default async function DashboardPage({
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-sm text-content-muted">Total debits</dt>
               <dd className="tabular shrink-0 font-medium text-content">
-                {money(trialBalance.totalDebit)}
+                {money(booksCheck.totalDebit)}
               </dd>
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-sm text-content-muted">Total credits</dt>
               <dd className="tabular shrink-0 font-medium text-content">
-                {money(trialBalance.totalCredit)}
+                {money(booksCheck.totalCredit)}
               </dd>
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-sm text-content-muted">Status</dt>
               <dd
                 className={`shrink-0 font-medium ${
-                  trialBalance.balanced ? 'text-success' : 'text-danger'
+                  booksCheck.trialBalanced ? 'text-success' : 'text-danger'
                 }`}
               >
-                {trialBalance.balanced ? 'Balanced' : 'Out of balance'}
+                {booksCheck.trialBalanced ? 'Balanced' : 'Out of balance'}
               </dd>
             </div>
           </dl>

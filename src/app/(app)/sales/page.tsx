@@ -12,6 +12,7 @@ import { listUsers } from '@/services/user.service';
 import { formatDate, formatTime, money, quantity, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import {
+  filterValueName,
   buildQuery,
   chipAmount,
   clampPage,
@@ -74,15 +75,6 @@ export default async function SalesPage({
 
   // --- what the chips say --------------------------------------------------
 
-  const nameOf = <T extends { id: number; name?: string; displayName?: string }>(
-    list: T[],
-    id: number | undefined,
-  ): string | undefined =>
-    id === undefined
-      ? undefined
-      : (list.find((item) => item.id === id)?.name ??
-        list.find((item) => item.id === id)?.displayName);
-
   const METHOD_LABELS: Record<string, string> = {
     CASH: 'Cash',
     MOBILE_MONEY: 'Mobile money',
@@ -96,28 +88,28 @@ export default async function SalesPage({
     active.push({
       key: 'customer',
       label: 'Customer',
-      value: nameOf(customers, filters.customerId) ?? String(filters.customerId),
+      value: filterValueName(customers, filters.customerId),
     });
   }
   if (filters.productId !== undefined) {
     active.push({
       key: 'product',
       label: 'Product',
-      value: nameOf(products, filters.productId) ?? String(filters.productId),
+      value: filterValueName(products, filters.productId),
     });
   }
   if (filters.categoryId !== undefined) {
     active.push({
       key: 'category',
       label: 'Category',
-      value: nameOf(categories, filters.categoryId) ?? String(filters.categoryId),
+      value: filterValueName(categories, filters.categoryId),
     });
   }
   if (filters.paymentAccountId !== undefined) {
     active.push({
       key: 'account',
       label: 'Paid into',
-      value: nameOf(accounts, filters.paymentAccountId) ?? String(filters.paymentAccountId),
+      value: filterValueName(accounts, filters.paymentAccountId),
     });
   }
   if (filters.paymentKind !== undefined) {
@@ -127,7 +119,7 @@ export default async function SalesPage({
     active.push({
       key: 'staff',
       label: 'Served by',
-      value: nameOf(staff, filters.staffId) ?? String(filters.staffId),
+      value: filterValueName(staff, filters.staffId),
     });
   }
   if (filters.status !== undefined) {

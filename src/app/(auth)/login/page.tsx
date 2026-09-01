@@ -74,8 +74,14 @@ export default async function LoginPage({
             */}
             <li>
               Till PIN — <code className="font-mono font-medium">{DEMO_STAFF.username}</code> /{' '}
+              {/*
+                The tab's own label, which is "Till PIN". This pointed at
+                "Sign in with PIN" — the label on the submit BUTTON inside the
+                tab, so the one name given to help somebody find the tab was the
+                one name not written on it.
+              */}
               <code className="font-mono font-medium">{DEMO_STAFF.pin}</code>, on the{' '}
-              <span className="font-medium">Sign in with PIN</span> tab
+              <span className="font-medium">Till PIN</span> tab
             </li>
           </ul>
           <p className="mt-2">

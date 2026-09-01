@@ -84,6 +84,13 @@ export interface YearEndPack {
 
   receivables: AgeingRow[];
   payables: AgeingRow[];
+  /**
+   * The day the debts above are aged from — the year end, or today when the
+   * year has not finished. Every other statement in the pack is struck at the
+   * year end; these two cannot be, because "how overdue" measured against a
+   * future date is not a question anybody asked.
+   */
+  ageingAsAt: string;
 
   equity: EquityMovement;
   integrity: BooksIntegrity;
@@ -215,6 +222,21 @@ export function getYearEndPack(db: Db, startYear: number): YearEndPack {
   // finished year as still in progress, or the reverse.
   const today = toBusinessDate();
 
+  /**
+   * How overdue a debt is, measured from the day the pack is prepared.
+   *
+   * The statements are all struck at the year end, and rightly so — but ageing
+   * is a question about the gap between then and now, and a provisional pack is
+   * "now" plus four months of a year that has not happened. Aged to 31 December
+   * on 1 September, every debt in the shop landed in "Over 90 days" and the
+   * accountant read GHS 30,558.00 as long overdue while the Who owes you screen
+   * said "Nothing long overdue" about the same money.
+   *
+   * A finished year is unaffected: `today` is past `year.end`, so the pack ages
+   * to the year end exactly as final accounts should.
+   */
+  const ageingAsAt = today < year.end ? today : year.end;
+
   return {
     year,
     previous,
@@ -231,8 +253,9 @@ export function getYearEndPack(db: Db, startYear: number): YearEndPack {
     previousBalanceSheet,
     cashFlow: getCashFlow(db, period),
     trialBalance: getTrialBalance(db, { to: year.end }),
-    receivables: getReceivablesAgeing(db, year.end),
-    payables: getPayablesAgeing(db, year.end),
+    receivables: getReceivablesAgeing(db, ageingAsAt),
+    payables: getPayablesAgeing(db, ageingAsAt),
+    ageingAsAt,
     equity: equityMovement(
       previousBalanceSheet,
       balanceSheet,

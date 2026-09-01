@@ -160,13 +160,17 @@ export default async function ReceivablesPage({
         rows={rows}
         hrefBase="/customers"
         nameHeading="Customer"
+        dateHeading="Oldest due"
         emptyTitle="Nobody owes you anything"
         emptyDescription="Credit sales that have not been fully paid will appear here, grouped by age."
       />
 
       <p className="mt-4 text-xs text-content-subtle">
-        As at {formatDate(asAt)}. Age is measured from the date of each sale. These figures come
-        from the same records as each customer&rsquo;s profile, so the two always agree.
+        As at {formatDate(asAt)}. Age is measured from the day each invoice fell due — the sale
+        date plus the terms it was given — so a sale on 30-day terms is &ldquo;Not due&rdquo; for
+        its first month rather than a month overdue. A sale that carried no terms ages from the day
+        it was made. These figures come from the same records as each customer&rsquo;s profile, so
+        the two always agree.
       </p>
     </div>
   );

@@ -152,6 +152,7 @@ export default async function PayablesPage({
         rows={rows}
         hrefBase="/suppliers"
         nameHeading="Supplier"
+        dateHeading="Oldest delivery"
         emptyTitle="You do not owe anyone"
         emptyDescription="Purchases that have not been fully paid will appear here, grouped by age."
       />
