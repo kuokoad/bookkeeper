@@ -38,6 +38,9 @@ import { fromUnits, type Qty } from '@/domain/quantity';
 
 let context: TestDatabase;
 const ACTOR = { id: 1, username: 'kwame' };
+import { monthOf } from '../helpers/clock';
+import { toBusinessDate } from '@/lib/format';
+
 const TODAY = '2026-08-17';
 const PERIOD = { from: '2026-08-01', to: '2026-08-31' };
 
@@ -243,21 +246,31 @@ describe('profit and loss', () => {
 
   it('ignores a voided sale', () => {
     const id = makeStockedProduct('Milo', 500, 1_000, 100);
+    /*
+      Dated today rather than TODAY, and read over the month that contains it.
+      `voidSale` dates the reversing entry from the clock on purpose, so a sale
+      pinned to a literal month stops meeting its own reversal the moment the
+      month turns — which is how this passed all August and broke on 1
+      September. The assertion is unchanged: the pair nets to nothing inside a
+      period holding both.
+    */
+    const today = toBusinessDate();
+    const period = monthOf(today);
     const sale = createSale(
       context.db,
       {
-        businessDate: TODAY,
+        businessDate: today,
         items: [{ productId: id, qty: u(10) }],
         tenders: [{ paymentAccountId: CASH, amount: m(10_000) }],
       },
       ACTOR,
     );
 
-    expect(getProfitAndLoss(context.db, PERIOD).netSales).toBe(10_000);
+    expect(getProfitAndLoss(context.db, period).netSales).toBe(10_000);
     voidSale(context.db, sale.saleId, 'Entered twice', ACTOR);
     // The reversing entry cancels it out exactly.
-    expect(getProfitAndLoss(context.db, PERIOD).netSales).toBe(0);
-    expect(getProfitAndLoss(context.db, PERIOD).grossProfit).toBe(0);
+    expect(getProfitAndLoss(context.db, period).netSales).toBe(0);
+    expect(getProfitAndLoss(context.db, period).grossProfit).toBe(0);
   });
 
   it('excludes owner drawings from expenses', () => {

@@ -4,6 +4,7 @@ import { ne } from 'drizzle-orm';
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { paymentAccounts, purchaseTaxes, taxComponents } from '@/db/schema';
 import { setGhanaTaxes } from '../helpers/tax';
+import { thisMonth } from '../helpers/clock';
 import { createProduct } from '@/services/catalog.service';
 import { createSupplier } from '@/services/supplier.service';
 import { createPurchase, voidPurchase } from '@/services/purchase.service';
@@ -39,6 +40,9 @@ let context: TestDatabase;
 const ACTOR = { id: 1, username: 'kwame' };
 const AUGUST = { from: '2026-08-01', to: '2026-08-31' };
 const SEPTEMBER = { from: '2026-09-01', to: '2026-09-30' };
+/* Where a cancellation lands: the month the suite is running in, not a
+   literal. See tests/helpers/clock.ts. */
+const THIS_MONTH = thisMonth();
 
 const m = (n: number): Minor => minor(n);
 const u = (n: number): Qty => fromUnits(n);
@@ -339,8 +343,12 @@ describe('a sale cancelled in a later month', () => {
     const sale = sell(rice, '2026-07-10');
     voidSale(context.db, sale.saleId, 'Rang it up twice', ACTOR);
 
-    // The mirror is dated today, so it lands in this month, not July.
-    expect(getTaxReturn(context.db, AUGUST).totalOutput).toBe(-800);
+    // The mirror is dated today, so it lands in the CURRENT month, not July.
+    expect(getTaxReturn(context.db, THIS_MONTH).totalOutput).toBe(-800);
+
+    // ...and July is not where it landed. Without this, widening the window
+    // above to something that happened to contain both dates would pass.
+    expect(getTaxReturn(context.db, JULY).totalOutput).toBe(800);
 
     // And across all time the pair nets to nothing, as a cancelled sale must.
     const wide = getTaxReturn(context.db, { from: '2026-01-01', to: '2099-12-31' });

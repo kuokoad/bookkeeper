@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
+import { monthOf } from '../helpers/clock';
+import { toBusinessDate } from '@/lib/format';
 import { categories, paymentAccounts, products } from '@/db/schema';
 import { createCategory, createProduct } from '@/services/catalog.service';
 import { createCustomer } from '@/services/customer.service';
@@ -449,10 +451,18 @@ describe('filtered totals', () => {
   });
 
   it('counts corrections out of the sale count but keeps their money in the totals', () => {
-    const saleId = cokeSale('2026-08-05', 10);
+    /*
+      Today, not a literal August day: the correction document is dated from
+      the clock, so a sale pinned to a fixed month stops sharing a period with
+      its own mirror as soon as the month turns. The beforeEach creates no
+      sales, so this window holds exactly the pair below whatever month the
+      suite runs in.
+    */
+    const today = toBusinessDate();
+    const saleId = cokeSale(today, 10);
     voidSale(context.db, saleId, 'Rang it up twice', ACTOR);
 
-    const summary = getFilteredSalesSummary(context.db, { from: '2026-08-01', to: '2026-08-31' });
+    const summary = getFilteredSalesSummary(context.db, monthOf(today));
     // One sale was rung up; the mirror document is a correction, not a customer.
     expect(summary.count).toBe(1);
     // And the pair nets to nothing, so the period shows no takings.
