@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Window } from 'happy-dom';
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { paymentAccounts, sales } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -297,6 +298,41 @@ describe('dashboard financial regression', () => {
 });
 
 describe('dashboard server permissions', () => {
+  it('groups the approved layout without losing independently dated charts', async () => {
+    const window = new Window();
+    window.document.body.innerHTML = await html({ sales: 'week', spend: 'quarter' });
+    const document = window.document;
+    const primary = document.querySelector('[aria-label="Primary financial figures"]')!;
+    expect(primary.querySelectorAll(':scope > section')).toHaveLength(4);
+    const trends = document.querySelector('[aria-labelledby="trends-heading"]')!;
+    expect(trends.querySelectorAll(':scope > div > section')).toHaveLength(2);
+    expect(trends.textContent).toContain('Daily sales');
+    expect(trends.textContent).toContain('Daily expenses');
+    const summaries = document.querySelector('[aria-labelledby="summaries-heading"]')!;
+    expect(summaries.querySelectorAll(':scope > div > section')).toHaveLength(3);
+    expect(summaries.textContent).toContain('Top selling product');
+    expect(summaries.textContent).toContain('Customer receivables');
+    expect(summaries.textContent).toContain('Supplier payables');
+    const books = document.querySelector('[aria-labelledby="books-heading"]')!;
+    expect(books.textContent).toContain('Books Check');
+    expect(books.textContent).toContain('Account reconciliation');
+    expect(books.textContent).toContain('reconciliation not verified');
+    expect(document.body.textContent).not.toContain('Synced');
+    expect(document.querySelector('[aria-label="Quick actions"] a')?.getAttribute('href')).toBe('/sales/new');
+    await window.happyDOM.close();
+  });
+  it('keeps product sales summaries when inventory access is denied', async () => {
+    state.user = {
+      ...owner,
+      role: 'STAFF',
+      permissions: { sales: { canView: true, canCreate: false, canEdit: false, canVoid: false } },
+    };
+    const markup = await html();
+    expect(markup).toContain('Top selling product');
+    expect(markup).not.toContain('Inventory valuation');
+    expect(markup).not.toContain('Supplier payables');
+    expect(markup).not.toContain('New Sale');
+  });
   it('accounts-only access exposes Books Check without report-only links', async () => {
     state.user = {
       ...owner,

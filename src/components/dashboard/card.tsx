@@ -8,19 +8,25 @@ export function DashboardCard({
   children,
   href,
   period,
+  embedded = false,
 }: {
   title: string;
   icon: IconName;
   children: ReactNode;
   href?: string;
   period?: string;
+  embedded?: boolean;
 }) {
   return (
     <section
-      className="min-w-0 border border-line bg-surface-raised p-4"
+      className={
+        embedded
+          ? 'min-w-0'
+          : 'min-w-0 border border-line bg-surface-raised p-4'
+      }
       style={{
         borderRadius: 'var(--card-radius)',
-        boxShadow: 'var(--card-shadow)',
+        boxShadow: embedded ? undefined : 'var(--card-shadow)',
       }}
     >
       <div className="mb-2 flex items-center justify-between gap-3">

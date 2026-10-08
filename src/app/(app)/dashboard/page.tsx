@@ -40,6 +40,8 @@ import {
   integrityChecks,
   type DashboardRange,
 } from '@/lib/dashboard';
+import { Badge } from '@/components/ui/badge';
+import { Icon, type IconName } from '@/components/ui/icon';
 import { Alert } from '@/components/ui/alert';
 import { PairedBars, TrendLine } from '@/components/ui/chart';
 import {
@@ -173,21 +175,25 @@ export default async function DashboardPage({
   const actions = [
     {
       label: 'New Sale',
+      icon: 'sales' as IconName,
       href: '/sales/new',
       allowed: can(user, 'sales', 'create'),
     },
     {
       label: 'Record Expense',
+      icon: 'expenses' as IconName,
       href: '/expenses#record-expense',
       allowed: can(user, 'expenses', 'create'),
     },
     {
       label: 'New Purchase',
+      icon: 'purchases' as IconName,
       href: '/purchases/new',
       allowed: can(user, 'purchases', 'create'),
     },
     {
       label: 'Receive Payment',
+      icon: 'customers' as IconName,
       href: '/customers?owing=1',
       allowed: can(user, 'customers', 'create'),
     },
@@ -195,12 +201,12 @@ export default async function DashboardPage({
   const attention = [
     ...(aged !== null && aged.overdue > 0
       ? [
-          {
-            title: `${money(aged.overdue)} overdue receivables`,
-            note: 'Includes amounts 1–30 days overdue and all older buckets. Customer credits can reduce bucket totals.',
-            href: '/customers?owing=1',
-          },
-        ]
+        {
+          title: `${money(aged.overdue)} overdue receivables`,
+          note: 'Includes amounts 1–30 days overdue and all older buckets. Customer credits can reduce bucket totals.',
+          href: '/customers?owing=1',
+        },
+      ]
       : []),
     ...negativeAccounts.map((account) => ({
       title: `${account.name}: ${money(account.balance)}`,
@@ -209,12 +215,12 @@ export default async function DashboardPage({
     })),
     ...(stock !== null && (stock.lowStockCount > 0 || stock.outOfStockCount > 0)
       ? [
-          {
-            title: `${stock.lowStockCount} low-stock and ${stock.outOfStockCount} out-of-stock products`,
-            note: 'Review stock levels before recording the next sale.',
-            href: '/inventory',
-          },
-        ]
+        {
+          title: `${stock.lowStockCount} low-stock and ${stock.outOfStockCount} out-of-stock products`,
+          note: 'Review stock levels before recording the next sale.',
+          href: '/inventory',
+        },
+      ]
       : []),
     ...differences.map((account) => ({
       title: `${account.accountName}: ${money(account.unresolvedDifference)} unresolved count difference`,
@@ -228,18 +234,18 @@ export default async function DashboardPage({
     })),
     ...(aged !== null && !aged.reconciles
       ? [
-          {
-            title: `${money(aged.unaged)} outside invoice ageing`,
-            note: 'Ledger balances include amounts without an invoice due-date bucket. Review allocations and opening balances.',
-            href: '/customers',
-          },
-        ]
+        {
+          title: `${money(aged.unaged)} outside invoice ageing`,
+          note: 'Ledger balances include amounts without an invoice due-date bucket. Review allocations and opening balances.',
+          href: '/customers',
+        },
+      ]
       : []),
   ];
   const nothingToShow = !Object.values(shows).some(Boolean);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="mx-auto max-w-7xl space-y-4">
       <header className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -253,8 +259,9 @@ export default async function DashboardPage({
               <Link
                 key={action.href}
                 href={action.href}
-                className="rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm font-medium text-accent hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-accent"
+                className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-accent ${action.href === "/sales/new" ? "border-accent bg-accent text-accent-text hover:opacity-90" : "border-line bg-surface-raised text-accent hover:bg-accent-soft"}`}
               >
+                <Icon name={action.icon} className="h-4 w-4" />
                 {action.label}
               </Link>
             ))}
@@ -352,23 +359,23 @@ export default async function DashboardPage({
         )}
       </section>
       {!nothingToShow && (
-        <section aria-labelledby="attention-heading">
+        <section aria-labelledby="attention-heading" className="rounded-xl border border-line bg-surface-raised p-4">
           <h2
             id="attention-heading"
             className="mb-2 text-base font-semibold text-content"
           >
             Needs Attention
           </h2>
-          <div className="rounded-xl border border-line bg-surface-raised px-4 py-1">
+          <div className="min-w-0">
             {attention.length === 0 ? (
               <p className="py-3 text-sm text-content-muted">
                 No issues found in the dashboard checks available to your
                 account.
               </p>
             ) : (
-              <ul className="divide-y divide-line">
+              <ul className="grid gap-2 lg:grid-cols-2">
                 {attention.map((item) => (
-                  <li key={item.title} className="py-3">
+                  <li key={item.title} className="min-w-0 rounded-lg border border-line bg-surface-sunken p-3">
                     <Detail href={item.href}>{item.title}</Detail>
                     <p className="mt-1 text-xs text-content-muted">
                       {item.note}
@@ -384,71 +391,70 @@ export default async function DashboardPage({
         <section aria-labelledby="trends-heading">
           <h2
             id="trends-heading"
-            className="mb-2 text-base font-semibold text-content"
+            className="sr-only"
           >
-            Sales and expense trends
+            Financial trends
           </h2>
           <div className="grid gap-3 md:grid-cols-2">
-            {shows.sales && (
-              <Card
-                title="Daily sales"
-                icon="sales"
-                href="/sales"
-                period={dates(salesPeriod)}
-              >
-                {salesByDay.length > 0 ? (
-                  <TrendLine
-                    data={dashboardDailySeries(salesByDay, salesPeriod)}
-                    summary={`Daily sales: ${dates(salesPeriod)}. Total ${money(rangeSales!.total)}.`}
-                  />
-                ) : (
-                  <p className="text-sm text-content-muted">
-                    No sales recorded in this period.
+            {(shows.sales || shows.spending) && (<Card title="Sales & expense trends" icon="sales">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {shows.sales && (
+                <div className="min-w-0">
+                  <Detail href={`/sales?period=custom&from=${salesPeriod.from}&to=${salesPeriod.to}`}>Daily sales</Detail>
+                  <p className="mb-2 mt-1 text-xs text-content-muted">{dates(salesPeriod)}</p>
+                  {salesByDay.length > 0 ? (
+                    <TrendLine
+                      data={dashboardDailySeries(salesByDay, salesPeriod)}
+                      summary={`Daily sales: ${dates(salesPeriod)}. Total ${money(rangeSales!.total)}.`}
+                    />
+                  ) : (
+                    <p className="text-sm text-content-muted">
+                      No sales recorded in this period.
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs text-content-muted">
+                    Today ({formatDate(today)}): {money(todaySales!.total)}
                   </p>
+                </div>
+              )}
+                {shows.spending && (
+                  <div className="min-w-0 border-t border-line pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-3">
+                    <Detail href={reportHref('/expenses', spendPeriod)}>Daily expenses</Detail>
+                    <p className="mb-2 mt-1 text-xs text-content-muted">{dates(spendPeriod)}</p>
+                    {expenseDays.length > 0 ? (
+                      <TrendLine
+                        data={dashboardDailySeries(expenseDays, spendPeriod)}
+                        summary={`Recorded daily expenses: ${dates(spendPeriod)}. Total ${money(spend!)}.`}
+                      />
+                    ) : (
+                      <p className="text-sm text-content-muted">
+                        No expense transactions recorded in this period.
+                      </p>
+                    )}
+                    {categories.length > 0 && (
+                      <details className="mt-3 text-sm">
+                        <summary className="cursor-pointer text-accent">
+                          Expense categories
+                        </summary>
+                        <dl className="mt-2 space-y-1">
+                          {categories.map((category) => (
+                            <div
+                              key={category.categoryAccountId}
+                              className="flex justify-between gap-3"
+                            >
+                              <dt className="text-content-muted">
+                                {category.categoryName}
+                              </dt>
+                              <dd className="tabular">{money(category.total)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </details>
+                    )}
+                  </div>
                 )}
-                <p className="mt-2 text-xs text-content-muted">
-                  Today ({formatDate(today)}): {money(todaySales!.total)}
-                </p>
-              </Card>
-            )}
-            {shows.spending && (
-              <Card
-                title="Daily expenses"
-                icon="expenses"
-                href={reportHref('/expenses', spendPeriod)}
-                period={dates(spendPeriod)}
-              >
-                {expenseDays.length > 0 ? (
-                  <TrendLine
-                    data={dashboardDailySeries(expenseDays, spendPeriod)}
-                    summary={`Recorded daily expenses: ${dates(spendPeriod)}. Total ${money(spend!)}.`}
-                  />
-                ) : (
-                  <p className="text-sm text-content-muted">
-                    No expense transactions recorded in this period.
-                  </p>
-                )}
-                {categories.length > 0 && (
-                  <details className="mt-3 text-sm">
-                    <summary className="cursor-pointer text-accent">
-                      Expense categories
-                    </summary>
-                    <dl className="mt-2 space-y-1">
-                      {categories.map((category) => (
-                        <div
-                          key={category.categoryAccountId}
-                          className="flex justify-between gap-3"
-                        >
-                          <dt className="text-content-muted">
-                            {category.categoryName}
-                          </dt>
-                          <dd className="tabular">{money(category.total)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </details>
-                )}
-              </Card>
+              </div>
+            </Card>
             )}
             {shows.money && (
               <Card
@@ -479,36 +485,11 @@ export default async function DashboardPage({
                 </p>
               </Card>
             )}
-            {shows.sales && (
-              <Card
-                title="Top selling product"
-                icon="products"
-                period={dates(salesPeriod)}
-              >
-                {topProduct === null ? (
-                  <p className="text-sm text-content-muted">
-                    No product sales in this period.
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-lg font-semibold text-content">
-                      {topProduct.productName}
-                    </p>
-                    <p className="mt-1 text-sm text-content-muted">
-                      {money(topProduct.revenue)} revenue ·{' '}
-                      {quantity(topProduct.qtySold, topProduct.unit)} sold
-                    </p>
-                    <p className="mt-2 text-xs text-content-subtle">
-                      Ranked by revenue, rather than units sold.
-                    </p>
-                  </>
-                )}
-              </Card>
-            )}
+
           </div>
         </section>
       )}
-      {(shows.stock || shows.money || shows.owed || shows.suppliers) && (
+      {(shows.stock || shows.money || shows.owed || shows.suppliers || shows.sales) && (
         <section aria-labelledby="summaries-heading">
           <h2
             id="summaries-heading"
@@ -516,10 +497,10 @@ export default async function DashboardPage({
           >
             Inventory and account summaries
           </h2>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {stock !== null && (
               <Card
-                title="Stock"
+                title="Inventory valuation"
                 icon="inventory"
                 href="/inventory"
                 period="Current stock · all recorded dates"
@@ -547,6 +528,30 @@ export default async function DashboardPage({
                     No stock-tracked products yet.
                   </p>
                 )}
+                {shows.sales && (
+                  <div className="mt-3 rounded-lg border border-line bg-surface-sunken p-3">
+                    <h4 className="text-sm font-semibold">Top selling product</h4>
+                    <p className="mb-2 mt-1 text-xs text-content-muted">{dates(salesPeriod)}</p>
+                    {topProduct === null ? (
+                      <p className="text-sm text-content-muted">
+                        No product sales in this period.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-lg font-semibold text-content">
+                          {topProduct.productName}
+                        </p>
+                        <p className="mt-1 text-sm text-content-muted">
+                          {money(topProduct.revenue)} revenue ·{' '}
+                          {quantity(topProduct.qtySold, topProduct.unit)} sold
+                        </p>
+                        <p className="mt-2 text-xs text-content-subtle">
+                          Ranked by revenue, rather than units sold.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
                 {expiry !== null &&
                   (expiry.expiredCount > 0 || expiry.expiringSoonCount > 0) && (
                     <p className="mt-3 border-t border-line pt-2 text-sm text-warning">
@@ -556,6 +561,51 @@ export default async function DashboardPage({
                     </p>
                   )}
               </Card>
+            )}
+            {(shows.owed || shows.suppliers) && (<Card title="Receivables & payables" icon="owed">
+              <div className="space-y-3">            {receivables !== null && aged !== null && (
+                <div className="rounded-lg border border-line bg-surface-sunken p-3">
+                  <Detail href="/customers?owing=1">Customer receivables</Detail>
+                  <p className="mb-2 mt-1 text-xs text-content-muted">Current ledger balance · invoice ageing at {formatDate(today)}</p>
+                  <Figure
+                    value={money(receivables)}
+                    hint="Net customer ledger balance, including customer credits"
+                  />
+                  <dl className="mt-3 space-y-2 text-sm">
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <dt>Overdue (all overdue buckets)</dt>
+                      <dd className="tabular">{money(aged.overdue)}</dd>
+                    </div>
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <dt>Not yet due / due today</dt>
+                      <dd className="tabular">{money(aged.notYetDue)}</dd>
+                    </div>
+                    {!aged.reconciles && (
+                      <div className="flex flex-wrap justify-between gap-2 text-warning">
+                        <dt>Outside invoice ageing</dt>
+                        <dd className="tabular">{money(aged.unaged)}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <p className="mt-3 text-xs text-content-muted">
+                    {aged.reconciles
+                      ? 'Overdue + not yet due agrees with the customer ledger.'
+                      : 'Invoice buckets + amounts outside invoice ageing agree with the customer ledger. Review unallocated credits, opening balances and future-dated transactions.'}{' '}
+                    Negative bucket amounts represent customer credits.
+                  </p>
+                </div>
+              )}
+                {payables !== null && (
+                  <div className="rounded-lg border border-line bg-surface-sunken p-3">
+                    <Detail href="/suppliers">Supplier payables</Detail>
+                    <p className="mb-2 mt-1 text-xs text-content-muted">Current ledger balance · all recorded dates</p>
+                    <Figure
+                      value={money(payables)}
+                      hint="Net amount owed to suppliers, including supplier credits"
+                    />
+                  </div>
+                )}</div>
+            </Card>
             )}
             {shows.money && (
               <Card
@@ -589,59 +639,38 @@ export default async function DashboardPage({
                 )}
               </Card>
             )}
-            {receivables !== null && aged !== null && (
+
+            {shows.sales && !shows.stock && (
               <Card
-                title="Customer receivables"
-                icon="owed"
-                href="/customers?owing=1"
-                period={`Current ledger balance · invoice ageing at ${formatDate(today)}`}
+                title="Top selling product"
+                icon="products"
+                period={dates(salesPeriod)}
               >
-                <Figure
-                  value={money(receivables)}
-                  hint="Net customer ledger balance, including customer credits"
-                />
-                <dl className="mt-3 space-y-2 text-sm">
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt>Overdue (all overdue buckets)</dt>
-                    <dd className="tabular">{money(aged.overdue)}</dd>
-                  </div>
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt>Not yet due / due today</dt>
-                    <dd className="tabular">{money(aged.notYetDue)}</dd>
-                  </div>
-                  {!aged.reconciles && (
-                    <div className="flex flex-wrap justify-between gap-2 text-warning">
-                      <dt>Outside invoice ageing</dt>
-                      <dd className="tabular">{money(aged.unaged)}</dd>
-                    </div>
-                  )}
-                </dl>
-                <p className="mt-3 text-xs text-content-muted">
-                  {aged.reconciles
-                    ? 'Overdue + not yet due agrees with the customer ledger.'
-                    : 'Invoice buckets + amounts outside invoice ageing agree with the customer ledger. Review unallocated credits, opening balances and future-dated transactions.'}{' '}
-                  Negative bucket amounts represent customer credits.
-                </p>
-              </Card>
-            )}
-            {payables !== null && (
-              <Card
-                title="Supplier payables"
-                icon="owes"
-                href="/suppliers"
-                period="Current ledger balance · all recorded dates"
-              >
-                <Figure
-                  value={money(payables)}
-                  hint="Net amount owed to suppliers, including supplier credits"
-                />
+                {topProduct === null ? (
+                  <p className="text-sm text-content-muted">
+                    No product sales in this period.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-lg font-semibold text-content">
+                      {topProduct.productName}
+                    </p>
+                    <p className="mt-1 text-sm text-content-muted">
+                      {money(topProduct.revenue)} revenue ·{' '}
+                      {quantity(topProduct.qtySold, topProduct.unit)} sold
+                    </p>
+                    <p className="mt-2 text-xs text-content-subtle">
+                      Ranked by revenue, rather than units sold.
+                    </p>
+                  </>
+                )}
               </Card>
             )}
           </div>
         </section>
       )}
       {(booksCheck !== null || shows.reconciliation) && (
-        <section aria-labelledby="books-heading">
+        <section aria-labelledby="books-heading" className="rounded-xl border border-line bg-surface-raised p-4">
           <h2
             id="books-heading"
             className="mb-2 text-base font-semibold text-content"
@@ -652,6 +681,7 @@ export default async function DashboardPage({
             {booksCheck !== null && (
               <Card
                 title="Books Check"
+                embedded
                 icon="books"
                 href="/accounting"
                 period="All recorded journal entries"
@@ -666,7 +696,7 @@ export default async function DashboardPage({
                       <dd
                         className={`shrink-0 font-medium ${check.passed ? 'text-success' : 'text-danger'}`}
                       >
-                        {check.passed ? 'Passed' : 'Needs review'}
+                        <Badge tone={check.passed ? 'success' : 'danger'}>{check.passed ? 'Passed' : 'Needs review'}</Badge>
                       </dd>
                     </div>
                   ))}
@@ -694,6 +724,7 @@ export default async function DashboardPage({
             {shows.reconciliation && (
               <Card
                 title="Account reconciliation"
+                embedded
                 icon="check"
                 href="/reconciliation"
                 period="Recorded counts · each account checked separately"
@@ -706,9 +737,18 @@ export default async function DashboardPage({
                   <ul className="divide-y divide-line">
                     {reconciliation.map((account) => (
                       <li key={account.paymentAccountId} className="py-2">
-                        <p className="text-sm font-medium text-content">
-                          {account.accountName}
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-content">
+                            {account.accountName}
+                          </p>
+                          <Badge tone={account.unresolvedDifference !== 0 ? 'warning' : 'neutral'}>
+                            {account.unresolvedDifference !== 0
+                              ? 'Needs review'
+                              : account.lastCountedOn === null
+                                ? 'Not verified'
+                                : 'Count recorded'}
+                          </Badge>
+                        </div>
                         <p className="mt-1 text-xs text-content-muted">
                           {account.lastCountedOn === null
                             ? 'No count recorded; reconciliation not verified.'
