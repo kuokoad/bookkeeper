@@ -383,7 +383,7 @@ export default async function ExpensesPage({
         <div>
           {canCreate ? (
             <>
-              <h2 className="mb-3 text-sm font-semibold text-content">Record an expense</h2>
+              <h2 id="record-expense" className="mb-3 scroll-mt-20 text-sm font-semibold text-content">Record an expense</h2>
               <CashbookForm
                 action={recordExpenseAction}
                 returnTo={returnTo}

@@ -676,6 +676,25 @@ export function getExpensesTotal(db: Db, from: string, to: string): Minor {
   return minor(row?.total ?? 0);
 }
 
+/** Same posted transactions and inclusive business dates as getExpensesTotal. */
+export function getExpensesByDay(db: Db, from: string, to: string) {
+  return db
+    .select({
+      businessDate: expenses.businessDate,
+      total: sql<number>`COALESCE(SUM(${expenses.amountMinor}), 0)`,
+    })
+    .from(expenses)
+    .where(and(
+      gte(expenses.businessDate, from),
+      lte(expenses.businessDate, to),
+      eq(expenses.status, 'POSTED'),
+    ))
+    .groupBy(expenses.businessDate)
+    .orderBy(expenses.businessDate)
+    .all()
+    .map((row) => ({ ...row, total: minor(row.total) }));
+}
+
 export function getIncomesTotal(db: Db, from: string, to: string): Minor {
   const row = db
     .select({ total: sql<number>`COALESCE(SUM(${incomes.amountMinor}), 0)` })

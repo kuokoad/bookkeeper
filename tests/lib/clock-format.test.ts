@@ -62,13 +62,14 @@ describe('the server and the browser agree', () => {
     'utf8',
   );
 
-  it('both sides format through the same functions', () => {
-    // Two copies of the Intl config drifted apart mid-change once already,
-    // rendering the header at one width and then reflowing it.
-    for (const source of [CLOCK, DASHBOARD]) {
-      expect(source).toContain('formatClockTime');
-      expect(source).toContain('formatClockDate');
-    }
+  it('the clock uses shared clock formatters and the dashboard names its reporting date', () => {
+    expect(CLOCK).toContain('formatClockTime');
+    expect(CLOCK).toContain('formatClockDate');
+    // The compact dashboard header now shows the business reporting date,
+    // rather than a live browser clock whose timezone may differ from it.
+    expect(DASHBOARD).toContain('formatDate(today)');
+    expect(DASHBOARD).toContain('toBusinessDate()');
+    expect(DASHBOARD).not.toContain('<Clock');
   });
 
   it('neither side builds its own formatter', () => {
