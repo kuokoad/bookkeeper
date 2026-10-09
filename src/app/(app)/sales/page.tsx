@@ -231,6 +231,7 @@ export default async function SalesPage({
       </div>
 
       <FilterBar
+        compactSales
         basePath="/sales"
         dateRange={{ preset, from: range.from, to: range.to }}
         active={active}

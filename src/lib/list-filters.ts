@@ -131,6 +131,7 @@ export function parseSalesFilters(
       'staff',
       'status',
       'paid',
+      'statusSource',
       'min',
       'max',
       'sort',
