@@ -676,9 +676,19 @@ body {
   background: #f1f5f9;
 }
 .stitch-sidebar::-webkit-scrollbar-thumb,
-.stitch-sidebar *::-webkit-scrollbar-thumb {
+.stitch-sidebar *::-webkit-scrollbar-thumb,
+.stitch-sidebar::-webkit-scrollbar-thumb:hover,
+.stitch-sidebar *::-webkit-scrollbar-thumb:hover,
+.stitch-sidebar::-webkit-scrollbar-thumb:active,
+.stitch-sidebar *::-webkit-scrollbar-thumb:active {
   background: #cbd5e1;
   border-radius: 3px;
+}
+.stitch-sidebar::-webkit-scrollbar-button,
+.stitch-sidebar *::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 @supports selector(::-webkit-scrollbar) {
   .stitch-sidebar,
