@@ -82,7 +82,7 @@ export default async function SaleDetailPage({
   const tendered = sale.tenders.reduce((total, tender) => total + tender.amountMinor, 0);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={sale.receiptNo}
         description={`${formatDate(sale.businessDate)} · ${formatDateTime(sale.occurredAt)}`}

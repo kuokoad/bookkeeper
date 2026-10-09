@@ -82,7 +82,7 @@ export default async function PurchaseDetailPage({
     .map((account) => ({ id: account.id, name: account.name, isDefault: account.isDefault }));
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={purchase.purchaseNo}
         description={`${formatDate(purchase.businessDate)}${purchase.invoiceNo ? ` · Invoice ${purchase.invoiceNo}` : ''}`}

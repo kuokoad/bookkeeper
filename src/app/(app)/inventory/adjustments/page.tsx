@@ -28,7 +28,7 @@ export default async function AdjustmentsPage({
   const adjustments = listStockAdjustments(db, 100);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Stock adjustments"
         description="Damage, loss, opening stock and count corrections."

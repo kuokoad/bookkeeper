@@ -117,7 +117,7 @@ export default async function InventoryReportPage({
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Inventory report"
         description={`Valuation as at today · movement ${describePeriod(period, preset).toLowerCase()}`}

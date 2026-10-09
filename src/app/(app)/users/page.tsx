@@ -23,7 +23,7 @@ export default async function UsersPage() {
   const locked = users.filter((user) => user.isLocked);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Users"
         description="Who can sign in, and what each person is allowed to do."

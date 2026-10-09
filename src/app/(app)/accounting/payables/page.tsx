@@ -81,7 +81,7 @@ export default async function PayablesPage({
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Who you owe"
         description="Supplier balances, grouped by how long they have been outstanding."

@@ -45,7 +45,7 @@ export default async function GeneralLedgerPage({
   const { account, lines, openingBalance, closingBalance, totalDebit, totalCredit } = ledger;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title={account.name}
         description={`Account ${account.code} · ${account.type.replace('_', ' ').toLowerCase()}`}

@@ -147,7 +147,7 @@ export default async function PurchasesPage({
   const isFiltered = active.length > 0;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Purchases"
         description="What you bought, from whom, and what you still owe."

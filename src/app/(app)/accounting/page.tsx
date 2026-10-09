@@ -90,7 +90,7 @@ export default async function AccountingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Accounting"
         description="The books underneath everything else — and the proof that they add up."

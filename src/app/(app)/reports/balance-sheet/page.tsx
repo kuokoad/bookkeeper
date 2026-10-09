@@ -29,7 +29,7 @@ export default async function BalanceSheetPage({
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
       <PageHeader
         title="Balance sheet"
         description={`As at ${formatDate(asAt)}`}

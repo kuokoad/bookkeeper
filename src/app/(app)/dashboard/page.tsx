@@ -246,7 +246,7 @@ export default async function DashboardPage({
   const nothingToShow = !Object.values(shows).some(Boolean);
 
   return (
-    <div className="stitch-dashboard mx-auto max-w-[1440px] space-y-4">
+    <div className="stitch-dashboard w-full space-y-4">
       <header className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

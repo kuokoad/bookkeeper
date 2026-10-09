@@ -140,7 +140,7 @@ export default async function ExpensesPage({
   const exportHref = `/api/exports/expenses${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Expenses"
         description="Money spent running the shop — rent, power, transport, wages."

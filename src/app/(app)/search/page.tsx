@@ -37,7 +37,7 @@ export default async function SearchPage({
   const tooShort = (q ?? '').trim().length === 1;
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
       <PageHeader
         title="Search"
         description="Products, customers, suppliers, receipts, purchases and journal entries."

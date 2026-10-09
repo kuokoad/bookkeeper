@@ -65,7 +65,7 @@ export default async function JournalPage({
   const unbalanced = entries.filter((entry) => !entry.balanced);
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Journal"
         description="Every accounting entry, newest first. Each one traces back to a real transaction."

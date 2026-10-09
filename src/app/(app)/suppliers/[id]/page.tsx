@@ -70,7 +70,7 @@ export default async function SupplierDetailPage({
     .map((account) => ({ id: account.id, name: account.name, isDefault: account.isDefault }));
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title={supplier.name}
         description={supplier.contactPerson ?? supplier.phone ?? undefined}

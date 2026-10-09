@@ -125,7 +125,7 @@ export default async function IncomePage({
   const exportHref = `/api/exports/income${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Other income"
         description="Money in that is not a product sale — commission, services, anything else."

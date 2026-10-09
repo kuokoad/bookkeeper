@@ -173,7 +173,7 @@ export default async function AccountDetailPage({
     filters.maxAmount !== undefined;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title={account.name}
         description={`${account.provider ? `${account.provider} · ` : ''}Ledger account ${account.glCode}`}

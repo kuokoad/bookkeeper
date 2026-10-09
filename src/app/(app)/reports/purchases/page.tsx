@@ -85,7 +85,7 @@ export default async function PurchaseReportPage({
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Purchase report"
         description={describePeriod(period, preset)}

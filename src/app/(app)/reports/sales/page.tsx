@@ -142,7 +142,7 @@ export default async function SalesReportPage({
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Sales report"
         description={describePeriod(period, preset)}

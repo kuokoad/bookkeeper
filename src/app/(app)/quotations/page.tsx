@@ -51,7 +51,7 @@ export default async function QuotationsPage({
   const exportHref = `/api/exports/quotations${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Quotations"
         description="Prices offered to customers. Nothing here has been sold."

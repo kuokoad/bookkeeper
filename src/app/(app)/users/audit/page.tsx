@@ -127,7 +127,7 @@ export default async function AuditLogPage({
   };
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Audit log"
         description="Everything that has happened, who did it, and when."

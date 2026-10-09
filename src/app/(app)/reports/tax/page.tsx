@@ -43,7 +43,7 @@ export default async function TaxReturnPage({
   const nothingToReport = taxReturn.components.length === 0;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Tax return"
         description={`What you owe, ${describePeriod(period, preset).toLowerCase()}`}

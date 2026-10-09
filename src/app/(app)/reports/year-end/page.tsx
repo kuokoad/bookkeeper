@@ -121,7 +121,7 @@ export default async function YearEndPackPage({
   const columns = [pack.year.label, pack.previous.label];
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <div className="no-print">
         <PageHeader
           title="Year-end pack"

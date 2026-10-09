@@ -146,7 +146,7 @@ export default async function InventoryPage({
   const exportHref = `/api/exports/stock-movements${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Inventory"
         description="Every movement of stock, and why it moved."

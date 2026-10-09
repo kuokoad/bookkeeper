@@ -40,7 +40,7 @@ export default async function ChartOfAccountsPage() {
   const chart = getChartOfAccounts(db);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Chart of accounts"
         description="Every account the books are kept in. Balances are calculated from the ledger."

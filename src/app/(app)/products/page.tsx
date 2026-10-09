@@ -120,7 +120,7 @@ export default async function ProductsPage({
   const exportHref = `/api/exports/products${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Products"
         description="What you sell, what it costs you, and how much is on the shelf."

@@ -71,7 +71,7 @@ export default async function CustomerDetailPage({
     .map((account) => ({ id: account.id, name: account.name, isDefault: account.isDefault }));
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title={customer.name}
         description={customer.phone ?? undefined}

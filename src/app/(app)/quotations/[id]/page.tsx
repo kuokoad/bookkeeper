@@ -59,7 +59,7 @@ export default async function QuotationPage({
           : 'Open';
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={`Quote ${quote.quoteNo}`}
         description={`For ${quote.customerName}${quote.reference ? ` · ${quote.reference}` : ''}`}

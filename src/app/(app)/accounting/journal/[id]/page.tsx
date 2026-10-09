@@ -54,7 +54,7 @@ export default async function JournalEntryPage({ params }: { params: Promise<{ i
   const href = sourceHref(entry.sourceType, entry.sourceId);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={entry.entryNo}
         description={`${formatDate(entry.entryDate)} · ${SOURCE_LABELS[entry.sourceType] ?? entry.sourceType}`}

@@ -40,7 +40,7 @@ export default async function AccountsPage() {
   const negative = active.filter((account) => account.balance < 0);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Accounts"
         description="Every pot of money the shop holds — cash, mobile money, bank."

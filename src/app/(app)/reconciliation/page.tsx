@@ -62,7 +62,7 @@ export default async function ReconciliationPage({
   const canVoid = can(user, 'reconciliation', 'void');
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Reconciliation"
         description="Check what the books say against what is actually there."

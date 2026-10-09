@@ -163,7 +163,7 @@ export default async function SalesPage({
   const isFiltered = active.length > 0;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Sales"
         description="Every sale, what it earned and what is still owed."

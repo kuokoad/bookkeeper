@@ -42,7 +42,7 @@ export default async function TrialBalancePage({
   const balanced = totalDebit === totalCredit;
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title="Trial balance"
         description="Every account with movement, and the proof that debits equal credits."

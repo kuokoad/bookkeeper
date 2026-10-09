@@ -59,7 +59,7 @@ export default async function CashFlowPage({
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title="Cash flow"
         description={describePeriod(period, preset)}

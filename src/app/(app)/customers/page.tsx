@@ -76,7 +76,7 @@ export default async function CustomersPage({
   const exportHref = `/api/exports/customers${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Customers"
         description="Who buys from you, and who owes you money."

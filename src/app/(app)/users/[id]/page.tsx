@@ -53,7 +53,7 @@ export default async function UserDetailPage({
   const canEdit = can(actor, 'users', 'edit');
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={user.displayName}
         description={`${user.username} · ${user.role === 'OWNER' ? 'Owner' : 'Staff'}`}

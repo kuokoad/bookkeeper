@@ -72,7 +72,7 @@ export default async function SuppliersPage({
   const exportHref = `/api/exports/suppliers${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Suppliers"
         description="Who you buy from, and what you owe them."

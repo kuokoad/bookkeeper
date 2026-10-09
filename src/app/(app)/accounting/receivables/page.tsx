@@ -89,7 +89,7 @@ export default async function ReceivablesPage({
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <PageHeader
         title="Who owes you"
         description="Customer debts, grouped by how long they have been outstanding."

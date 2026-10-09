@@ -36,7 +36,7 @@ export default async function ProfitAndLossPage({
   const csvHref = `/api/reports/profit-and-loss${buildQuery(carried)}`;
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
       <PageHeader
         title="Profit & Loss"
         description={describePeriod(period, preset)}

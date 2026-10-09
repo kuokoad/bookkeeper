@@ -78,7 +78,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const expired = daysLeft !== null && daysLeft < 0;
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={batch.batchRef}
         description={

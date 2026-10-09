@@ -20,7 +20,7 @@ export default async function CategoriesPage() {
   const canCreate = can(user, 'products', 'create');
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
       <PageHeader
         title="Categories"
         description="Group your products however suits the shop. Nothing here is fixed."

@@ -72,7 +72,7 @@ export default async function AdjustmentDetailPage({
   const totalCredit = lines.reduce((total, line) => total + line.credit, 0);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={adjustment.adjustmentNo}
         description={`${REASON_LABELS[adjustment.reason]} · ${formatDate(adjustment.businessDate)}`}

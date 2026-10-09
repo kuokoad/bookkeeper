@@ -111,7 +111,7 @@ export default async function ReportsPage() {
   const sheet = getBalanceSheet(db, today);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <PageHeader
         title="Reports"
         description="Every figure here is calculated from your actual records, not stored anywhere."
