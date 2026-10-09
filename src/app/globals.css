@@ -661,6 +661,32 @@ body {
 .stitch-dashboard h3 { font-size: 12px; line-height: 16px; }
 .stitch-dashboard [aria-labelledby='trends-heading'] h3 { font-size: 16px; line-height: 24px; }
 .stitch-sidebar .stitch-symbol { font-size: 18px; }
+.stitch-sidebar,
+.stitch-sidebar * {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+.stitch-sidebar::-webkit-scrollbar,
+.stitch-sidebar *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.stitch-sidebar::-webkit-scrollbar-track,
+.stitch-sidebar *::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.stitch-sidebar::-webkit-scrollbar-thumb,
+.stitch-sidebar *::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+@supports selector(::-webkit-scrollbar) {
+  .stitch-sidebar,
+  .stitch-sidebar * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
 .stitch-dashboard a .stitch-symbol { font-size: 16px; }
 .stitch-dashboard .tabular.text-2xl {
   font-size: 22px;
