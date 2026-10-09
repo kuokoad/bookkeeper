@@ -73,7 +73,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </span>
           <div className="min-w-0">
             <p className="text-xl font-bold leading-tight text-white">NunaBooks</p>
-            <p className="whitespace-nowrap text-[11px] font-medium leading-tight text-sidebar-muted">Simple Books. Stronger Business.</p>
+            <p className="whitespace-nowrap text-[9px] font-medium leading-tight text-sidebar-muted">Simple Books. Stronger Business.</p>
           </div>
         </Link>
 
