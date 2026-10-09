@@ -69,7 +69,7 @@ function PeriodPicker({
       aria-label={`${label} reporting period`}
       className="flex flex-wrap items-center gap-1 text-xs"
     >
-      <span className="mr-1 font-medium text-content-muted">{label}</span>
+      <span className="sr-only">{label}</span>
       {(['week', 'month', 'quarter'] as const).map((key) => (
         <Link
           key={key}
@@ -175,25 +175,25 @@ export default async function DashboardPage({
   const actions = [
     {
       label: 'New Sale',
-      icon: 'sales' as IconName,
+      icon: 'add' as IconName,
       href: '/sales/new',
       allowed: can(user, 'sales', 'create'),
     },
     {
       label: 'Record Expense',
-      icon: 'expenses' as IconName,
+      icon: 'receipt' as IconName,
       href: '/expenses#record-expense',
       allowed: can(user, 'expenses', 'create'),
     },
     {
       label: 'New Purchase',
-      icon: 'purchases' as IconName,
+      icon: 'shoppingBag' as IconName,
       href: '/purchases/new',
       allowed: can(user, 'purchases', 'create'),
     },
     {
       label: 'Receive Payment',
-      icon: 'customers' as IconName,
+      icon: 'payment' as IconName,
       href: '/customers?owing=1',
       allowed: can(user, 'customers', 'create'),
     },
@@ -245,7 +245,7 @@ export default async function DashboardPage({
   const nothingToShow = !Object.values(shows).some(Boolean);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="stitch-dashboard mx-auto max-w-[1440px] space-y-4">
       <header className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -267,30 +267,6 @@ export default async function DashboardPage({
             ))}
           </div>
         </div>
-        {(shows.sales || shows.spending) && (
-          <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-3">
-            {shows.sales && (
-              <PeriodPicker
-                label="Sales"
-                param="sales"
-                sales={salesRange}
-                spend={spendRange}
-              />
-            )}
-            {shows.spending && (
-              <PeriodPicker
-                label="Expenses"
-                param="spend"
-                sales={salesRange}
-                spend={spendRange}
-              />
-            )}
-            <p className="w-full text-xs text-content-muted">
-              Independent periods. Exact inclusive dates are shown below; Net
-              Profit stays month to date.
-            </p>
-          </div>
-        )}
       </header>
       {nothingToShow && (
         <Alert tone="info" title="No dashboard summaries available">
@@ -324,6 +300,7 @@ export default async function DashboardPage({
             href={`/sales?period=custom&from=${salesPeriod.from}&to=${salesPeriod.to}`}
             period={dates(salesPeriod)}
           >
+            <PeriodPicker label="Sales" param="sales" sales={salesRange} spend={spendRange} />
             <Figure
               value={money(rangeSales.total)}
               hint={`${rangeSales.count} posted sale${rangeSales.count === 1 ? '' : 's'} · transaction total`}
@@ -337,6 +314,7 @@ export default async function DashboardPage({
             href={reportHref('/expenses', spendPeriod)}
             period={dates(spendPeriod)}
           >
+            <PeriodPicker label="Expenses" param="spend" sales={salesRange} spend={spendRange} />
             <Figure
               value={money(spend)}
               hint="Recorded expense transactions; excludes other ledger adjustments"
@@ -501,7 +479,7 @@ export default async function DashboardPage({
             {stock !== null && (
               <Card
                 title="Inventory valuation"
-                icon="inventory"
+                icon="stock"
                 href="/inventory"
                 period="Current stock · all recorded dates"
               >
@@ -610,7 +588,7 @@ export default async function DashboardPage({
             {shows.money && (
               <Card
                 title="Money accounts"
-                icon="accounts"
+                icon="cashflow"
                 href="/accounts"
                 period="Current ledger balances · all recorded dates"
               >

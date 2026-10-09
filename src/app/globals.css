@@ -1,5 +1,38 @@
 @import 'tailwindcss';
 
+@font-face {
+  font-family: 'Nuna Inter';
+  src: url('/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nuna Material Symbols';
+  src: url('/fonts/MaterialSymbolsOutlined.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+.stitch-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: 'Nuna Material Symbols';
+  font-weight: 400;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+  -webkit-font-smoothing: antialiased;
+}
+
 /*
   Design tokens.
 
@@ -581,5 +614,61 @@ body {
   .text-content-subtle {
     color: #333 !important;
   }
+}
+
+
+/* Stitch's compact financial interface, scoped to authenticated screens. */
+.app-shell {
+  font-family: 'Nuna Inter', ui-sans-serif, system-ui, sans-serif;
+  background: var(--surface);
+  color: var(--text);
+  --card-radius: 0.125rem;
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+}
+.stitch-sidebar {
+  --sidebar: #141d23;
+  --sidebar-raised: rgb(219 228 237 / 15%);
+  --sidebar-text: #ffffff;
+  --sidebar-muted: #bdcac0;
+  --sidebar-subtle: rgb(189 202 192 / 70%);
+  --sidebar-border: rgb(189 202 192 / 20%);
+}
+:root[data-theme='light'] .app-shell {
+  --surface: #f6faff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #ecf5fe;
+  --border: #dbe4ed;
+  --text: #141d23;
+  --text-muted: #5a5f64;
+  --accent: #006947;
+  --accent-text: #ffffff;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) .app-shell {
+    --surface: #f6faff;
+    --surface-raised: #ffffff;
+    --surface-sunken: #ecf5fe;
+    --border: #dbe4ed;
+    --text: #141d23;
+    --text-muted: #5a5f64;
+    --accent: #006947;
+    --accent-text: #ffffff;
+  }
+}
+.stitch-dashboard { font-size: 13px; line-height: 18px; }
+.stitch-dashboard .text-sm { font-size: 13px; line-height: 18px; }
+.stitch-dashboard .text-xs { font-size: 11px; line-height: 14px; }
+.stitch-dashboard h3 { font-size: 12px; line-height: 16px; }
+.stitch-dashboard [aria-labelledby='trends-heading'] h3 { font-size: 16px; line-height: 24px; }
+.stitch-sidebar .stitch-symbol { font-size: 18px; }
+.stitch-dashboard a .stitch-symbol { font-size: 16px; }
+.stitch-dashboard .tabular.text-2xl {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.stitch-dashboard section, .stitch-dashboard li, .stitch-dashboard a {
+  border-radius: 0.125rem;
 }
 

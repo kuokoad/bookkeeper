@@ -35,7 +35,7 @@ export function TopBar({
   } as const;
 
   return (
-    <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface-raised px-4 py-2.5">
+    <header className="no-print sticky top-0 z-30 flex min-h-16 items-center gap-3 border-b border-line bg-surface-raised px-4 py-2.5 lg:px-6">
       <p className="truncate text-sm font-medium text-content lg:hidden">{shopName}</p>
 
       <SearchBox />
@@ -69,7 +69,7 @@ export function TopBar({
             }
           >
             <span className="relative">
-              <Icon name="settings" className="h-5 w-5" />
+              <Icon name="notifications" className="h-5 w-5" />
               {notices.length > 0 && (
                 <span
                   className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white"
@@ -108,6 +108,12 @@ export function TopBar({
             )}
           </div>
         </details>
+        <div className="ml-2 hidden items-center gap-2 border-l border-line pl-3 lg:flex">
+          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-sunken text-[11px] font-semibold text-content">
+            {shopName.trim().slice(0, 2).toUpperCase()}
+          </span>
+          <p className="max-w-40 truncate text-xs font-semibold text-content">{shopName}</p>
+        </div>
       </div>
     </header>
   );

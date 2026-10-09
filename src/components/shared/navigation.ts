@@ -127,6 +127,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Money',
     items: [
       { href: '/accounts', label: 'Accounts', icon: 'accounts', module: 'accounts' },
+      { href: '/reconciliation', label: 'Reconciliation', icon: 'reports', module: 'reconciliation' },
       { href: '/accounting', label: 'Accounting', icon: 'reports', module: 'accounts' },
       { href: '/reports', label: 'Reports', icon: 'reports', module: 'reports' },
     ],

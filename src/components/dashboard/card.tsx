@@ -42,8 +42,8 @@ export function DashboardCard({
             title
           )}
         </h3>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
-          <Icon name={icon} className="h-4 w-4" />
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-accent">
+          <Icon name={icon} className="h-5 w-5" />
         </span>
       </div>
       {period && <p className="mb-2 text-xs text-content-muted">{period}</p>}

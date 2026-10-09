@@ -14,6 +14,7 @@ import { getNotices } from '@/services/notifications.service';
 import { PageTransition } from '@/components/shared/page-transition';
 import { logoutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 
 /**
  * The authenticated shell.
@@ -60,15 +61,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="app-shell flex min-h-dvh flex-col lg:flex-row">
-      <aside className="no-print hidden w-64 shrink-0 border-r border-sidebar-line bg-sidebar lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
-        <div className="border-b border-sidebar-line px-4 py-4">
-          <p className="truncate px-2 font-semibold text-sidebar-text">
-            {settings?.businessName ?? 'NunaBooks'}
-          </p>
-          {settings?.tagline && (
-            <p className="mt-0.5 px-2 text-xs text-sidebar-subtle">{settings.tagline}</p>
-          )}
-
+      <aside className="stitch-sidebar no-print hidden w-60 shrink-0 border-r border-sidebar-line bg-sidebar lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
+        <div className="flex items-center gap-2 px-4 py-4">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-accent-text">
+            <Icon name="accounts" className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-base font-bold leading-tight text-sidebar-text">NunaBooks</p>
+            <p className="text-[11px] leading-tight text-sidebar-muted">Bookkeeping for retail shops</p>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -95,7 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar shopName={settings?.businessName ?? 'NunaBooks'} notices={notices} />
 
-        <main className="app-main flex-1 px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">
+        <main className="app-main flex-1 px-4 py-6 pb-24 lg:px-6 lg:py-6 lg:pb-8">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>

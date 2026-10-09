@@ -14,7 +14,7 @@ function isActive(pathname: string, href: string): boolean {
 function ItemLabel({ item }: { item: NavItem }) {
   return (
     <>
-      <Icon name={item.icon} className="h-5 w-5 shrink-0" />
+      <Icon name={item.href === '/reconciliation' ? 'books' : item.icon === 'accounts' ? 'bank' : item.icon} className="h-[18px] w-[18px] shrink-0" />
       <span className="truncate">{item.label}</span>
       {item.comingSoon && (
         <span className="ml-auto rounded bg-sidebar-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-subtle">
@@ -37,17 +37,21 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
 
   return (
     <nav aria-label="Main" className="space-y-1 px-3 py-4">
-      {sections.map((section) => (
-        // `<details>` opens and closes with no JavaScript. `open` is decided on
-        // the server from the current path, so the section you are in is
-        // already expanded when the page arrives — nothing to click first, and
-        // nothing to flicker on load.
+      {sections.map((section) => section.heading === 'Help' ? (
+        <Link key={section.heading} href="/help" aria-current={isActive(pathname, '/help') ? 'page' : undefined}
+          className="flex min-h-9 items-center gap-2 rounded px-3 py-2 text-[13px] leading-[18px] text-sidebar-muted hover:bg-sidebar-raised hover:text-sidebar-text">
+          <Icon name="help" className="h-[18px] w-[18px]" />
+          <span>Support</span>
+        </Link>
+      ) : (
+        // Groups start expanded to match Stitch. Native details preserve
+        // keyboard access and let staff compact the menu without JavaScript.
         <details
           key={section.heading}
-          open={section.defaultOpen || section.items.some((item) => isActive(pathname, item.href))}
+          open
           className="group"
         >
-          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-subtle transition-colors hover:text-sidebar-muted">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-sidebar-subtle transition-colors hover:text-sidebar-muted">
             <span className="flex-1">{section.heading}</span>
             <span
               aria-hidden="true"
@@ -74,7 +78,7 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
                       href={item.href}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                        'flex min-h-9 items-center gap-2 rounded px-3 py-2 text-[13px] leading-[18px] transition-colors',
                         active
                           ? 'bg-sidebar-raised font-medium text-sidebar-text'
                           : 'text-sidebar-muted hover:bg-sidebar-raised hover:text-sidebar-text',
