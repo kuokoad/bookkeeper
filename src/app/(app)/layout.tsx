@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 
@@ -67,8 +68,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           aria-label="NunaBooks dashboard"
           className="flex items-center gap-2 px-4 py-4 focus-visible:outline-2 focus-visible:outline-sidebar-text"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#008b68] text-white">
-            <Icon name="accounts" className="h-6 w-6" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#fffdf7] p-1">
+            <Image src="/brand/nunabooks-mark.svg" alt="" width={314} height={374} className="h-8 w-auto" unoptimized />
           </span>
           <div className="min-w-0">
             <p className="text-xl font-bold leading-tight text-white">NunaBooks</p>
