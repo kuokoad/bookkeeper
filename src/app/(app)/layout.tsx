@@ -66,7 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link
           href="/dashboard"
           aria-label="NunaBooks dashboard"
-          className="mx-3 my-4 block rounded-lg bg-[#fffdf7] p-2 focus-visible:outline-2 focus-visible:outline-sidebar-text"
+          className="mx-4 my-4 block w-[180px] rounded-lg bg-[#fffdf7] p-1.5 focus-visible:outline-2 focus-visible:outline-sidebar-text"
         >
           <Image
             src="/brand/nunabooks-logo.svg"
