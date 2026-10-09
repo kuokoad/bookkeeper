@@ -68,7 +68,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           aria-label="NunaBooks dashboard"
           className="flex items-center gap-2 px-4 py-4 focus-visible:outline-2 focus-visible:outline-sidebar-text"
         >
-          <span className="flex h-[38.75px] w-[38.75px] shrink-0 items-center justify-center rounded bg-[#fffdf7] p-[7px]">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#fffdf7] p-[5.625px]">
             <Image src="/brand/nunabooks-mark.svg" alt="" width={314} height={374} className="h-full w-auto" unoptimized />
           </span>
           <div className="min-w-0">
