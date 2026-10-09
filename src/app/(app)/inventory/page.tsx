@@ -319,7 +319,7 @@ export default async function InventoryPage({
           )}
         </h2>
 
-        <FilterBar
+        <FilterBar compact
           basePath="/inventory"
           dateRange={{ preset, from: range.from, to: range.to }}
           active={active}

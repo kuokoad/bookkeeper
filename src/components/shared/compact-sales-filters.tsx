@@ -11,8 +11,8 @@ import type { FilterBarProps } from './filter-bar';
 const CONTROL = 'h-10 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content focus-visible:outline-2 focus-visible:outline-accent';
 const FLASH_KEYS = ['created', 'updated', 'voided', 'deleted', 'restored', 'error'];
 
-/** Sales presentation only: the URL and existing server parser remain authoritative. */
-export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRange, active = [], resetKeys = [] }: FilterBarProps) {
+/** Compact presentation: each page's URL parser and services remain authoritative. */
+export function CompactFilters({ basePath, compactSales = false, fields = [], quick = [], dateRange, active = [], resetKeys = [], children }: FilterBarProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -29,7 +29,7 @@ export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRan
   const activeKeys = new Set(active.flatMap(chip => [chip.key, ...(chip.alsoClears ?? [])]));
   const count = advancedKeys.filter(key => key === 'min' || key === 'max'
     ? parseAmount(params.get(key) ?? undefined) !== undefined
-    : activeKeys.has(key) && !(key === 'status' && params.get('status') === 'VOIDED' && params.get('statusSource') === 'quick')).length;
+    : activeKeys.has(key) && !(compactSales && key === 'status' && params.get('status') === 'VOIDED' && params.get('statusSource') === 'quick')).length;
   const presetKey = dateRange?.presetKey ?? 'period';
   const fromKey = dateRange?.fromKey ?? 'from';
   const toKey = dateRange?.toKey ?? 'to';
@@ -52,7 +52,7 @@ export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRan
     event.preventDefault();
     const changes: Record<string, string | null> = {};
     for (const key of advancedKeys) if (key in values) changes[key] = value(key);
-    if ('status' in changes) changes.statusSource = null;
+    if (compactSales && 'status' in changes) changes.statusSource = null;
     apply(changes);
   }
   function clear() {
@@ -64,8 +64,8 @@ export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRan
   const allSales = !params.has('paid') && !params.has('method') && !quickVoided;
 
   return (
-    <section aria-label="Sales filters" aria-busy={pending} className="no-print mb-4 space-y-3">
-      <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+    <section aria-label={compactSales ? 'Sales filters' : 'Filters'} aria-busy={pending} className="no-print mb-4 space-y-3">
+      <div className={search ? 'grid grid-cols-2 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]' : 'flex flex-wrap items-end gap-2'}>
         {search && search.kind === 'search' && (
           <form className="col-span-2 flex min-w-0 items-end gap-2 sm:col-span-1" onSubmit={event => { event.preventDefault(); apply({ [search.key]: value(search.key) }); }}>
             <div className="min-w-0 flex-1">
@@ -86,9 +86,10 @@ export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRan
             {DATE_PRESETS.map(preset => <option key={preset} value={preset}>{DATE_PRESET_LABELS[preset]}</option>)}
           </select>
         </div>}
-        <Button type="button" variant="secondary" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
+        {advanced.length > 0 && <Button type="button" variant="secondary" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
           Filters{count > 0 ? ` (${count})` : ''}
-        </Button>
+        </Button>}
+        {children}
       </div>
       {custom && dateRange && <form className="flex flex-wrap items-end gap-2" onSubmit={event => {
         event.preventDefault(); apply({ [presetKey]: 'custom', [fromKey]: values[fromKey] ?? (dateRange.from.startsWith('0000') ? '' : dateRange.from), [toKey]: values[toKey] ?? dateRange.to });
@@ -99,18 +100,20 @@ export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRan
         </div>)}
         <Button type="submit" variant="secondary" disabled={pending}>Apply dates</Button>
       </form>}
-      <div className="flex flex-wrap gap-1.5" aria-label="Sales types">
-        <Button type="button" size="sm" variant={allSales ? 'primary' : 'secondary'} aria-pressed={allSales}
+      {(compactSales || quick.length > 0) && <div className="flex flex-wrap gap-1.5" aria-label={compactSales ? 'Sales types' : 'Quick filters'}>
+        {compactSales && <Button type="button" size="sm" variant={allSales ? 'primary' : 'secondary'} aria-pressed={allSales}
           title="Clear quick filters; keep advanced filters and dates" onClick={() => apply({ paid: null, method: null, ...(quickVoided ? { status: null, statusSource: null } : {}) })}>All Sales</Button>
+        }
         {quick.map(filter => {
-          const on = filter.label === "Today's sales" ? dateRange?.preset === 'today' : Object.entries(filter.match).every(([key, val]) => params.get(key) === val);
+          const on = Object.entries(filter.match).every(([key, val]) =>
+            key === presetKey && dateRange ? dateRange.preset === val : params.get(key) === val);
           return <Button key={filter.label} type="button" size="sm" aria-pressed={on} variant={on ? 'primary' : 'secondary'} onClick={() => {
             const changes = on ? Object.fromEntries(Object.keys(filter.params).map(key => [key, null])) : { ...filter.params };
-            if ('status' in filter.params) changes.statusSource = on ? null : 'quick';
+            if (compactSales && 'status' in filter.params) changes.statusSource = on ? null : 'quick';
             apply(changes);
           }}>{filter.label}</Button>;
         })}
-      </div>
+      </div>}
       <div id={panelId} hidden={!open} className="rounded-lg border border-line bg-surface-raised p-3">
         <form onSubmit={submitAdvanced}>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -122,10 +125,14 @@ export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRan
                   {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>];
-              if (field.kind === 'amount-range') return [{ key: field.minKey, label: 'Minimum total' }, { key: field.maxKey, label: 'Maximum total' }].map(item => <div key={item.key}>
+              if (field.kind === 'amount-range') return [{ key: field.minKey, label: `Minimum ${field.label.toLowerCase()}` }, { key: field.maxKey, label: `Maximum ${field.label.toLowerCase()}` }].map(item => <div key={item.key}>
                 <label htmlFor={`${panelId}-${item.key}`} className="mb-1 block text-xs text-content-muted">{item.label}{field.currency ? ` (${field.currency})` : ''}</label>
                 <TextInput id={`${panelId}-${item.key}`} className="h-10 w-full tabular" inputMode="decimal" value={value(item.key)} onChange={event => setValue(item.key, event.target.value)} />
               </div>);
+              if (field.kind === 'date') return [<div key={field.key}>
+                <label htmlFor={`${panelId}-${field.key}`} className="mb-1 block text-xs text-content-muted">{field.label}</label>
+                <DateField id={`${panelId}-${field.key}`} label={field.label} value={value(field.key)} max={field.max} onChange={next => setValue(field.key, next)} />
+              </div>];
               return [];
             })}
           </div>
@@ -136,7 +143,7 @@ export function CompactSalesFilters({ basePath, fields = [], quick = [], dateRan
         {active.map(chip => <Button key={chip.key} type="button" variant="secondary" size="sm" onClick={() => {
           const changes: Record<string, string | null> = { [chip.key]: null };
           for (const key of chip.alsoClears ?? []) changes[key] = null;
-          if (chip.key === 'status') changes.statusSource = null;
+          if (compactSales && chip.key === 'status') changes.statusSource = null;
           apply(changes);
         }} aria-label={`Remove ${chip.label}: ${chip.value}`}>{chip.label}: {chip.value} <span aria-hidden="true">×</span></Button>)}
         {active.length > 0 && <Button type="button" size="sm" variant="ghost" onClick={clear}>Clear Filters</Button>}

@@ -16,7 +16,7 @@ import { DateField } from '@/components/ui/date-field';
 import { TextInput } from '@/components/ui/field';
 import { cn } from '@/lib/cn';
 import { DATE_PRESET_LABELS, type ActiveFilter, type DatePreset } from '@/lib/filters';
-import { CompactSalesFilters } from './compact-sales-filters';
+import { CompactFilters } from './compact-sales-filters';
 
 /**
  * One filter bar for the whole shop.
@@ -90,6 +90,7 @@ export interface DateRangeConfig {
 }
 
 export interface FilterBarProps {
+  compact?: boolean;
   compactSales?: boolean;
   basePath: string;
   fields?: FilterField[];
@@ -151,7 +152,7 @@ const CONTROL_CLASS =
   'focus:outline-none focus-visible:outline-2 focus-visible:outline-accent';
 
 export function FilterBar(props: FilterBarProps) {
-  return props.compactSales ? <CompactSalesFilters {...props} /> : <LegacyFilterBar {...props} />;
+  return props.compact || props.compactSales ? <CompactFilters {...props} /> : <LegacyFilterBar {...props} />;
 }
 
 function LegacyFilterBar({

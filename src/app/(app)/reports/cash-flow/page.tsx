@@ -66,7 +66,7 @@ export default async function CashFlowPage({
         actions={<ReportActions csvHref={`/api/reports/cash-flow${buildQuery(carried)}`} />}
       />
 
-      <FilterBar
+      <FilterBar compact
         basePath="/reports/cash-flow"
         dateRange={{ preset, from: period.from, to: period.to }}
         active={active}

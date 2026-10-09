@@ -43,7 +43,7 @@ export default async function ProfitAndLossPage({
         actions={<ReportActions csvHref={csvHref} />}
       />
 
-      <FilterBar basePath="/reports/profit-and-loss" dateRange={{ preset, from: period.from, to: period.to }} />
+      <FilterBar compact basePath="/reports/profit-and-loss" dateRange={{ preset, from: period.from, to: period.to }} />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat icon="income" label="Net sales" value={money(pl.netSales)} />

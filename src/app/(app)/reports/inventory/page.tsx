@@ -124,7 +124,7 @@ export default async function InventoryReportPage({
         actions={<ReportActions csvHref={`/api/reports/inventory${buildQuery(carried)}`} />}
       />
 
-      <FilterBar
+      <FilterBar compact
         basePath="/reports/inventory"
         dateRange={{ preset, from: period.from, to: period.to }}
         active={active}

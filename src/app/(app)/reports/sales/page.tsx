@@ -149,7 +149,7 @@ export default async function SalesReportPage({
         actions={<ReportActions csvHref={`/api/reports/sales${buildQuery(carried)}`} />}
       />
 
-      <FilterBar
+      <FilterBar compact
         basePath="/reports/sales"
         dateRange={{ preset, from: period.from, to: period.to }}
         active={active}

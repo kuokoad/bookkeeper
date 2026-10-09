@@ -181,7 +181,7 @@ export default async function ExpensesPage({
         <Stat label="Average expense" value={money(summary.average, { currencyCode: currency })} />
       </div>
 
-      <FilterBar
+      <FilterBar compact
         basePath="/expenses"
         dateRange={{ preset, from: range.from, to: range.to }}
         active={active}
@@ -240,7 +240,7 @@ export default async function ExpensesPage({
         ]}
       />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {rows.length === 0 ? (
             <EmptyState

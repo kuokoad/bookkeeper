@@ -52,7 +52,7 @@ export default async function TaxReturnPage({
         }
       />
 
-      <FilterBar basePath="/reports/tax" dateRange={{ preset, from: period.from, to: period.to }} />
+      <FilterBar compact basePath="/reports/tax" dateRange={{ preset, from: period.from, to: period.to }} />
 
       {!profile.enabled && (
         <Alert tone="info" title="Tax is switched off" className="mb-4">

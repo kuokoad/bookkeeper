@@ -134,3 +134,49 @@ describe('compact Sales filters', () => {
     expect(parseSalesFilters({}, '2026-10-09').preset).toBe('month');
   });
 });
+
+describe('compact filters across other modules', () => {
+  it.each([
+    ['/purchases', 'Credit purchases', 'paid', 'outstanding'],
+    ['/purchases', 'Fully paid', 'paid', 'paid'],
+    ['/purchases', 'Partly paid', 'paid', 'partial'],
+    ['/expenses', "Today's expenses", 'period', 'today'],
+    ['/inventory', 'Sales', 'movement', 'SALE'],
+    ['/inventory', 'Purchases', 'movement', 'PURCHASE'],
+    ['/inventory', 'Customer returns', 'movement', 'SALE_RETURN'],
+    ['/inventory', 'Adjustments out', 'movement', 'ADJUSTMENT_OUT'],
+    ['/reports/inventory', 'Low stock', 'stock', 'low'],
+    ['/reports/inventory', 'Out of stock', 'stock', 'out'],
+  ])('preserves %s quick-filter meaning for %s', (basePath, label, key, val) => {
+    navigation.params = new URLSearchParams('category=1&sort=amount&page=3');
+    render(<FilterBar compact basePath={basePath} dateRange={{ preset: 'month', from: '2026-10-01', to: '2026-10-09' }}
+      quick={[{ label, params: { [key]: val }, match: { [key]: val } }]} />);
+    expect(screen.queryByRole('button', { name: 'All Sales' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(navigation.pushed.at(-1)?.startsWith(basePath)).toBe(true);
+    expect(applied().get(key)).toBe(val);
+    expect(applied().get('category')).toBe('1');
+    expect(applied().get('sort')).toBe('amount');
+    expect(applied().has('page')).toBe(false);
+    expect(applied().has('statusSource')).toBe(false);
+  });
+  it('shows a date-only report toolbar without a redundant Filters button or search', () => {
+    render(<FilterBar compact basePath="/reports/profit-and-loss" dateRange={{ preset: 'month', from: '2026-10-01', to: '2026-10-09' }} />);
+    expect(screen.getByLabelText('Date range')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Filters/ })).toBeNull();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Date range'), { target: { value: 'last-month' } });
+    expect(navigation.pushed.at(-1)).toBe('/reports/profit-and-loss?period=last-month');
+  });
+  it('counts and retains selected report filters when collapsed', () => {
+    navigation.params = new URLSearchParams('supplier=1&category=1');
+    render(<FilterBar compact basePath="/reports/purchases" active={[
+      { key: 'supplier', label: 'Supplier', value: 'One' }, { key: 'category', label: 'Category', value: 'One' },
+    ]} fields={['supplier', 'category'].map(key => ({ kind: 'select', key, label: key, allLabel: 'All', options: [{ value: '1', label: 'One' }] }))} />);
+    const trigger = screen.getByRole('button', { name: 'Filters (2)' });
+    fireEvent.click(trigger); fireEvent.click(trigger); fireEvent.click(trigger);
+    expect((screen.getByLabelText('supplier') as HTMLSelectElement).value).toBe('1');
+    expect((screen.getByLabelText('category') as HTMLSelectElement).value).toBe('1');
+    expect(navigation.pushed).toHaveLength(0);
+  });
+});
