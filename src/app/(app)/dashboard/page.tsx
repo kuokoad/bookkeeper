@@ -67,7 +67,7 @@ function PeriodPicker({
   return (
     <nav
       aria-label={`${label} reporting period`}
-      className="flex flex-wrap items-center gap-1 text-xs"
+      className="mb-3 flex flex-wrap items-center gap-1 text-xs"
     >
       <span className="sr-only">{label}</span>
       {(['week', 'month', 'quarter'] as const).map((key) => (
