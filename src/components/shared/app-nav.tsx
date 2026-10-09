@@ -36,7 +36,7 @@ export function Sidebar({ sections }: { sections: NavSection[] }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Main" className="space-y-1 px-3 py-4">
+    <nav aria-label="Main" className="space-y-1 py-4 pr-1">
       {sections.map((section) => section.heading === 'Help' ? (
         <Link key={section.heading} href="/help" aria-current={isActive(pathname, '/help') ? 'page' : undefined}
           className="flex min-h-9 items-center gap-2 rounded px-3 py-2 text-[13px] leading-[18px] text-sidebar-muted hover:bg-sidebar-raised hover:text-sidebar-text">
