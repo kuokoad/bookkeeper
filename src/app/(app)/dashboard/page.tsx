@@ -335,10 +335,10 @@ export default async function DashboardPage({
         )}
       </section>
       {!nothingToShow && (
-        <section aria-labelledby="attention-heading" className="rounded-xl border border-line bg-surface-raised p-4">
+        <section aria-labelledby="attention-heading" className="needs-attention rounded-xl border border-line bg-surface-raised p-5">
           <h2
             id="attention-heading"
-            className="mb-2 text-base font-semibold text-content"
+            className="mb-3 text-xl font-semibold leading-7 text-content"
           >
             Needs Attention
           </h2>
@@ -349,11 +349,11 @@ export default async function DashboardPage({
                 account.
               </p>
             ) : (
-              <ul className="grid gap-2 lg:grid-cols-2">
+              <ul className="grid gap-2.5 md:grid-cols-2">
                 {attention.map((item) => (
-                  <li key={item.title} className="min-w-0 rounded-lg border border-line bg-surface-sunken p-3">
+                  <li key={item.title} className="min-w-0 rounded-lg border border-line bg-surface-sunken p-4">
                     <Detail href={item.href}>{item.title}</Detail>
-                    <p className="mt-1 text-xs text-content-muted">
+                    <p className="attention-note mt-1 text-content-muted">
                       {item.note}
                     </p>
                   </li>

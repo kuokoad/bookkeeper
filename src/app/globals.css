@@ -659,6 +659,15 @@ body {
 .stitch-dashboard .text-sm { font-size: 13px; line-height: 18px; }
 .stitch-dashboard .text-xs { font-size: 11px; line-height: 14px; }
 .stitch-dashboard h3 { font-size: 12px; line-height: 16px; }
+.stitch-dashboard .needs-attention a {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.stitch-dashboard .needs-attention .attention-note {
+  font-size: 14px;
+  line-height: 20px;
+}
 .stitch-dashboard [aria-labelledby='trends-heading'] h3 { font-size: 16px; line-height: 24px; }
 .stitch-sidebar .stitch-symbol { font-size: 18px; }
 .stitch-sidebar,
