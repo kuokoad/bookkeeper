@@ -749,3 +749,12 @@ textarea:focus-visible {
   border-radius: 0.125rem;
 }
 
+/* Square corners throughout the application, including portal menus. */
+*,
+*::before,
+*::after,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-thumb {
+  border-radius: 0 !important;
+}
+
