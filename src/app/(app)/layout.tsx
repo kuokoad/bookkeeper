@@ -77,14 +77,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
 
         <div className="border-t border-sidebar-line px-4 py-4">
-          <p className="truncate text-sm font-medium text-sidebar-text">{user.displayName}</p>
-          <p className="mb-2 text-xs capitalize text-sidebar-subtle">{user.role.toLowerCase()}</p>
-          <Link
-            href="/account/password"
-            className="mb-3 block text-xs font-medium text-sidebar-muted hover:text-sidebar-text hover:underline"
-          >
-            Change my password
-          </Link>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-sidebar-text">{user.displayName}</p>
+              <p className="text-xs capitalize text-sidebar-subtle">{user.role.toLowerCase()}</p>
+            </div>
+            <Link
+              href="/account/password"
+              aria-label="Change my password"
+              title="Change password"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded text-sidebar-muted hover:bg-sidebar-raised hover:text-sidebar-text focus-visible:outline-2 focus-visible:outline-sidebar-text"
+            >
+              <Icon name="password" className="h-[18px] w-[18px]" />
+            </Link>
+          </div>
           <form action={logoutAction}>
             <Button type="submit" variant="secondary" size="sm" fullWidth>
               Sign out

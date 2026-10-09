@@ -37,7 +37,8 @@ export type IconName =
   | 'payment'
   | 'bank'
   | 'stock'
-  | 'notifications';
+  | 'notifications'
+  | 'password';
 
 const SYMBOLS: Record<IconName, string> = {
   dashboard: 'space_dashboard', sales: 'shopping_cart', purchases: 'receipt_long',
@@ -49,6 +50,7 @@ const SYMBOLS: Record<IconName, string> = {
   discount: 'sell', warning: 'warning', check: 'check_circle', books: 'balance',
   add: 'add', receipt: 'receipt', shoppingBag: 'shopping_bag', payment: 'credit_score',
   bank: 'account_balance', stock: 'inventory_2', notifications: 'notifications',
+  password: 'lock_reset',
 };
 
 export interface IconProps {

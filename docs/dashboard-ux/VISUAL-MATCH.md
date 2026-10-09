@@ -3,7 +3,7 @@
 The user's follow-up explicitly approved exact Inter and Material Symbols
 matching, replacing the earlier restriction on introducing those assets.
 They are bundled locally with their licenses; the browser does not contact
-Google Fonts, GitHub or a CDN. Inter is WOFF2; the 27-glyph Material Symbols
+Google Fonts, GitHub or a CDN. Inter is WOFF2; the 28-glyph Material Symbols
 subset is TrueType, identified correctly in CSS and checked by asset tests.
 
 The authenticated shell now uses the reference's 240px charcoal sidebar,
