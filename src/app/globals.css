@@ -634,6 +634,10 @@ body {
   --sidebar-border: rgb(189 202 192 / 20%);
 }
 :root[data-theme='light'] .app-shell {
+  --attention-negative-bg: rgb(255 218 214 / 20%);
+  --attention-negative-border: #ffdad6;
+  --attention-negative-text: #ba1a1a;
+  --attention-icon: #4b6157;
   --surface: #f6faff;
   --surface-raised: #ffffff;
   --surface-sunken: #ecf5fe;
@@ -645,6 +649,10 @@ body {
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) .app-shell {
+    --attention-negative-bg: rgb(255 218 214 / 20%);
+    --attention-negative-border: #ffdad6;
+    --attention-negative-text: #ba1a1a;
+    --attention-icon: #4b6157;
     --surface: #f6faff;
     --surface-raised: #ffffff;
     --surface-sunken: #ecf5fe;
@@ -667,6 +675,17 @@ body {
 .stitch-dashboard .needs-attention .attention-note {
   font-size: 14px;
   line-height: 20px;
+}
+.stitch-dashboard .needs-attention .attention-heading-icon {
+  color: var(--attention-icon, var(--text-muted));
+  font-size: 18px;
+}
+.stitch-dashboard .needs-attention .negative-account-alert {
+  background: var(--attention-negative-bg, var(--danger-soft));
+  border-color: var(--attention-negative-border, var(--danger));
+}
+.stitch-dashboard .needs-attention .negative-account-alert a {
+  color: var(--attention-negative-text, var(--danger));
 }
 .stitch-dashboard [aria-labelledby='trends-heading'] h3 { font-size: 16px; line-height: 24px; }
 .stitch-sidebar .stitch-symbol { font-size: 18px; }

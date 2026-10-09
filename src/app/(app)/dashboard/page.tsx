@@ -198,7 +198,7 @@ export default async function DashboardPage({
       allowed: can(user, 'customers', 'create'),
     },
   ].filter((action) => action.allowed);
-  const attention = [
+  const attention: { title: string; note: string; href: string; negativeBalance?: boolean }[] = [
     ...(aged !== null && aged.overdue > 0
       ? [
         {
@@ -209,6 +209,7 @@ export default async function DashboardPage({
       ]
       : []),
     ...negativeAccounts.map((account) => ({
+      negativeBalance: true,
       title: `${account.name}: ${money(account.balance)}`,
       note: 'Negative ledger balance. This may be an overdraft; it is not a confirmed reconciliation error.',
       href: `/accounts/${account.id}`,
@@ -338,8 +339,9 @@ export default async function DashboardPage({
         <section aria-labelledby="attention-heading" className="needs-attention rounded-xl border border-line bg-surface-raised p-5">
           <h2
             id="attention-heading"
-            className="mb-3 text-xl font-semibold leading-7 text-content"
+            className="mb-3 flex items-center gap-2 text-xl font-semibold leading-7 text-content"
           >
+            <Icon name="warning" className="attention-heading-icon h-[18px] w-[18px]" />
             Needs Attention
           </h2>
           <div className="min-w-0">
@@ -351,7 +353,7 @@ export default async function DashboardPage({
             ) : (
               <ul className="grid gap-2.5 md:grid-cols-2">
                 {attention.map((item) => (
-                  <li key={item.title} className="min-w-0 rounded-lg border border-line bg-surface-sunken p-4">
+                  <li key={item.title} className={`min-w-0 rounded-lg border border-line bg-surface-sunken p-4 ${item.negativeBalance ? 'negative-account-alert' : ''}`}>
                     <Detail href={item.href}>{item.title}</Detail>
                     <p className="attention-note mt-1 text-content-muted">
                       {item.note}
