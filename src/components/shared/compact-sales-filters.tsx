@@ -8,7 +8,7 @@ import { DateField } from '@/components/ui/date-field';
 import { DATE_PRESETS, DATE_PRESET_LABELS, parseAmount, type DatePreset } from '@/lib/filters';
 import type { FilterBarProps } from './filter-bar';
 
-const CONTROL = 'h-10 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content focus-visible:outline-2 focus-visible:outline-accent';
+const CONTROL = 'h-10 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content focus:outline-none focus-visible:border-accent';
 const FLASH_KEYS = ['created', 'updated', 'voided', 'deleted', 'restored', 'error'];
 
 /** Compact presentation: each page's URL parser and services remain authoritative. */

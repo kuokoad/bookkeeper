@@ -149,7 +149,7 @@ function focusableWithin(container: HTMLElement | null): HTMLElement[] {
 
 const CONTROL_CLASS =
   'h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content ' +
-  'focus:outline-none focus-visible:outline-2 focus-visible:outline-accent';
+  'focus:outline-none focus-visible:border-accent';
 
 export function FilterBar(props: FilterBarProps) {
   return props.compact || props.compactSales ? <CompactFilters {...props} /> : <LegacyFilterBar {...props} />;

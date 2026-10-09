@@ -51,7 +51,7 @@ export function TextInput({ className, invalid, ...props }: TextInputProps) {
       className={cn(
         'h-11 w-full rounded-lg border bg-surface-raised px-3 text-content',
         'placeholder:text-content-subtle',
-        'focus:outline-none focus-visible:outline-2 focus-visible:outline-accent',
+        'focus:outline-none focus-visible:border-accent',
         'disabled:cursor-not-allowed disabled:opacity-60',
         invalid ? 'border-danger' : 'border-line-strong',
         className,

@@ -384,10 +384,9 @@ export function DateField({
       <div
         ref={fieldRef}
         className={cn(
-          'flex h-10 items-center rounded-lg border bg-surface-raised px-2',
+          'date-input-frame flex h-10 items-center rounded-lg border bg-surface-raised px-2',
           invalid ? 'border-danger' : 'border-line',
           disabled && 'cursor-not-allowed opacity-60',
-          'focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft',
         )}
       >
         <div className="flex flex-1 items-center gap-0.5">

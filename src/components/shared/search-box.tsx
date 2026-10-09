@@ -172,7 +172,7 @@ export function SearchBox() {
           aria-controls={listId}
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
           placeholder="Search a product, customer or receipt"
-          className="h-9 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm text-content placeholder:text-content-subtle focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+          className="h-9 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm text-content placeholder:text-content-subtle focus:outline-none focus-visible:border-accent"
         />
 
         {showing && fresh !== null && (

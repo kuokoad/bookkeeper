@@ -376,10 +376,23 @@ body {
 }
 
 /* Visible keyboard focus. Staff use this on a till with a keyboard. */
-:focus-visible {
+:focus-visible:not(input):not(select):not(textarea),
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 0.25rem;
+}
+
+input:not([type='checkbox']):not([type='radio']):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.date-input-frame:has(input:focus-visible) {
+  border-color: var(--accent);
 }
 
 /* ---------------------------------------------------------------------------
