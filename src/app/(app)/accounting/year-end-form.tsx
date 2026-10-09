@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -90,7 +92,7 @@ export function YearEndForm({ years }: { years: YearOption[] }) {
             <label htmlFor="startYear" className="mb-1 block text-xs text-content-muted">
               Year to close
             </label>
-            <select
+            <Select
               id="startYear"
               name="startYear"
               value={String(chosen)}
@@ -102,7 +104,7 @@ export function YearEndForm({ years }: { years: YearOption[] }) {
                   {year.label} (ends {year.end})
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <SubmitButton label="Close this year" />
         </form>

@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -60,7 +62,7 @@ export function NewAccountForm() {
         </Field>
 
         <Field label="Type" htmlFor="kind" required>
-          <select
+          <Select
             id="kind"
             name="kind"
             value={kind}
@@ -71,7 +73,7 @@ export function NewAccountForm() {
             <option value="MOBILE_MONEY">Mobile money</option>
             <option value="BANK">Bank</option>
             <option value="OTHER">Other</option>
-          </select>
+          </Select>
         </Field>
 
         <Field

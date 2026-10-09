@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import Link from 'next/link';
 import { useActionState, useMemo, useState } from 'react';
 
@@ -229,7 +231,7 @@ export function PurchaseEntry({
             <label htmlFor="supplier" className="mb-1 block text-sm font-medium text-content">
               Supplier <span className="text-danger">*</span>
             </label>
-            <select
+            <Select
               id="supplier"
               value={supplierId}
               onChange={(event) => setSupplierId(event.target.value)}
@@ -242,7 +244,7 @@ export function PurchaseEntry({
                   {supplier.balanceMinor > 0 ? ` — owed ${fmt(supplier.balanceMinor)}` : ''}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div>
@@ -295,7 +297,7 @@ export function PurchaseEntry({
                   >
                     Product
                   </label>
-                  <select
+                  <Select
                     id={`p-${row.key}`}
                     value={row.productId}
                     onChange={(event) => {
@@ -314,7 +316,7 @@ export function PurchaseEntry({
                         {item.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
 
                 <div className="sm:col-span-2">
@@ -484,7 +486,7 @@ export function PurchaseEntry({
               <label htmlFor="payAccount" className="mb-1 block text-xs text-content-muted">
                 Paid from
               </label>
-              <select
+              <Select
                 id="payAccount"
                 value={payAccountId}
                 onChange={(event) => setPayAccountId(event.target.value)}
@@ -495,7 +497,7 @@ export function PurchaseEntry({
                     {account.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div>
               <label htmlFor="payAmount" className="mb-1 block text-xs text-content-muted">

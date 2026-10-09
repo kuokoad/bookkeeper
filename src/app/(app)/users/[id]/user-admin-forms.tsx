@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -114,7 +116,7 @@ export function UserAdminForms({
                 })}
           >
             {mayChangeRole ? (
-              <select
+              <Select
                 id="role"
                 name="role"
                 value={selectedRole}
@@ -123,7 +125,7 @@ export function UserAdminForms({
               >
                 <option value="STAFF">Staff</option>
                 <option value="OWNER">Owner</option>
-              </select>
+              </Select>
             ) : (
               // Posted unchanged so "Save details" still saves the name. The
               // server compares it to what is stored and only asks who you are

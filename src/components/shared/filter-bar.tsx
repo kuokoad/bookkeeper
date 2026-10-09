@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   useEffect,
@@ -446,7 +448,7 @@ function LegacyFilterBar({
                 <label htmlFor={id} className="mb-1 block text-xs text-content-muted">
                   {field.label}
                 </label>
-                <select
+                <Select
                   id={id}
                   value={searchParams.get(field.key) ?? ''}
                   onChange={(event) => apply({ [field.key]: event.target.value || null })}
@@ -458,7 +460,7 @@ function LegacyFilterBar({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             );
           }

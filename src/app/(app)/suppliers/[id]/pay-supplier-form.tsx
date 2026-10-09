@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -70,7 +72,7 @@ export function PaySupplierForm({
         </Field>
 
         <Field label="Paid from" htmlFor="paymentAccountId" required>
-          <select
+          <Select
             id="paymentAccountId"
             name="paymentAccountId"
             defaultValue={String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '')}
@@ -81,7 +83,7 @@ export function PaySupplierForm({
                 {account.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
 
         <Field

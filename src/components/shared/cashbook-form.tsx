@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -91,7 +93,7 @@ export function CashbookForm({
             hint={categories.length === 0 ? emptyCategoriesHint : undefined}
             error={state.fieldErrors?.['categoryAccountId']}
           >
-            <select
+            <Select
               id="categoryAccountId"
               name="categoryAccountId"
               required
@@ -104,7 +106,7 @@ export function CashbookForm({
                   {category.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <div className="sm:col-span-2">
@@ -148,7 +150,7 @@ export function CashbookForm({
             required
             error={state.fieldErrors?.['paymentAccountId']}
           >
-            <select
+            <Select
               id="paymentAccountId"
               name="paymentAccountId"
               defaultValue={String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '')}
@@ -160,7 +162,7 @@ export function CashbookForm({
                   {account.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <Field label="Reference" htmlFor="reference" hint="Receipt or transaction number.">

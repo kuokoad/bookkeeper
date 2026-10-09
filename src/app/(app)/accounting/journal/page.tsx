@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -110,7 +111,7 @@ export default async function JournalPage({
           <label htmlFor="source" className="mb-1 block text-xs text-content-muted">
             Kind
           </label>
-          <select
+          <Select
             id="source"
             name="source"
             defaultValue={params.source ?? ''}
@@ -121,7 +122,7 @@ export default async function JournalPage({
                 {filter.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <Button type="submit" size="sm" variant="secondary">
           Apply

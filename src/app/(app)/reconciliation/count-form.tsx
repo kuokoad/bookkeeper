@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useState } from 'react';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -99,7 +101,7 @@ export function CountForm({
       <div className="rounded-xl border border-line bg-surface-raised p-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Account to count" htmlFor="paymentAccountId" required>
-            <select
+            <Select
               id="paymentAccountId"
               name="paymentAccountId"
               value={accountId}
@@ -111,7 +113,7 @@ export function CountForm({
                   {account.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <Field

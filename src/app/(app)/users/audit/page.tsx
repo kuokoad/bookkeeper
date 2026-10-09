@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -164,7 +165,7 @@ export default async function AuditLogPage({
           <label htmlFor="user" className="mb-1 block text-xs text-content-muted">
             Person
           </label>
-          <select
+          <Select
             id="user"
             name="user"
             defaultValue={params.user ?? ''}
@@ -176,13 +177,13 @@ export default async function AuditLogPage({
                 {user.displayName}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label htmlFor="action" className="mb-1 block text-xs text-content-muted">
             Action
           </label>
-          <select
+          <Select
             id="action"
             name="action"
             defaultValue={params.action ?? ''}
@@ -194,13 +195,13 @@ export default async function AuditLogPage({
                 {ACTION_LABELS[value] ?? value}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label htmlFor="entity" className="mb-1 block text-xs text-content-muted">
             Kind of record
           </label>
-          <select
+          <Select
             id="entity"
             name="entity"
             defaultValue={params.entity ?? ''}
@@ -212,7 +213,7 @@ export default async function AuditLogPage({
                 {value.replace(/_/g, ' ')}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label htmlFor="from" className="mb-1 block text-xs text-content-muted">

@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useId, useState, useTransition, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -78,13 +80,13 @@ export function CompactFilters({ basePath, compactSales = false, fields = [], qu
         )}
         {dateRange && <div>
           <label htmlFor={`${panelId}-period`} className="mb-1 block text-xs text-content-muted">Date range</label>
-          <select id={`${panelId}-period`} className={CONTROL} value={custom ? 'custom' : dateRange.preset} onChange={event => {
+          <Select id={`${panelId}-period`} className={CONTROL} value={custom ? 'custom' : dateRange.preset} onChange={event => {
             const preset = event.target.value as DatePreset;
             if (preset === 'custom') setCustomSignature(signature);
             else apply({ [presetKey]: preset, [fromKey]: null, [toKey]: null });
           }}>
             {DATE_PRESETS.map(preset => <option key={preset} value={preset}>{DATE_PRESET_LABELS[preset]}</option>)}
-          </select>
+          </Select>
         </div>}
         {advanced.length > 0 && <Button type="button" variant="secondary" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
           Filters{count > 0 ? ` (${count})` : ''}
@@ -120,10 +122,10 @@ export function CompactFilters({ basePath, compactSales = false, fields = [], qu
             {advanced.flatMap(field => {
               if (field.kind === 'select') return [<div key={field.key}>
                 <label htmlFor={`${panelId}-${field.key}`} className="mb-1 block text-xs text-content-muted">{field.label}</label>
-                <select id={`${panelId}-${field.key}`} className={CONTROL} value={value(field.key)} onChange={event => setValue(field.key, event.target.value)}>
+                <Select id={`${panelId}-${field.key}`} className={CONTROL} value={value(field.key)} onChange={event => setValue(field.key, event.target.value)}>
                   <option value="">{field.allLabel}</option>
                   {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                </Select>
               </div>];
               if (field.kind === 'amount-range') return [{ key: field.minKey, label: `Minimum ${field.label.toLowerCase()}` }, { key: field.maxKey, label: `Maximum ${field.label.toLowerCase()}` }].map(item => <div key={item.key}>
                 <label htmlFor={`${panelId}-${item.key}`} className="mb-1 block text-xs text-content-muted">{item.label}{field.currency ? ` (${field.currency})` : ''}</label>

@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -148,7 +149,7 @@ export default async function YearEndPackPage({
               <label htmlFor="year" className="mb-1 block text-xs text-content-muted">
                 Financial year
               </label>
-              <select
+              <Select
                 id="year"
                 name="year"
                 defaultValue={String(pack.year.startYear)}
@@ -159,7 +160,7 @@ export default async function YearEndPackPage({
                     {year.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <Button type="submit" size="sm" variant="secondary">
               Show

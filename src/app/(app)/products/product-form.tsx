@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import Link from 'next/link';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -85,7 +87,7 @@ export function ProductForm({
             htmlFor="categoryId"
             hint="Optional. Manage the list under Categories."
           >
-            <select
+            <Select
               id="categoryId"
               name="categoryId"
               defaultValue={initial.categoryId}
@@ -97,7 +99,7 @@ export function ProductForm({
                   {option.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <Field

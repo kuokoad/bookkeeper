@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -167,7 +169,7 @@ export function ReturnForm({
           <label htmlFor="refundAccountId" className="mb-1 block text-xs text-content-muted">
             Money handed back via
           </label>
-          <select
+          <Select
             id="refundAccountId"
             name="refundAccountId"
             defaultValue={String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '')}
@@ -178,7 +180,7 @@ export function ReturnForm({
                 {account.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label htmlFor="refundAmount" className="mb-1 block text-xs text-content-muted">

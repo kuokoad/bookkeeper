@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import Link from 'next/link';
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -121,7 +123,7 @@ export function AdjustmentForm({
           </Field>
 
           <Field label="Reason" htmlFor="reason" required error={state.fieldErrors?.['reason']}>
-            <select
+            <Select
               id="reason"
               name="reason"
               value={reason}
@@ -133,7 +135,7 @@ export function AdjustmentForm({
                   {option.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <div className="sm:col-span-2">
@@ -165,7 +167,7 @@ export function AdjustmentForm({
                 >
                   Product
                 </label>
-                <select
+                <Select
                   id={`product-${row.key}`}
                   name="productId"
                   value={row.productId}
@@ -182,7 +184,7 @@ export function AdjustmentForm({
                       {product.name} ({product.qtyOnHandLabel})
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div className="sm:col-span-2">
@@ -192,7 +194,7 @@ export function AdjustmentForm({
                 >
                   Direction
                 </label>
-                <select
+                <Select
                   id={`direction-${row.key}`}
                   name="direction"
                   value={row.direction}
@@ -204,7 +206,7 @@ export function AdjustmentForm({
                 >
                   <option value="IN">Stock in</option>
                   <option value="OUT">Stock out</option>
-                </select>
+                </Select>
                 {/* A disabled select posts nothing, so mirror the value. */}
                 {forcedDirection !== null && (
                   <input type="hidden" name="direction" value={row.direction} />
@@ -237,7 +239,7 @@ export function AdjustmentForm({
                       >
                         Which batch expired
                       </label>
-                      <select
+                      <Select
                         id={`batch-${row.key}`}
                         name="batchId"
                         value={row.batchId}
@@ -250,7 +252,7 @@ export function AdjustmentForm({
                             {batch.label}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </>
                   ) : (
                     /*

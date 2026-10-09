@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -111,7 +113,7 @@ export function ConvertPanel({
               <label htmlFor="account" className="mb-1 block text-sm text-content-muted">
                 Paid into
               </label>
-              <select
+              <Select
                 id="account"
                 value={accountId}
                 onChange={(event) => setAccountId(event.target.value)}
@@ -122,7 +124,7 @@ export function ConvertPanel({
                     {account.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <Field label="Paying now" htmlFor="paying">

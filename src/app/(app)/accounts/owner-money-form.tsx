@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -99,7 +101,7 @@ export function OwnerMoneyForm({
           required
           error={state.fieldErrors?.['paymentAccountId']}
         >
-          <select
+          <Select
             id="paymentAccountId"
             name="paymentAccountId"
             defaultValue={String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '')}
@@ -111,7 +113,7 @@ export function OwnerMoneyForm({
                 {account.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
 
         <Field

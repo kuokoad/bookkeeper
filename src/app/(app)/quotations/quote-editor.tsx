@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useMemo, useState } from 'react';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -289,7 +291,7 @@ export function QuoteEditor({
                   >
                     Item
                   </label>
-                  <select
+                  <Select
                     id={`product-${line.key}`}
                     value={line.productId}
                     onChange={(event) => chooseProduct(line.key, event.target.value)}
@@ -301,7 +303,7 @@ export function QuoteEditor({
                         {option.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
 
                 <div>

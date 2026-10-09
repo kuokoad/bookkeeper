@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import Link from 'next/link';
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -781,7 +783,7 @@ export function Pos({
                 <label htmlFor="tender-account" className="mb-1 block text-xs text-content-muted">
                   Method
                 </label>
-                <select
+                <Select
                   id="tender-account"
                   value={tenderAccountId}
                   onChange={(event) => setTenderAccountId(event.target.value)}
@@ -792,7 +794,7 @@ export function Pos({
                       {account.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div>
@@ -848,7 +850,7 @@ export function Pos({
                       Remove
                     </Button>
                   </div>
-                  <select
+                  <Select
                     value={secondAccountId}
                     onChange={(event) => setSecondAccountId(event.target.value)}
                     aria-label="Second payment method"
@@ -859,7 +861,7 @@ export function Pos({
                         {account.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <AmountInput
                     value={secondAmount}
                     onChange={(event) => setSecondAmount(event.target.value)}
@@ -908,7 +910,7 @@ export function Pos({
             <label htmlFor="customer" className="mb-1 block text-xs text-content-muted">
               Customer {totals.outstanding > 0 && <span className="text-danger">(required)</span>}
             </label>
-            <select
+            <Select
               id="customer"
               value={customerId}
               onChange={(event) => setCustomerId(event.target.value)}
@@ -921,7 +923,7 @@ export function Pos({
                   {customer.balanceMinor > 0 ? ` — owes ${fmt(customer.balanceMinor)}` : ''}
                 </option>
               ))}
-            </select>
+            </Select>
 
             <label htmlFor="note" className="mt-3 mb-1 block text-xs text-content-muted">
               Note (optional)

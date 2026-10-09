@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useId, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -541,7 +543,7 @@ export function SettingsForm({
           required
           error={state.fieldErrors?.['financialYearStartMonth']}
         >
-          <select
+          <Select
             id="financialYearStartMonth"
             name="financialYearStartMonth"
             defaultValue={String(values.financialYearStartMonth)}
@@ -552,7 +554,7 @@ export function SettingsForm({
                 {month}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
 
         <p className="mt-3 text-xs text-content-subtle">

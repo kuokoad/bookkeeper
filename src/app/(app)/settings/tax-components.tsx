@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+
 import { useActionState, useId, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -156,7 +158,7 @@ function TaxFields({
         hint="Ghana's GRA charges VAT on the value plus the levies."
         error={state.fieldErrors?.['basis']}
       >
-        <select
+        <Select
           id={basisId}
           name="basis"
           defaultValue={values?.basis ?? 'NET'}
@@ -164,7 +166,7 @@ function TaxFields({
         >
           <option value="NET">{BASIS_LABEL.NET}</option>
           <option value="NET_PLUS_LEVIES">{BASIS_LABEL.NET_PLUS_LEVIES}</option>
-        </select>
+        </Select>
       </Field>
 
       <Field
@@ -174,7 +176,7 @@ function TaxFields({
         required
         error={state.fieldErrors?.['glAccountId']}
       >
-        <select
+        <Select
           id={accountId}
           name="glAccountId"
           defaultValue={values?.glAccountId}
@@ -187,7 +189,7 @@ function TaxFields({
               {account.code} {account.name}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
 
       <Field label="Order" htmlFor={orderId} hint="Where it sits on the receipt. Lower is higher.">
