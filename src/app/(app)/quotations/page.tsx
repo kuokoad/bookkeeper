@@ -9,7 +9,7 @@ import { can } from '@/lib/auth/permissions';
 import { countQuotations, isExpired, listQuotations } from '@/services/quotation.service';
 import { listCustomers } from '@/services/customer.service';
 import { parseQuotationFilters } from '@/lib/list-filters';
-import { buildQuery } from '@/lib/filters';
+import { buildQuery, type ActiveFilter } from '@/lib/filters';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +46,11 @@ export default async function QuotationsPage({
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
   const currency = settings?.currencyCode ?? 'GHS';
   const customers = listCustomers(db, {});
+  const active: ActiveFilter[] = [];
+  if (filters.search) active.push({ key: 'q', label: 'Search', value: filters.search });
+  if (filters.customerId) active.push({ key: 'customer', label: 'Customer', value: customers.find(customer => customer.id === filters.customerId)?.name ?? String(filters.customerId) });
+  if (filters.status) active.push({ key: 'status', label: 'Status', value: filters.status === 'CONVERTED' ? 'Became sales' : filters.status === 'OPEN' ? 'Open' : 'Cancelled' });
+  if (filters.expired) active.push({ key: 'expired', label: 'Validity', value: 'Ran out' });
 
   /* The export carries the filters, so the file matches what is on screen. */
   const exportHref = `/api/exports/quotations${buildQuery(carried)}`;
@@ -72,8 +77,9 @@ export default async function QuotationsPage({
       />
 
       <FilterBar
+        compact
         basePath="/quotations"
-        active={[]}
+        active={active}
         dateRange={{ preset, from: range.from, to: range.to }}
         quick={[
           { label: 'Open', params: { status: 'OPEN' }, match: { status: 'OPEN' } },
