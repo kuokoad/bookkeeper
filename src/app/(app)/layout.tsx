@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 
@@ -62,15 +63,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="app-shell flex min-h-dvh flex-col lg:flex-row">
       <aside className="stitch-sidebar no-print hidden w-60 shrink-0 border-r border-sidebar-line bg-sidebar lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
-        <div className="flex items-center gap-2 px-4 py-4">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-accent-text">
-            <Icon name="accounts" className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-base font-bold leading-tight text-sidebar-text">NunaBooks</p>
-            <p className="text-[11px] leading-tight text-sidebar-muted">Bookkeeping for retail shops</p>
-          </div>
-        </div>
+        <Link
+          href="/dashboard"
+          aria-label="NunaBooks dashboard"
+          className="mx-3 my-4 block rounded-lg bg-[#fffdf7] p-2 focus-visible:outline-2 focus-visible:outline-sidebar-text"
+        >
+          <Image
+            src="/brand/nunabooks-logo.svg"
+            alt="NunaBooks — Simple Books. Stronger Business."
+            width={1962}
+            height={415}
+            className="h-auto w-full"
+            unoptimized
+          />
+        </Link>
 
         <div className="mx-3 min-h-0 flex-1 overflow-y-auto">
           <Sidebar sections={sections} />
