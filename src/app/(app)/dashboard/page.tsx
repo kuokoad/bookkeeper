@@ -298,7 +298,6 @@ export default async function DashboardPage({
             title="Sales"
             icon="sales"
             href={`/sales?period=custom&from=${salesPeriod.from}&to=${salesPeriod.to}`}
-            period={dates(salesPeriod)}
           >
             <PeriodPicker label="Sales" param="sales" sales={salesRange} spend={spendRange} />
             <Figure
@@ -312,7 +311,6 @@ export default async function DashboardPage({
             title="Expenses"
             icon="expenses"
             href={reportHref('/expenses', spendPeriod)}
-            period={dates(spendPeriod)}
           >
             <PeriodPicker label="Expenses" param="spend" sales={salesRange} spend={spendRange} />
             <Figure
@@ -326,7 +324,7 @@ export default async function DashboardPage({
             title="Net Profit"
             icon="profit"
             href={reportHref('/reports/profit-and-loss', profitPeriod)}
-            period={`Month to date · ${dates(profitPeriod)}`}
+            period="Month to date"
           >
             <Figure
               value={money(pl.netProfit)}
