@@ -7,6 +7,8 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { businessSettings } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
+import { can } from '@/lib/auth/permissions';
+import { EditAccountForm } from '../edit-account-form';
 import {
   countAccountMovements,
   getAccountStatement,
@@ -78,7 +80,7 @@ export default async function AccountDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<SearchParams>;
 }) {
-  await requirePageAccess('accounts', 'view');
+  const user = await requirePageAccess('accounts', 'view');
   const { id } = await params;
   const query = await searchParams;
 
@@ -188,6 +190,8 @@ export default async function AccountDetailPage({
           </>
         }
       />
+
+      {can(user, 'accounts', 'edit') && <EditAccountForm account={account} />}
 
       {query.updated === '1' && (
         <Alert tone="success" className="mb-4">

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('@/db/client', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ get: () => ({ currencyCode: 'GHS' }) }) }) }) } }));
-vi.mock('@/lib/auth/current-user', () => ({ requirePageAccess: vi.fn(async () => ({})) }));
+vi.mock('@/lib/auth/current-user', () => ({ requirePageAccess: vi.fn(async () => ({ role: 'STAFF', permissions: {} })) }));
 vi.mock('@/services/payment-account.service', () => ({
   getPaymentAccount: () => ({ id: 1, name: 'Cash', balance: 1293400, glCode: '1001' }),
   countAccountMovements: () => 1,
@@ -12,6 +12,7 @@ vi.mock('@/services/payment-account.service', () => ({
 vi.mock('@/components/shared/filter-bar', () => ({ FilterBar: () => null }));
 vi.mock('@/components/shared/pagination', () => ({ Pagination: () => null }));
 import AccountPage from '@/app/(app)/accounts/[id]/page';
+import { requirePageAccess } from '@/lib/auth/current-user';
 
 // Regression: ISSUE-001 — filtered subtotals must not claim to be ledger balances.
 // Found by /qa on 2026-10-10.
@@ -22,6 +23,13 @@ async function page(query: Record<string, string | undefined>) {
 }
 
 describe('account filter balance presentation', () => {
+  it('hides editing from users without Accounts edit permission', async () => {
+    expect(await page({})).not.toContain('Edit account');
+  });
+  it('offers editing to the owner', async () => {
+    vi.mocked(requirePageAccess).mockResolvedValueOnce({ role: 'OWNER', permissions: {} } as Awaited<ReturnType<typeof requirePageAccess>>);
+    expect(await page({})).toContain('Edit account');
+  });
   it.each([{ type: 'SALE' }, { flow: 'in' }, { q: 'receipt' }, { min: '150' }])('identifies narrowed totals without claiming an actual closing balance: %j', async query => {
     const html = await page(query);
     expect(html).toContain('Filtered closing total');
