@@ -160,12 +160,7 @@ export default async function AccountDetailPage({
   const isFiltered = active.length > 0;
   const exportHref = `/api/exports/account${buildQuery({ ...carried, id: accountId })}`;
 
-  /*
-    Opening + in − out = closing holds for the DATE window. It does not hold
-    once the owner also filters by type, direction or amount, because those
-    hide movements that still happened — so the page says which figures are
-    being shown rather than presenting an equation that no longer adds up.
-  */
+  /* Additional filters hide movements, so filtered running totals are labelled separately from actual account balances. */
   const narrowedBeyondDates =
     filters.sourceType !== undefined ||
     filters.flow !== undefined ||
@@ -215,13 +210,13 @@ export default async function AccountDetailPage({
           hint={`Before ${formatDate(range.from)}`}
           tone={statement.opening < 0 ? 'danger' : 'default'}
         />
-        <Stat icon="income" label="Money in" value={money(statement.moneyIn, { bare: true })} tone="success" />
-        <Stat icon="expenses" label="Money out" value={money(statement.moneyOut, { bare: true })} tone="warning" />
+        <Stat icon="income" label={narrowedBeyondDates ? 'Filtered money in' : 'Money in'} value={money(statement.moneyIn, { bare: true })} tone="success" />
+        <Stat icon="expenses" label={narrowedBeyondDates ? 'Filtered money out' : 'Money out'} value={money(statement.moneyOut, { bare: true })} tone="warning" />
         <Stat
           icon="accounts"
-          label="Closing balance"
+          label={narrowedBeyondDates ? 'Filtered closing total' : 'Closing balance'}
           value={money(statement.closing, { bare: true })}
-          hint={`At ${formatDate(range.to)}`}
+          hint={narrowedBeyondDates ? 'Opening + matching movements' : `At ${formatDate(range.to)}`}
           tone={statement.closing < 0 ? 'danger' : 'default'}
         />
         <Stat
@@ -234,7 +229,7 @@ export default async function AccountDetailPage({
 
       <p className="mb-6 text-xs text-content-subtle">
         {narrowedBeyondDates
-          ? 'Money in and money out cover only the movements matching these filters, so they will not bridge the opening and closing balances. Clear the filters other than the dates to see the full period.'
+          ? 'Filtered totals are the opening balance plus matching movements. They exclude hidden movements and do not represent the actual account balance. Clear the filters other than dates to see the full period.'
           : `Opening ${money(statement.opening, { bare: true })} + in ${money(
               statement.moneyIn,
               { bare: true },
@@ -310,7 +305,7 @@ export default async function AccountDetailPage({
               <TH>Reference</TH>
               <TH numeric>In</TH>
               <TH numeric>Out</TH>
-              <TH numeric>Balance</TH>
+              <TH numeric>{narrowedBeyondDates ? 'Filtered running total' : 'Balance'}</TH>
             </THead>
             <tbody>
               {statement.movements.map((movement) => {
@@ -378,12 +373,10 @@ export default async function AccountDetailPage({
       )}
 
       <p className="mt-4 text-xs text-content-subtle">
-        This is the full answer to &ldquo;why is the balance{' '}
-        {money(account.balance, { currencyCode: currency })}?&rdquo; — every line that moved money
-        through this account, newest first, with the balance after each one. The column runs on from
-        the opening balance, so it carries across pages and never restarts at zero when a date
-        filter is applied. Everything here reads the ledger; nothing on this page can change a
-        balance.
+        {narrowedBeyondDates
+          ? 'The table shows only matching movements. Its running total starts at the opening balance and excludes hidden movements.'
+          : 'The table shows movements in the selected period, newest first, with the balance after each one. The balance carries across pages from the opening balance.'}
+        {' '}Everything here reads the ledger; nothing on this page can change a balance.
       </p>
     </div>
   );
