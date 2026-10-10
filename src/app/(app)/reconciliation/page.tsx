@@ -1,3 +1,4 @@
+import { accountHref } from '@/lib/account-routes';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { eq } from 'drizzle-orm';
@@ -112,7 +113,7 @@ export default async function ReconciliationPage({
             <TR key={account.paymentAccountId}>
               <TD>
                 <Link
-                  href={`/accounts/${account.paymentAccountId}`}
+                  href={accountHref(account.paymentAccountId)}
                   className="font-medium text-accent hover:underline"
                 >
                   {account.accountName}

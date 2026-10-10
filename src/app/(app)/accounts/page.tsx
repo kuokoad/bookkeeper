@@ -1,3 +1,4 @@
+import { accountHref } from '@/lib/account-routes';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { eq } from 'drizzle-orm';
@@ -91,7 +92,7 @@ export default async function AccountsPage() {
             <TR key={account.id}>
               <TD>
                 <Link
-                  href={`/accounts/${account.id}`}
+                  href={accountHref(account.id)}
                   className="font-medium text-accent hover:underline"
                 >
                   {account.name}
@@ -127,7 +128,7 @@ export default async function AccountsPage() {
               <TD>
                 <div className="flex justify-end">
                   <Link
-                    href={`/accounts/${account.id}`}
+                    href={accountHref(account.id)}
                     className="text-xs font-medium text-accent hover:underline"
                   >
                     Movements

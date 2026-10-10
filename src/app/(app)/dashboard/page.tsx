@@ -1,3 +1,4 @@
+import { accountHref } from '@/lib/account-routes';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -212,7 +213,7 @@ export default async function DashboardPage({
       negativeBalance: true,
       title: `${account.name}: ${money(account.balance)}`,
       note: 'Negative ledger balance. This may be an overdraft; it is not a confirmed reconciliation error.',
-      href: `/accounts/${account.id}`,
+      href: accountHref(account.id),
     })),
     ...(stock !== null && (stock.lowStockCount > 0 || stock.outOfStockCount > 0)
       ? [
@@ -603,7 +604,7 @@ export default async function DashboardPage({
                         key={account.id}
                         className="flex flex-wrap items-baseline justify-between gap-2 py-2"
                       >
-                        <Detail href={`/accounts/${account.id}`}>
+                        <Detail href={accountHref(account.id)}>
                           {account.name}
                         </Detail>
                         <span

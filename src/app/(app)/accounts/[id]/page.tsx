@@ -1,3 +1,4 @@
+import { accountHref, accountIdFromRoute } from '@/lib/account-routes';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -81,8 +82,8 @@ export default async function AccountDetailPage({
   const { id } = await params;
   const query = await searchParams;
 
-  const accountId = Number(id);
-  if (!Number.isInteger(accountId) || accountId <= 0) notFound();
+  const accountId = accountIdFromRoute(id);
+  if (accountId === undefined) notFound();
 
   let account;
   try {
@@ -247,7 +248,7 @@ export default async function AccountDetailPage({
 
       <FilterBar
         compact
-        basePath={`/accounts/${accountId}`}
+        basePath={accountHref(accountId)}
         dateRange={{ preset, from: range.from, to: range.to }}
         active={active}
         quick={[
@@ -366,7 +367,7 @@ export default async function AccountDetailPage({
           </TableWrap>
 
           <Pagination
-            basePath={`/accounts/${accountId}`}
+            basePath={accountHref(accountId)}
             values={carried}
             page={page}
             pageSize={pageSize}

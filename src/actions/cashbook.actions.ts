@@ -1,5 +1,7 @@
 'use server';
 
+import { accountHref } from '@/lib/account-routes';
+
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { sanitiseFilterQuery } from '@/lib/filters';
@@ -364,8 +366,9 @@ export async function updatePaymentAccountAction(
   }
 
   revalidatePath('/accounts');
+  revalidatePath(accountHref(accountId));
   revalidatePath(`/accounts/${accountId}`);
-  redirect(`/accounts/${accountId}?updated=1`);
+  redirect(`${accountHref(accountId)}?updated=1`);
 }
 
 export async function setPaymentAccountActiveAction(
