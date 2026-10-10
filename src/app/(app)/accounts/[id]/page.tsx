@@ -246,6 +246,7 @@ export default async function AccountDetailPage({
       <h2 className="mb-3 text-sm font-semibold text-content">Movements</h2>
 
       <FilterBar
+        compact
         basePath={`/accounts/${accountId}`}
         dateRange={{ preset, from: range.from, to: range.to }}
         active={active}
