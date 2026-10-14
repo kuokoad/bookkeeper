@@ -137,7 +137,7 @@ describe('the application shell', () => {
   });
 
   it('hides the sidebar', () => {
-    expect(source('src', 'app', '(app)', 'layout.tsx')).toMatch(/<aside className="no-print/);
+    expect(source('src', 'app', '(app)', 'layout.tsx')).toMatch(/<aside className="[^"]*\bno-print\b/);
   });
 
   /**
