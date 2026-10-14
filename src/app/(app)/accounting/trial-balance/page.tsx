@@ -5,6 +5,7 @@ import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { getChartOfAccounts } from '@/services/reporting/ledger.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
+import { parseDate } from '@/lib/filters';
 import { minor, sum } from '@/domain/money';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
@@ -24,8 +25,8 @@ export default async function TrialBalancePage({
   const params = await searchParams;
 
   const today = toBusinessDate();
-  const to = params.to ?? today;
-  const from = params.from;
+  const to = parseDate(params.to) ?? today;
+  const from = parseDate(params.from);
 
   const chart = getChartOfAccounts(db, {
     ...(from ? { from } : {}),
