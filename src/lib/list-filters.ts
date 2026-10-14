@@ -526,6 +526,20 @@ export function parseAccountFilters(
   };
 }
 
+/**
+ * True when filters beyond the dates hide movements, so the statement's closing
+ * and running figures are filtered subtotals, not the account's balance.
+ */
+export function accountFiltersHideMovements(filters: AccountMovementQuery): boolean {
+  return (
+    filters.sourceType !== undefined ||
+    filters.flow !== undefined ||
+    filters.search !== undefined ||
+    filters.minAmount !== undefined ||
+    filters.maxAmount !== undefined
+  );
+}
+
 // --- reports ---------------------------------------------------------------
 
 export interface ParsedReport<Q> {

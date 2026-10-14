@@ -14,6 +14,7 @@ import { listSales } from '@/services/sale.service';
 import { isExpired, listQuotations } from '@/services/quotation.service';
 import { listSuppliers } from '@/services/supplier.service';
 import {
+  accountFiltersHideMovements,
   parseAccountFilters,
   parseCashbookFilters,
   parseCustomerFilters,
@@ -366,8 +367,10 @@ function buildTable(list: string, request: NextRequest): Table | null {
         A statement that lists movements without them cannot be checked, and an
         unverifiable statement is not worth exporting.
       */
+      // Same wording as the screen: under a type, flow, search or amount filter these are subtotals.
+      const filtered = accountFiltersHideMovements(filters);
       return {
-        headers: ['Date', 'What happened', 'Reference', 'Description', 'In', 'Out', 'Balance'],
+        headers: ['Date', 'What happened', 'Reference', 'Description', 'In', 'Out', filtered ? 'Filtered running total' : 'Balance'],
         rows: [
           [
             `Opening balance — ${account.name}`,
@@ -396,7 +399,7 @@ function buildTable(list: string, request: NextRequest): Table | null {
             csvMoney(statement.moneyOut),
             '',
           ],
-          ['Closing balance', '', '', '', '', '', csvMoney(statement.closing)],
+          [filtered ? 'Filtered closing total' : 'Closing balance', '', '', '', '', '', csvMoney(statement.closing)],
         ],
       };
     }

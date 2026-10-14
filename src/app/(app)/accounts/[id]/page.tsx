@@ -25,7 +25,7 @@ import {
   describeDateRange,
   type ActiveFilter,
 } from '@/lib/filters';
-import { parseAccountFilters, type SearchParams } from '@/lib/list-filters';
+import { accountFiltersHideMovements, parseAccountFilters, type SearchParams } from '@/lib/list-filters';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
@@ -163,12 +163,7 @@ export default async function AccountDetailPage({
   const exportHref = `/api/exports/account${buildQuery({ ...carried, id: accountId })}`;
 
   /* Additional filters hide movements, so filtered running totals are labelled separately from actual account balances. */
-  const narrowedBeyondDates =
-    filters.sourceType !== undefined ||
-    filters.flow !== undefined ||
-    filters.search !== undefined ||
-    filters.minAmount !== undefined ||
-    filters.maxAmount !== undefined;
+  const narrowedBeyondDates = accountFiltersHideMovements(filters);
 
   return (
     <div className="w-full">
