@@ -152,10 +152,14 @@ export function seedPaymentAccounts(tx: Tx, now: Date): void {
   const byCode = accountIdsByCode(tx);
 
   for (const definition of DEFAULT_PAYMENT_ACCOUNTS) {
+    // The owner can rename these, so the ledger code is their identity, not the name.
+    const glId = byCode.get(definition.glCode) ?? -1;
     const existing = tx
       .select({ id: paymentAccounts.id })
       .from(paymentAccounts)
-      .where(sql`lower(${paymentAccounts.name}) = lower(${definition.name})`)
+      .where(
+        sql`lower(${paymentAccounts.name}) = lower(${definition.name}) OR ${paymentAccounts.glAccountId} = ${glId}`,
+      )
       .get();
     if (existing) continue;
 

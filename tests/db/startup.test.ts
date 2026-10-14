@@ -127,6 +127,38 @@ describe('preparing the database at server start', () => {
     }
   });
 
+  // Regression: ISSUE-001 — renaming a default payment account stopped the app starting
+  // Found by /qa on 2026-10-14
+  // Report: .gstack/qa-reports/run-20261014T073500Z/qa-report-localhost-2026-10-14.md
+  it('still starts after the owner renames the default Cash, MoMo and Bank accounts', async () => {
+    const file = join(directory, 'shop.db');
+    await runStartupMigrations(file);
+
+    // What the Edit account form writes: the payment account and its ledger account.
+    const write = new Database(file);
+    for (const [from, to] of [['Cash', 'Till'], ['MTN MoMo', 'Telecel Cash'], ['Bank Account', 'GCB Current']]) {
+      const { gl_account_id } = write
+        .prepare('SELECT gl_account_id FROM payment_accounts WHERE name = ?')
+        .get(from) as { gl_account_id: number };
+      write.prepare('UPDATE payment_accounts SET name = ? WHERE name = ?').run(to, from);
+      write.prepare('UPDATE accounts SET name = ? WHERE id = ?').run(to, gl_account_id);
+    }
+    write.close();
+
+    await runStartupMigrations(file);
+
+    const db = open(file);
+    try {
+      const names = (db.prepare('SELECT name FROM payment_accounts ORDER BY sort_order').all() as {
+        name: string;
+      }[]).map((row) => row.name);
+      // The renamed accounts are the shop's accounts; a restart must not add the defaults back.
+      expect(names).toEqual(['Till', 'Telecel Cash', 'GCB Current']);
+    } finally {
+      db.close();
+    }
+  });
+
   it('leaves the database usable with foreign keys enforced', async () => {
     const file = join(directory, 'shop.db');
     await runStartupMigrations(file);
