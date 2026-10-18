@@ -128,7 +128,7 @@ export default async function ReceivablesPage({
         />
       </div>
 
-      <FilterBar
+      <FilterBar compact
         basePath="/accounting/receivables"
         active={active}
         quick={[

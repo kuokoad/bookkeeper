@@ -120,7 +120,7 @@ export default async function PayablesPage({
         />
       </div>
 
-      <FilterBar
+      <FilterBar compact
         basePath="/accounting/payables"
         active={active}
         quick={[

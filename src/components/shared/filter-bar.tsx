@@ -60,6 +60,7 @@ export type FilterField =
       options: SelectOption[];
       /** Label for the empty option, e.g. "All categories". */
       allLabel: string;
+      defaultValue?: string;
     }
   | {
       kind: 'amount-range';
@@ -69,7 +70,7 @@ export type FilterField =
       currency?: string;
     }
   /** A single date, for a report asked "as at" a day rather than over a range. */
-  | { kind: 'date'; key: string; label: string; max?: string };
+  | { kind: 'date'; key: string; label: string; max?: string; defaultValue?: string };
 
 export interface QuickFilter {
   label: string;

@@ -1,4 +1,5 @@
-import { Select } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -14,7 +15,7 @@ import { listUsers } from '@/services/user.service';
 import { AUDIT_ACTIONS, type AuditAction } from '@/db/schema/system';
 import { formatDateTime, fromBusinessDate, isValidBusinessDate, toBusinessDate } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
-import { DateField } from '@/components/ui/date-field';
+
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
@@ -147,105 +148,18 @@ export default async function AuditLogPage({
         <Stat icon="users" label="People" value={String(users.length)} />
       </div>
 
-      <form action="/users/audit" className="mb-4 flex flex-wrap items-end gap-2">
-        <div>
-          <label htmlFor="q" className="mb-1 block text-xs text-content-muted">
-            Search
-          </label>
-          <input
-            id="q"
-            name="q"
-            type="search"
-            defaultValue={params.q ?? ''}
-            placeholder="What happened, or who"
-            className="h-10 w-52 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
-          />
-        </div>
-        <div>
-          <label htmlFor="user" className="mb-1 block text-xs text-content-muted">
-            Person
-          </label>
-          <Select
-            id="user"
-            name="user"
-            defaultValue={params.user ?? ''}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
-          >
-            <option value="">Anyone</option>
-            {users.map((user) => (
-              <option key={user.id} value={String(user.id)}>
-                {user.displayName}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div>
-          <label htmlFor="action" className="mb-1 block text-xs text-content-muted">
-            Action
-          </label>
-          <Select
-            id="action"
-            name="action"
-            defaultValue={params.action ?? ''}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
-          >
-            <option value="">Anything</option>
-            {AUDIT_ACTIONS.map((value) => (
-              <option key={value} value={value}>
-                {ACTION_LABELS[value] ?? value}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div>
-          <label htmlFor="entity" className="mb-1 block text-xs text-content-muted">
-            Kind of record
-          </label>
-          <Select
-            id="entity"
-            name="entity"
-            defaultValue={params.entity ?? ''}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
-          >
-            <option value="">Anything</option>
-            {entityTypes.map((value) => (
-              <option key={value} value={value}>
-                {value.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div>
-          <label htmlFor="from" className="mb-1 block text-xs text-content-muted">
-            From
-          </label>
-          <DateField
-            id="from"
-            name="from"
-            defaultValue={params.from ?? ''}
-            max={toBusinessDate()}
-          />
-        </div>
-        <div>
-          <label htmlFor="to" className="mb-1 block text-xs text-content-muted">
-            To
-          </label>
-          <DateField
-            id="to"
-            name="to"
-            defaultValue={params.to ?? ''}
-            max={toBusinessDate()}
-          />
-        </div>
-        <Button type="submit" size="sm" variant="secondary">
-          Apply
-        </Button>
-        <Link href="/users/audit">
-          <Button type="button" size="sm" variant="ghost">
-            Clear
-          </Button>
-        </Link>
-      </form>
+      <FilterBar compact basePath="/users/audit"
+        active={Object.entries({ q: params.q, user: params.user, action: params.action, entity: params.entity, from: params.from, to: params.to })
+          .filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: ({ user: 'Person', action: 'Action', entity: 'Kind of record', from: 'From', to: 'To', q: 'Search' } as Record<string, string>)[key]!, value: value! }))}
+        fields={[
+          { kind: 'search', key: 'q', label: 'Search', placeholder: 'What happened, or who' },
+          { kind: 'select', key: 'user', label: 'Person', allLabel: 'Anyone', options: users.map(user => ({ value: String(user.id), label: user.displayName })) },
+          { kind: 'select', key: 'action', label: 'Action', allLabel: 'Anything', options: AUDIT_ACTIONS.map(value => ({ value, label: ACTION_LABELS[value] ?? value })) },
+          { kind: 'select', key: 'entity', label: 'Kind of record', allLabel: 'Anything', options: entityTypes.map(value => ({ value, label: value.replace(/_/g, ' ') })) },
+          { kind: 'date', key: 'from', label: 'From', max: toBusinessDate() },
+          { kind: 'date', key: 'to', label: 'To', max: toBusinessDate() },
+        ]}
+      />
 
       {entries.length === 0 ? (
         <EmptyState

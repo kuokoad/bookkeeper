@@ -31,6 +31,48 @@ function applied() { return new URLSearchParams(navigation.pushed.at(-1)?.split(
 beforeEach(() => { navigation.params = new URLSearchParams(); navigation.pushed = []; });
 afterEach(cleanup);
 
+describe('compact accounting and audit filters', () => {
+  it('preserves resolved report date defaults when applying another filter', () => {
+    navigation.params = new URLSearchParams('page=3&account=4');
+    render(<FilterBar compact basePath="/accounting/journal" fields={[
+      { kind: 'date', key: 'from', label: 'From', defaultValue: '2026-10-01' },
+      { kind: 'date', key: 'to', label: 'To', defaultValue: '2026-10-18' },
+      { kind: 'select', key: 'source', label: 'Kind', allLabel: 'Everything', options: [{ value: 'INCOME', label: 'Other income' }] },
+    ]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('2026-10-01');
+    expect((screen.getByLabelText('To') as HTMLInputElement).value).toBe('2026-10-18');
+    fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'INCOME' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    expect(Object.fromEntries(applied())).toEqual({ account: '4', source: 'INCOME', from: '2026-10-01', to: '2026-10-18' });
+  });
+  it('allows optional dates to be cleared and keeps the as-at query key', () => {
+    navigation.params = new URLSearchParams('from=2026-01-01&asAt=2026-10-18');
+    render(<FilterBar compact basePath="/reports/balance-sheet" active={[
+      { key: 'from', label: 'From', value: '2026-01-01' },
+      { key: 'asAt', label: 'As at', value: '2026-10-18' },
+    ]} fields={[
+      { kind: 'date', key: 'from', label: 'From (optional)', defaultValue: '' },
+      { kind: 'date', key: 'asAt', label: 'As at', defaultValue: '2026-10-18' },
+    ]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters (2)' }));
+    fireEvent.change(screen.getByLabelText('From (optional)'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    expect(applied().has('from')).toBe(false);
+    expect(applied().get('asAt')).toBe('2026-10-18');
+  });
+  it('prefills the selected financial year without changing it when the panel opens', () => {
+    render(<FilterBar compact basePath="/reports/year-end" fields={[
+      { kind: 'select', key: 'year', label: 'Financial year', allLabel: 'Current financial year', defaultValue: '2025', options: [{ value: '2025', label: '2025/26' }] },
+    ]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect((screen.getByLabelText('Financial year') as HTMLSelectElement).value).toBe('2025');
+    expect(navigation.pushed).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    expect(applied().get('year')).toBe('2025');
+  });
+});
+
 describe('compact Sales filters', () => {
   it('collapses advanced fields but keeps toolbar visible and preserves drafts on collapse', () => {
     render(bar());

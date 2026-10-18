@@ -205,7 +205,7 @@ export default async function ProductsPage({
         </Alert>
       )}
 
-      <FilterBar
+      <FilterBar compact
         basePath="/products"
         active={active}
         quick={[

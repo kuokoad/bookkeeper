@@ -1,3 +1,4 @@
+import { FilterBar } from '@/components/shared/filter-bar';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -8,7 +9,7 @@ import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { parseDate } from '@/lib/filters';
 import { minor, sum } from '@/domain/money';
 import { Button } from '@/components/ui/button';
-import { DateField } from '@/components/ui/date-field';
+
 import { Alert } from '@/components/ui/alert';
 import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
@@ -67,31 +68,13 @@ export default async function TrialBalancePage({
         </Alert>
       )}
 
-      <form action="/accounting/trial-balance" className="mb-4 flex flex-wrap items-end gap-2 no-print">
-        <div>
-          <label htmlFor="from" className="mb-1 block text-xs text-content-muted">
-            From (optional)
-          </label>
-          <DateField
-            id="from"
-            name="from"
-            defaultValue={from ?? ''}
-          />
-        </div>
-        <div>
-          <label htmlFor="to" className="mb-1 block text-xs text-content-muted">
-            As at
-          </label>
-          <DateField
-            id="to"
-            name="to"
-            defaultValue={to}
-          />
-        </div>
-        <Button type="submit" size="sm" variant="secondary">
-          Apply
-        </Button>
-      </form>
+      <FilterBar compact basePath="/accounting/trial-balance"
+        active={Object.entries(params).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'from' ? 'From' : 'As at', value: value! }))}
+        fields={[
+          { kind: 'date', key: 'from', label: 'From (optional)', defaultValue: from ?? '' },
+          { kind: 'date', key: 'to', label: 'As at', defaultValue: to },
+        ]}
+      />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat icon="books" label="Total debits" value={money(totalDebit)} />

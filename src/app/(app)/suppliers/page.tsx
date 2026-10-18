@@ -103,7 +103,7 @@ export default async function SuppliersPage({
         <Stat label="Suppliers owed" icon="owes" value={String(owedCount)} />
       </div>
 
-      <FilterBar
+      <FilterBar compact
         basePath="/suppliers"
         active={active}
         quick={[

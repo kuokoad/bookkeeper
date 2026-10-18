@@ -23,7 +23,10 @@ export function CompactFilters({ basePath, compactSales = false, fields = [], qu
   const signature = params.toString();
   const [draft, setDraft] = useState<{ signature: string; values: Record<string, string> }>({ signature, values: {} });
   const values = draft.signature === signature ? draft.values : {};
-  const value = (key: string) => values[key] ?? params.get(key) ?? '';
+  const defaults = Object.fromEntries(fields.flatMap(field =>
+    (field.kind === 'date' || field.kind === 'select') && field.defaultValue !== undefined
+      ? [[field.key, field.defaultValue]] : []));
+  const value = (key: string) => values[key] ?? params.get(key) ?? defaults[key] ?? '';
   const setValue = (key: string, next: string) => setDraft({ signature, values: { ...values, [key]: next } });
   const advanced = fields.filter(field => field.kind !== 'search');
   const search = fields.find(field => field.kind === 'search');
@@ -53,7 +56,7 @@ export function CompactFilters({ basePath, compactSales = false, fields = [], qu
   function submitAdvanced(event: FormEvent) {
     event.preventDefault();
     const changes: Record<string, string | null> = {};
-    for (const key of advancedKeys) if (key in values) changes[key] = value(key);
+    for (const key of advancedKeys) if (key in values || key in defaults) changes[key] = value(key);
     if (compactSales && 'status' in changes) changes.statusSource = null;
     apply(changes);
   }

@@ -1,4 +1,5 @@
-import { Select } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -8,7 +9,7 @@ import { listJournalEntries } from '@/services/reporting/ledger.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { parseDate } from '@/lib/filters';
 import { Badge } from '@/components/ui/badge';
-import { DateField } from '@/components/ui/date-field';
+
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { EmptyState, PageHeader } from '@/components/ui/page';
@@ -87,48 +88,14 @@ export default async function JournalPage({
         </Alert>
       )}
 
-      <form action="/accounting/journal" className="mb-4 flex flex-wrap items-end gap-2">
-        <div>
-          <label htmlFor="from" className="mb-1 block text-xs text-content-muted">
-            From
-          </label>
-          <DateField
-            id="from"
-            name="from"
-            defaultValue={from}
-          />
-        </div>
-        <div>
-          <label htmlFor="to" className="mb-1 block text-xs text-content-muted">
-            To
-          </label>
-          <DateField
-            id="to"
-            name="to"
-            defaultValue={to}
-          />
-        </div>
-        <div>
-          <label htmlFor="source" className="mb-1 block text-xs text-content-muted">
-            Kind
-          </label>
-          <Select
-            id="source"
-            name="source"
-            defaultValue={params.source ?? ''}
-            className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
-          >
-            {FILTERS.map((filter) => (
-              <option key={filter.value} value={filter.value}>
-                {filter.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <Button type="submit" size="sm" variant="secondary">
-          Apply
-        </Button>
-      </form>
+      <FilterBar compact basePath="/accounting/journal"
+        active={Object.entries({ from: params.from, to: params.to, source: params.source }).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'source' ? 'Kind' : key === 'from' ? 'From' : 'To', value: value! }))}
+        fields={[
+          { kind: 'date', key: 'from', label: 'From', defaultValue: from },
+          { kind: 'date', key: 'to', label: 'To', defaultValue: to },
+          { kind: 'select', key: 'source', label: 'Kind', allLabel: 'Everything', options: FILTERS.filter(item => item.value) },
+        ]}
+      />
 
       {entries.length === 0 ? (
         <EmptyState

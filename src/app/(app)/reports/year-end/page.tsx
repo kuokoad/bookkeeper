@@ -1,4 +1,5 @@
-import { Select } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -144,28 +145,12 @@ export default async function YearEndPackPage({
         />
 
         {years.length > 1 && (
-          <form action="/reports/year-end" className="mb-4 flex items-end gap-2">
-            <div>
-              <label htmlFor="year" className="mb-1 block text-xs text-content-muted">
-                Financial year
-              </label>
-              <Select
-                id="year"
-                name="year"
-                defaultValue={String(pack.year.startYear)}
-                className="h-10 rounded-lg border border-line-strong bg-surface-raised px-3 text-sm text-content"
-              >
-                {years.map((year) => (
-                  <option key={year.startYear} value={year.startYear}>
-                    {year.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <Button type="submit" size="sm" variant="secondary">
-              Show
-            </Button>
-          </form>
+          <FilterBar compact basePath="/reports/year-end"
+            active={requested ? [{ key: 'year', label: 'Financial year', value: pack.year.label }] : []}
+            fields={[{ kind: 'select', key: 'year', label: 'Financial year', allLabel: 'Current financial year',
+              defaultValue: String(pack.year.startYear),
+              options: years.map(year => ({ value: String(year.startYear), label: year.label })) }]}
+          />
         )}
 
         {pack.isProvisional && (

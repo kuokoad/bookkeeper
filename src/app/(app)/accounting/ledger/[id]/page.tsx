@@ -1,3 +1,4 @@
+import { FilterBar } from '@/components/shared/filter-bar';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -8,7 +9,7 @@ import { getGeneralLedger } from '@/services/reporting/ledger.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { isDomainError } from '@/domain/errors';
 import { Badge } from '@/components/ui/badge';
-import { DateField } from '@/components/ui/date-field';
+
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
@@ -77,38 +78,13 @@ export default async function GeneralLedgerPage({
         />
       </div>
 
-      <form action={`/accounting/ledger/${accountId}`} className="mb-4 flex flex-wrap items-end gap-2">
-        <div>
-          <label htmlFor="from" className="mb-1 block text-xs text-content-muted">
-            From
-          </label>
-          <DateField
-            id="from"
-            name="from"
-            defaultValue={query.from ?? ''}
-          />
-        </div>
-        <div>
-          <label htmlFor="to" className="mb-1 block text-xs text-content-muted">
-            To
-          </label>
-          <DateField
-            id="to"
-            name="to"
-            defaultValue={query.to ?? toBusinessDate()}
-          />
-        </div>
-        <Button type="submit" size="sm" variant="secondary">
-          Apply
-        </Button>
-        {(query.from || query.to) && (
-          <Link href={`/accounting/ledger/${accountId}`}>
-            <Button type="button" size="sm" variant="ghost">
-              Clear
-            </Button>
-          </Link>
-        )}
-      </form>
+      <FilterBar compact basePath={`/accounting/ledger/${accountId}`}
+        active={Object.entries(query).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'from' ? 'From' : 'To', value: value! }))}
+        fields={[
+          { kind: 'date', key: 'from', label: 'From' },
+          { kind: 'date', key: 'to', label: 'To', defaultValue: toBusinessDate() },
+        ]}
+      />
 
       {lines.length === 0 ? (
         <EmptyState

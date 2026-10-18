@@ -1,3 +1,4 @@
+import { FilterBar } from '@/components/shared/filter-bar';
 import type { Metadata } from 'next';
 import { eq } from 'drizzle-orm';
 
@@ -7,11 +8,11 @@ import { requirePageAccess } from '@/lib/auth/current-user';
 import { getBalanceSheet } from '@/services/reporting/financial.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
 import { Alert } from '@/components/ui/alert';
-import { DateField } from '@/components/ui/date-field';
+
 import { PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
 import { ReportActions } from '@/components/shared/report-actions';
-import { Button } from '@/components/ui/button';
+
 
 export const metadata: Metadata = { title: 'Balance sheet' };
 export const dynamic = 'force-dynamic';
@@ -44,21 +45,10 @@ export default async function BalanceSheetPage({
         </Alert>
       )}
 
-      <form action="/reports/balance-sheet" className="mb-4 flex flex-wrap items-end gap-2 no-print">
-        <div>
-          <label htmlFor="asAt" className="mb-1 block text-xs text-content-muted">
-            As at
-          </label>
-          <DateField
-            id="asAt"
-            name="asAt"
-            defaultValue={asAt}
-          />
-        </div>
-        <Button type="submit" size="sm" variant="secondary">
-          Apply
-        </Button>
-      </form>
+      <FilterBar compact basePath="/reports/balance-sheet"
+        active={params.asAt ? [{ key: 'asAt', label: 'As at', value: asAt }] : []}
+        fields={[{ kind: 'date', key: 'asAt', label: 'As at', defaultValue: asAt }]}
+      />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat icon="accounts" label="What you own" value={money(sheet.totalAssets)} />
