@@ -160,6 +160,7 @@ export default async function IncomePage({
       </div>
 
       <FilterBar
+        compact
         basePath="/income"
         dateRange={{ preset, from: range.from, to: range.to }}
         active={active}
