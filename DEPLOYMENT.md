@@ -27,6 +27,30 @@ live in one file you can copy.
 
 ---
 
+## The one-command version
+
+```powershell
+.\scripts\deploy.ps1 -Firewall -AutoStart
+```
+
+It runs every step in this file in order: it checks Node, runs `npm ci` and
+`env:init`, sets `NODE_ENV=production` and `SEED_DEMO_DATA=false` in `.env`,
+migrates, builds, runs preflight, adds the firewall rule and the Task Scheduler
+task, then starts the app. `-Firewall` and `-AutoStart` need an Administrator
+PowerShell; leave them off to skip those two steps. Add `-NoStart` to stop
+before starting the server. It stops at the first step that fails.
+
+Preflight reports and does not stop the script. On a first install it fails on
+"No active owner" until you create the owner on the setup screen. That is
+expected. Fix any other failure before trading.
+
+To update, stop the app, then run `git pull` and the script again.
+
+Never run it on a development machine, because it turns that machine's `.env`
+into a production one.
+
+The rest of this file is the same thing done by hand, with the reasons.
+
 ## First install
 
 Run these in the project folder, in this order.
@@ -99,6 +123,53 @@ If you ever do need access from outside, that is a different setup: a VPN back
 into the shop, or a reverse proxy terminating HTTPS in front of the app with
 `COOKIE_SECURE=true` and `TRUST_PROXY_HEADERS=true`. Both of those settings are
 documented in `env.example` and neither should be changed speculatively.
+
+---
+
+## Giving it a name and a desktop icon
+
+Nobody at the counter should have to remember `localhost:5177` or an IP
+address. Run this once, as Administrator, on the shop PC:
+
+```powershell
+.\scripts\setup-desktop-access.ps1 -Name awesomeshop
+```
+
+It does two things, both scoped to this one PC only:
+
+- Adds a line to the Windows hosts file mapping `awesomeshop` to `127.0.0.1`,
+  so this machine — and only this machine — can reach the app at
+  `http://awesomeshop:5177`.
+- Puts an icon on the desktop that opens that address in the default
+  browser.
+
+Safe to re-run: it leaves an existing hosts entry alone rather than
+duplicating it.
+
+**Don't want to run a script?** Do the same two things by hand:
+
+1. Open `C:\Windows\System32\drivers\etc\hosts` in Notepad **run as
+   Administrator**, and add a line:
+   ```
+   127.0.0.1    awesomeshop
+   ```
+2. Right-click the desktop → **New → Text Document**, name it
+   `Awesomeshop.url` (Windows will ask about changing the file extension —
+   confirm), and put this inside it:
+   ```
+   [InternetShortcut]
+   URL=http://awesomeshop:5177
+   ```
+
+**The icon only opens a browser — it does not start the app.** The server
+still needs to already be running, the same as opening `localhost:5177` by
+hand. Right after the PC starts up, the icon may show "can't reach this
+page" for a few seconds while the Task-Scheduler-started server finishes
+coming up — that is normal; wait a moment and reload.
+
+This is deliberately PC-only. It does not make the app reachable as
+`awesomeshop` from a phone or another computer — those still use the PC's
+own address as described above.
 
 ---
 

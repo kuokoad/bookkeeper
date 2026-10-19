@@ -8,7 +8,8 @@ start with [Developer setup](developer-setup.md) instead.
 
 ## What you'll need
 
-- The app open in a browser
+- The app open in a browser — double-click the shop's icon on the desktop to
+  get there
 - Your shop's name
 - One product you sell, its cost and its price
 
