@@ -13,7 +13,8 @@ import {
 } from '@/services/audit.service';
 import { listUsers } from '@/services/user.service';
 import { AUDIT_ACTIONS, type AuditAction } from '@/db/schema/system';
-import { formatDateTime, fromBusinessDate, isValidBusinessDate, toBusinessDate } from '@/lib/format';
+import { formatDateTime, fromBusinessDate, toBusinessDate } from '@/lib/format';
+import { parseDate } from '@/lib/filters';
 import { Badge } from '@/components/ui/badge';
 
 import { Button } from '@/components/ui/button';
@@ -84,18 +85,18 @@ export default async function AuditLogPage({
   const action = AUDIT_ACTIONS.includes(params.action as AuditAction)
     ? (params.action as AuditAction)
     : undefined;
+  const from = parseDate(params.from);
+  const to = parseDate(params.to);
 
   const query: AuditQuery = {
     ...(Number.isInteger(userId) && userId! > 0 ? { userId } : {}),
     ...(action ? { action } : {}),
     ...(params.entity ? { entityType: params.entity } : {}),
     ...(params.q ? { search: params.q } : {}),
-    ...(params.from && isValidBusinessDate(params.from)
-      ? { from: fromBusinessDate(params.from) }
-      : {}),
-    ...(params.to && isValidBusinessDate(params.to)
+    ...(from ? { from: fromBusinessDate(from) } : {}),
+    ...(to
       ? // Include the whole of the "to" day, not just its first instant.
-        { to: new Date(fromBusinessDate(params.to).getTime() + 86_399_999) }
+        { to: new Date(fromBusinessDate(to).getTime() + 86_399_999) }
       : {}),
   };
 
@@ -117,8 +118,8 @@ export default async function AuditLogPage({
       action: params.action,
       entity: params.entity,
       q: params.q,
-      from: params.from,
-      to: params.to,
+      from,
+      to,
       page: params.page,
       ...overrides,
     };
@@ -149,15 +150,15 @@ export default async function AuditLogPage({
       </div>
 
       <FilterBar compact basePath="/users/audit"
-        active={Object.entries({ q: params.q, user: params.user, action: params.action, entity: params.entity, from: params.from, to: params.to })
+        active={Object.entries({ q: params.q, user: params.user, action: params.action, entity: params.entity, from, to })
           .filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: ({ user: 'Person', action: 'Action', entity: 'Kind of record', from: 'From', to: 'To', q: 'Search' } as Record<string, string>)[key]!, value: value! }))}
         fields={[
           { kind: 'search', key: 'q', label: 'Search', placeholder: 'What happened, or who' },
           { kind: 'select', key: 'user', label: 'Person', allLabel: 'Anyone', options: users.map(user => ({ value: String(user.id), label: user.displayName })) },
           { kind: 'select', key: 'action', label: 'Action', allLabel: 'Anything', options: AUDIT_ACTIONS.map(value => ({ value, label: ACTION_LABELS[value] ?? value })) },
           { kind: 'select', key: 'entity', label: 'Kind of record', allLabel: 'Anything', options: entityTypes.map(value => ({ value, label: value.replace(/_/g, ' ') })) },
-          { kind: 'date', key: 'from', label: 'From', max: toBusinessDate() },
-          { kind: 'date', key: 'to', label: 'To', max: toBusinessDate() },
+          { kind: 'date', key: 'from', label: 'From', max: toBusinessDate(), value: from ?? '' },
+          { kind: 'date', key: 'to', label: 'To', max: toBusinessDate(), value: to ?? '' },
         ]}
       />
 
