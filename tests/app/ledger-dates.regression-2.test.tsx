@@ -13,7 +13,7 @@ const ledger = vi.hoisted(() => ({
     lines: [], openingBalance: 0, closingBalance: 0, totalDebit: 0, totalCredit: 0,
   })),
 }));
-const audit = vi.hoisted(() => ({ countAuditLogs: vi.fn(() => 0), listAuditLogs: vi.fn(() => []), listAuditEntityTypes: vi.fn(() => []) }));
+const audit = vi.hoisted(() => ({ countAuditLogs: vi.fn(() => 0), listAuditLogs: vi.fn(() => []), listAuditEntityTypes: vi.fn(() => ['journal_entry']) }));
 vi.mock('@/db/client', () => ({ db: {} }));
 vi.mock('@/lib/auth/current-user', () => ({ requirePageAccess: vi.fn(async () => ({ role: 'OWNER', permissions: {} })) }));
 vi.mock('@/services/reporting/ledger.service', () => ledger);
@@ -69,6 +69,20 @@ describe('the rest of the date filters given a date nobody meant', () => {
     html = await render(AuditLogPage({ searchParams: Promise.resolve(params) }), params);
     expect(audit.countAuditLogs).toHaveBeenLastCalledWith({}, {});
     expect(html).not.toContain('Person:');
+  });
+
+  it('audit log names the action and kind of record it filtered on, and ignores ones nobody meant', async () => {
+    let params: Record<string, string> = { action: 'VOID', entity: 'journal_entry' };
+    let html = await render(AuditLogPage({ searchParams: Promise.resolve(params) }), params);
+    expect(audit.countAuditLogs).toHaveBeenLastCalledWith({}, { action: 'VOID', entityType: 'journal_entry' });
+    expect(html).toContain('Action: Voided');
+    expect(html).toContain('Kind of record: journal entry');
+
+    params = { action: 'NOPE', entity: 'junk' };
+    html = await render(AuditLogPage({ searchParams: Promise.resolve(params) }), params);
+    expect(audit.countAuditLogs).toHaveBeenLastCalledWith({}, {});
+    expect(html).not.toContain('Action:');
+    expect(html).not.toContain('Kind of record:');
   });
 
   it('account ledger runs all time to today instead of a 500', async () => {

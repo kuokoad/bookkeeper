@@ -12,9 +12,9 @@ import {
   type AuditQuery,
 } from '@/services/audit.service';
 import { listUsers } from '@/services/user.service';
-import { AUDIT_ACTIONS, type AuditAction } from '@/db/schema/system';
+import { AUDIT_ACTIONS } from '@/db/schema/system';
 import { formatDateTime, fromBusinessDate, toBusinessDate } from '@/lib/format';
-import { parseDate, parseId } from '@/lib/filters';
+import { parseDate, parseEnum, parseId } from '@/lib/filters';
 import { Badge } from '@/components/ui/badge';
 
 import { Button } from '@/components/ui/button';
@@ -82,16 +82,17 @@ export default async function AuditLogPage({
 
   const page = Math.max(1, Number(params.page ?? '1') || 1);
   const userId = parseId(params.user);
-  const action = AUDIT_ACTIONS.includes(params.action as AuditAction)
-    ? (params.action as AuditAction)
-    : undefined;
+  const action = parseEnum(params.action, AUDIT_ACTIONS);
+  // Only kinds of record the log actually holds, so a hand-edited ?entity= narrows nothing.
+  const entityTypes = listAuditEntityTypes(db);
+  const entity = parseEnum(params.entity, entityTypes);
   const from = parseDate(params.from);
   const to = parseDate(params.to);
 
   const query: AuditQuery = {
     ...(userId !== undefined ? { userId } : {}),
     ...(action ? { action } : {}),
-    ...(params.entity ? { entityType: params.entity } : {}),
+    ...(entity ? { entityType: entity } : {}),
     ...(params.q ? { search: params.q } : {}),
     ...(from ? { from: fromBusinessDate(from) } : {}),
     ...(to
@@ -108,15 +109,14 @@ export default async function AuditLogPage({
   });
 
   const users = listUsers(db);
-  const entityTypes = listAuditEntityTypes(db);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const queryString = (overrides: Record<string, string | undefined>): string => {
     const next = new URLSearchParams();
     const merged = {
       user: userId === undefined ? undefined : String(userId),
-      action: params.action,
-      entity: params.entity,
+      action,
+      entity,
       q: params.q,
       from,
       to,
@@ -150,7 +150,7 @@ export default async function AuditLogPage({
       </div>
 
       <FilterBar compact basePath="/users/audit"
-        active={Object.entries({ q: params.q, user: userId === undefined ? undefined : users.find(user => user.id === userId)?.displayName ?? String(userId), action: params.action, entity: params.entity, from, to })
+        active={Object.entries({ q: params.q, user: userId === undefined ? undefined : users.find(user => user.id === userId)?.displayName ?? String(userId), action: action && (ACTION_LABELS[action] ?? action), entity: entity?.replace(/_/g, ' '), from, to })
           .filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: ({ user: 'Person', action: 'Action', entity: 'Kind of record', from: 'From', to: 'To', q: 'Search' } as Record<string, string>)[key]!, value: value! }))}
         fields={[
           { kind: 'search', key: 'q', label: 'Search', placeholder: 'What happened, or who' },
