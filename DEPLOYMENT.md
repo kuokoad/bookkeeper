@@ -284,6 +284,21 @@ a warning. Do not start trading with failures on that list.
 
 ## Updating
 
+**From the app.** Go to **Settings → Health & backup → Update the app** and
+click **Check for updates**. If there is a new version, it lists the changes.
+**Update now** takes a verified backup, stops the app, installs the new
+version and starts the app again. Every till is unavailable for a few minutes
+while this happens. Only the owner sees the buttons. If the install fails, the
+app is put back on the version it was running, and the details go to
+`data/update.log`.
+
+This only works when the shop PC was set up with `git clone` and can reach
+the repository. If the repository is private, sign in to git once from a
+terminal on that PC so the credentials are saved. The app never asks for a
+password. It runs `scripts/update.ps1`, which you can also run by hand.
+
+**By hand:**
+
 ```bash
 git pull
 npm ci

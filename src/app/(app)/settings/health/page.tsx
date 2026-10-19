@@ -11,6 +11,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { Card, PageHeader, Stat } from '@/components/ui/page';
+import {
+  getInstalledVersion,
+  readUpdateStatus,
+  updateUnsupportedReason,
+  UPDATE_STATUS_PATH,
+} from '@/services/update.service';
+import { UpdatePanel } from './update-panel';
 
 export const metadata: Metadata = { title: 'Health & backup' };
 export const dynamic = 'force-dynamic';
@@ -37,6 +44,8 @@ export default async function HealthPage() {
   // cannot.
   const backup = getBackupStatus(db);
   const checks = runPreflight();
+
+  const version = await getInstalledVersion(process.cwd());
 
   const failures = checks.filter((check) => check.status === 'fail');
   const warnings = checks.filter((check) => check.status === 'warn');
@@ -102,6 +111,13 @@ export default async function HealthPage() {
           </p>
         )}
       </Card>
+
+      <UpdatePanel
+        version={version}
+        lastStatus={readUpdateStatus(UPDATE_STATUS_PATH)}
+        isOwner={user.role === 'OWNER'}
+        unsupportedReason={updateUnsupportedReason()}
+      />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat icon="check" label="Checks passed" value={String(checks.length - failures.length - warnings.length)} />
