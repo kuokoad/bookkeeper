@@ -70,7 +70,19 @@ export type FilterField =
       currency?: string;
     }
   /** A single date, for a report asked "as at" a day rather than over a range. */
-  | { kind: 'date'; key: string; label: string; max?: string; defaultValue?: string };
+  | {
+      kind: 'date';
+      key: string;
+      label: string;
+      max?: string;
+      defaultValue?: string;
+      /**
+       * The date the server resolved and filtered on. Shown in place of the raw
+       * query string, so a hand-edited `?from=x` cannot leave the box saying
+       * something other than the data under it.
+       */
+      value?: string;
+    };
 
 export interface QuickFilter {
   label: string;

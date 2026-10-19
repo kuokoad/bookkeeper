@@ -69,10 +69,10 @@ export default async function TrialBalancePage({
       )}
 
       <FilterBar compact basePath="/accounting/trial-balance"
-        active={Object.entries(params).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'from' ? 'From' : 'As at', value: value! }))}
+        active={Object.entries({ from, to: parseDate(params.to) ? to : undefined }).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'from' ? 'From' : 'As at', value: value! }))}
         fields={[
-          { kind: 'date', key: 'from', label: 'From (optional)', defaultValue: from ?? '' },
-          { kind: 'date', key: 'to', label: 'As at', defaultValue: to },
+          { kind: 'date', key: 'from', label: 'From (optional)', value: from ?? '' },
+          { kind: 'date', key: 'to', label: 'As at', value: to },
         ]}
       />
 

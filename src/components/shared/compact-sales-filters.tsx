@@ -26,7 +26,10 @@ export function CompactFilters({ basePath, compactSales = false, fields = [], qu
   const defaults = Object.fromEntries(fields.flatMap(field =>
     (field.kind === 'date' || field.kind === 'select') && field.defaultValue !== undefined
       ? [[field.key, field.defaultValue]] : []));
-  const value = (key: string) => values[key] ?? params.get(key) ?? defaults[key] ?? '';
+  // The server's resolved date beats the raw URL, which can be junk the page threw away.
+  const resolved = Object.fromEntries(fields.flatMap(field =>
+    field.kind === 'date' && field.value !== undefined ? [[field.key, field.value]] : []));
+  const value = (key: string) => values[key] ?? resolved[key] ?? params.get(key) ?? defaults[key] ?? '';
   const setValue = (key: string, next: string) => setDraft({ signature, values: { ...values, [key]: next } });
   const advanced = fields.filter(field => field.kind !== 'search');
   const search = fields.find(field => field.kind === 'search');

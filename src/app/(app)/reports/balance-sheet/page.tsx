@@ -47,7 +47,7 @@ export default async function BalanceSheetPage({
 
       <FilterBar compact basePath="/reports/balance-sheet"
         active={params.asAt ? [{ key: 'asAt', label: 'As at', value: asAt }] : []}
-        fields={[{ kind: 'date', key: 'asAt', label: 'As at', defaultValue: asAt }]}
+        fields={[{ kind: 'date', key: 'asAt', label: 'As at', value: asAt }]}
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">

@@ -89,10 +89,14 @@ export default async function JournalPage({
       )}
 
       <FilterBar compact basePath="/accounting/journal"
-        active={Object.entries({ from: params.from, to: params.to, source: params.source }).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'source' ? 'Kind' : key === 'from' ? 'From' : 'To', value: value! }))}
+        active={Object.entries({
+          from: parseDate(params.from) ? from : undefined,
+          to: parseDate(params.to) ? to : undefined,
+          source: params.source,
+        }).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'source' ? 'Kind' : key === 'from' ? 'From' : 'To', value: value! }))}
         fields={[
-          { kind: 'date', key: 'from', label: 'From', defaultValue: from },
-          { kind: 'date', key: 'to', label: 'To', defaultValue: to },
+          { kind: 'date', key: 'from', label: 'From', value: from },
+          { kind: 'date', key: 'to', label: 'To', value: to },
           { kind: 'select', key: 'source', label: 'Kind', allLabel: 'Everything', options: FILTERS.filter(item => item.value) },
         ]}
       />
