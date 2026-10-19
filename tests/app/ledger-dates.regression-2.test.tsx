@@ -21,7 +21,7 @@ vi.mock('@/services/reporting/balances.service', () => ({ getAccountBalanceByCod
 vi.mock('@/services/supplier.service', () => ({ getTotalPayables: () => 0, listSuppliers: () => [] }));
 vi.mock('@/services/customer.service', () => ({ getTotalReceivables: () => 0, listCustomers: () => [] }));
 vi.mock('@/services/audit.service', () => audit);
-vi.mock('@/services/user.service', () => ({ listUsers: () => [] }));
+vi.mock('@/services/user.service', () => ({ listUsers: () => [{ id: 3, displayName: 'Ama Mensah' }] }));
 vi.mock('@/lib/format', async (actual) => ({ ...(await actual<typeof import('@/lib/format')>()), toBusinessDate: () => '2026-10-14' }));
 import PayablesPage from '@/app/(app)/accounting/payables/page';
 import ReceivablesPage from '@/app/(app)/accounting/receivables/page';
@@ -56,6 +56,19 @@ describe('the rest of the date filters given a date nobody meant', () => {
     expect(html).not.toContain('value="2026-99-99"');
     expect(html).not.toContain('From: x');
     expect(html).not.toContain('To: 2026-99-99');
+  });
+
+  it('audit log names the person it filtered on, and ignores a person id nobody meant', async () => {
+    let params: Record<string, string> = { user: '3' };
+    let html = await render(AuditLogPage({ searchParams: Promise.resolve(params) }), params);
+    expect(audit.countAuditLogs).toHaveBeenLastCalledWith({}, { userId: 3 });
+    expect(html).toContain('Person: Ama Mensah');
+    expect(html).not.toContain('Person: 3');
+
+    params = { user: 'abc' };
+    html = await render(AuditLogPage({ searchParams: Promise.resolve(params) }), params);
+    expect(audit.countAuditLogs).toHaveBeenLastCalledWith({}, {});
+    expect(html).not.toContain('Person:');
   });
 
   it('account ledger runs all time to today instead of a 500', async () => {

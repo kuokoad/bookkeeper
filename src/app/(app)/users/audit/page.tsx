@@ -14,7 +14,7 @@ import {
 import { listUsers } from '@/services/user.service';
 import { AUDIT_ACTIONS, type AuditAction } from '@/db/schema/system';
 import { formatDateTime, fromBusinessDate, toBusinessDate } from '@/lib/format';
-import { parseDate } from '@/lib/filters';
+import { parseDate, parseId } from '@/lib/filters';
 import { Badge } from '@/components/ui/badge';
 
 import { Button } from '@/components/ui/button';
@@ -81,7 +81,7 @@ export default async function AuditLogPage({
   const params = await searchParams;
 
   const page = Math.max(1, Number(params.page ?? '1') || 1);
-  const userId = params.user ? Number(params.user) : undefined;
+  const userId = parseId(params.user);
   const action = AUDIT_ACTIONS.includes(params.action as AuditAction)
     ? (params.action as AuditAction)
     : undefined;
@@ -89,7 +89,7 @@ export default async function AuditLogPage({
   const to = parseDate(params.to);
 
   const query: AuditQuery = {
-    ...(Number.isInteger(userId) && userId! > 0 ? { userId } : {}),
+    ...(userId !== undefined ? { userId } : {}),
     ...(action ? { action } : {}),
     ...(params.entity ? { entityType: params.entity } : {}),
     ...(params.q ? { search: params.q } : {}),
@@ -114,7 +114,7 @@ export default async function AuditLogPage({
   const queryString = (overrides: Record<string, string | undefined>): string => {
     const next = new URLSearchParams();
     const merged = {
-      user: params.user,
+      user: userId === undefined ? undefined : String(userId),
       action: params.action,
       entity: params.entity,
       q: params.q,
@@ -150,7 +150,7 @@ export default async function AuditLogPage({
       </div>
 
       <FilterBar compact basePath="/users/audit"
-        active={Object.entries({ q: params.q, user: params.user, action: params.action, entity: params.entity, from, to })
+        active={Object.entries({ q: params.q, user: userId === undefined ? undefined : users.find(user => user.id === userId)?.displayName ?? String(userId), action: params.action, entity: params.entity, from, to })
           .filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: ({ user: 'Person', action: 'Action', entity: 'Kind of record', from: 'From', to: 'To', q: 'Search' } as Record<string, string>)[key]!, value: value! }))}
         fields={[
           { kind: 'search', key: 'q', label: 'Search', placeholder: 'What happened, or who' },
