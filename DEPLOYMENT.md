@@ -27,7 +27,24 @@ live in one file you can copy.
 
 ---
 
+## On a bare PC
+
+Open PowerShell with **Run as Administrator** and paste:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kuokoad/bookkeeper/main/scripts/install.ps1))) -Firewall -AutoStart
+```
+
+This installs Node.js and Git with `winget` if they are missing, downloads the
+app into `C:\NunaBooks`, and then runs the one-command version below. `winget`
+may ask you to accept its terms and each installer's licence; answer it. If it
+says a program was installed but cannot be found, close PowerShell, open a
+new one as Administrator, and paste the line again. It picks up where it
+stopped.
+
 ## The one-command version
+
+On a PC that already has the app:
 
 ```powershell
 .\scripts\deploy.ps1 -Firewall -AutoStart
