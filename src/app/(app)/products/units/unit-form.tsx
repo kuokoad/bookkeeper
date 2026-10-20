@@ -106,7 +106,7 @@ export function UnitForm({ unit }: { unit: UnitValues | null }) {
         <SubmitButton adding={adding} />
         {!adding && (
           <>
-            <span className="tabular pb-3 text-xs text-content-subtle">
+            <span className="tabular w-20 pb-3 text-xs text-content-subtle">
               {unit.productCount} product{unit.productCount === 1 ? '' : 's'}
             </span>
             {unit.productCount === 0 && (
