@@ -314,7 +314,7 @@ export function AdjustmentForm({
                   disabled={rows.length === 1}
                   aria-label={`Remove line ${index + 1}`}
                 >
-                  Remove
+                  ✕
                 </Button>
               </div>
             </div>
