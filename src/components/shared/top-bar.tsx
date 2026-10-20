@@ -54,7 +54,7 @@ export function TopBar({
         {/* The sidebar carries sign-out on desktop, and it is hidden on a
             phone — so without this, a phone user could not sign out at all. */}
         <form action={logoutAction} className="lg:hidden">
-          <Button type="submit" variant="ghost" size="sm">
+          <Button type="submit" variant="ghost" size="sm" className="whitespace-nowrap">
             Sign out
           </Button>
         </form>
