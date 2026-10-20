@@ -27,6 +27,29 @@ export const categories = sqliteTable(
   ],
 );
 
+/**
+ * Units of measure, as Tally keeps them: a short symbol and how many decimal
+ * places a quantity in it may carry. Pcs takes 0 (nobody sells half a bottle),
+ * Kg takes 3. The symbol is the key, so `products.unit` stays plain text that
+ * every report already reads, and a rename cascades to the products using it.
+ */
+export const units = sqliteTable(
+  'units',
+  {
+    symbol: text('symbol').primaryKey(),
+    name: text('name').notNull(),
+    decimalPlaces: integer('decimal_places').notNull().default(0),
+
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('uq_units_symbol_nocase').on(sql`lower(${t.symbol})`),
+    check('ck_units_symbol', sql`length(trim(${t.symbol})) > 0`),
+    check('ck_units_decimals', sql`${t.decimalPlaces} BETWEEN 0 AND 3`),
+  ],
+);
+
 export const products = sqliteTable(
   'products',
   {
@@ -40,8 +63,28 @@ export const products = sqliteTable(
 
     categoryId: integer('category_id').references(() => categories.id, { onDelete: 'set null' }),
 
-    /** Free text: 'pcs', 'kg', 'crate', 'bag'. Not an enum — shops differ. */
-    unit: text('unit').notNull().default('pcs'),
+    /**
+     * The base unit, from the Units list. Stock, the ledger and costing are all
+     * kept in it. Fixed once the product has a stock movement.
+     */
+    unit: text('unit')
+      .notNull()
+      .references(() => units.symbol, { onUpdate: 'cascade', onDelete: 'restrict' }),
+
+    /**
+     * One alternate unit, as Tally allows: "1 Carton = 24 Pcs" is
+     * `altUnit = 'Carton'`, `altFactorMilli = 24_000` (base milli-units in one
+     * alternate unit). Only changes how a line is entered and priced — the
+     * quantity is converted to the base unit before it reaches stock.
+     */
+    altUnit: text('alt_unit').references(() => units.symbol, {
+      onUpdate: 'cascade',
+      onDelete: 'restrict',
+    }),
+    altFactorMilli: qtyMilli('alt_factor_milli'),
+    /** Reference prices per alternate unit, like the two below. */
+    altCostPriceMinor: moneyMinor('alt_cost_price_minor'),
+    altSellingPriceMinor: moneyMinor('alt_selling_price_minor'),
     description: text('description'),
 
     /**
@@ -105,6 +148,15 @@ export const products = sqliteTable(
     check('ck_products_name', sql`length(trim(${t.name})) > 0`),
     check('ck_products_unit', sql`length(trim(${t.unit})) > 0`),
     // Prices may be zero (a free sample) but never negative.
+    check(
+      'ck_products_alt_unit',
+      sql`(${t.altUnit} IS NULL AND ${t.altFactorMilli} IS NULL AND ${t.altCostPriceMinor} IS NULL AND ${t.altSellingPriceMinor} IS NULL)
+        OR (${t.altUnit} IS NOT NULL AND ${t.altFactorMilli} > 0 AND ${t.altUnit} <> ${t.unit})`,
+    ),
+    check(
+      'ck_products_alt_prices',
+      sql`coalesce(${t.altCostPriceMinor}, 0) >= 0 AND coalesce(${t.altSellingPriceMinor}, 0) >= 0`,
+    ),
     check('ck_products_cost_price', sql`${t.costPriceMinor} >= 0`),
     check('ck_products_selling_price', sql`${t.sellingPriceMinor} >= 0`),
     check('ck_products_min_stock', sql`${t.minStockMilli} IS NULL OR ${t.minStockMilli} >= 0`),
@@ -118,6 +170,7 @@ export const products = sqliteTable(
   ],
 );
 
+export type Unit = typeof units.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type NewCategory = typeof categories.$inferInsert;
 export type Product = typeof products.$inferSelect;

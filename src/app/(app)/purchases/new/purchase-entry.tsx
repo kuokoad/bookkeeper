@@ -10,12 +10,17 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
 import { DateField } from '@/components/ui/date-field';
+import { unitLabel, UnitPicker } from '@/components/shared/unit-picker';
 
 export interface EntryProduct {
   id: number;
   name: string;
   unit: string;
+  altUnit: string | null;
+  altFactorMilli: number | null;
   costPrice: number;
+  /** Per alternate unit. Null when there is no alternate. */
+  altCostPrice: number | null;
   qtyOnHandMilli: number;
 }
 
@@ -35,6 +40,8 @@ interface Row {
   key: number;
   productId: string;
   qty: string;
+  /** True when qty and cost are in the product's alternate unit. */
+  alt: boolean;
   unitCost: string;
   discount: string;
   /**
@@ -109,7 +116,7 @@ export function PurchaseEntry({
   const [note, setNote] = useState('');
   const [invoiceDiscount, setInvoiceDiscount] = useState('');
   const [rows, setRows] = useState<Row[]>([
-    { key: 1, productId: '', qty: '', unitCost: '', discount: '', expiryDate: '', showExpiry: false },
+    { key: 1, productId: '', qty: '', alt: false, unitCost: '', discount: '', expiryDate: '', showExpiry: false },
   ]);
   const [payAccountId, setPayAccountId] = useState(
     String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? ''),
@@ -123,7 +130,7 @@ export function PurchaseEntry({
   if (state.purchaseNo && state.purchaseNo !== handled) {
     setHandled(state.purchaseNo);
     setRows([
-      { key: 1, productId: '', qty: '', unitCost: '', discount: '', expiryDate: '', showExpiry: false },
+      { key: 1, productId: '', qty: '', alt: false, unitCost: '', discount: '', expiryDate: '', showExpiry: false },
     ]);
     setInvoiceNo('');
     setNote('');
@@ -143,6 +150,7 @@ export function PurchaseEntry({
         key: Math.max(0, ...current.map((row) => row.key)) + 1,
         productId: '',
         qty: '',
+        alt: false,
         unitCost: '',
         discount: '',
         expiryDate: '',
@@ -197,6 +205,7 @@ export function PurchaseEntry({
       qty: row.qty.trim(),
       unitCost: row.unitCost.trim() || '0',
       discount: row.discount.trim() || undefined,
+      ...(row.alt ? { alt: true } : {}),
       expiryDate: row.expiryDate.trim() || undefined,
     })),
     tenders:
@@ -304,6 +313,7 @@ export function PurchaseEntry({
                       const chosen = products.find((p) => String(p.id) === event.target.value);
                       updateRow(row.key, {
                         productId: event.target.value,
+                        alt: false,
                         // Pre-fill with the expected cost to save typing.
                         unitCost: row.unitCost || (chosen ? fmt(chosen.costPrice) : ''),
                       });
@@ -324,7 +334,7 @@ export function PurchaseEntry({
                     htmlFor={`q-${row.key}`}
                     className="mb-1 block text-xs font-medium text-content-muted"
                   >
-                    Quantity {product ? `(${product.unit})` : ''}
+                    Quantity {product ? `(${unitLabel(row.alt, product)})` : ''}
                   </label>
                   <AmountInput
                     id={`q-${row.key}`}
@@ -332,6 +342,22 @@ export function PurchaseEntry({
                     onChange={(event) => updateRow(row.key, { qty: event.target.value })}
                     invalid={Number.isNaN(qty)}
                   />
+                  {product?.altUnit && (
+                    <div className="mt-1">
+                      <UnitPicker
+                        id={`u-${row.key}`}
+                        alt={row.alt}
+                        units={product}
+                        onChange={(alt) =>
+                          // The expected cost follows the unit: a carton costs a carton's worth.
+                          updateRow(row.key, {
+                            alt,
+                            unitCost: fmt(alt ? (product.altCostPrice ?? 0) : product.costPrice),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="sm:col-span-2">

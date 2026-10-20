@@ -13,7 +13,7 @@ import {
   REASON_LABELS,
 } from '@/services/stock-adjustment.service';
 import { formatDate, toBusinessDate, quantity } from '@/lib/format';
-import { qty as makeQty } from '@/domain/quantity';
+import { formatQtyAlt, qty as makeQty } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/ui/page';
 import { AdjustmentForm } from './adjustment-form';
@@ -35,7 +35,9 @@ export default async function NewAdjustmentPage() {
       id: product.id,
       name: product.name,
       unit: product.unit,
-      qtyOnHandLabel: `${quantity(product.qtyOnHand, product.unit)} on hand`,
+      altUnit: product.altUnit,
+      altFactorMilli: product.altFactor as number | null,
+      qtyOnHandLabel: `${formatQtyAlt(product.qtyOnHand, product.unit, product.altUnit, product.altFactor)} on hand`,
       expiredBatches: expired
         .filter((batch) => batch.productId === product.id)
         .map((batch) => ({

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { formatQtyAlt } from '@/domain/quantity';
 import Link from 'next/link';
 
 import { db } from '@/db/client';
@@ -8,7 +9,7 @@ import { countProducts, getStockSummary, hasDatedStock, listCategories, listProd
 import { featuresFromRow } from '@/lib/business-type';
 import { getSettings } from '@/services/settings.service';
 import { listSupplierOptions } from '@/services/supplier.service';
-import { money, quantity } from '@/lib/format';
+import { money } from '@/lib/format';
 import { filterValueName, buildQuery, clampPage, type ActiveFilter } from '@/lib/filters';
 import { parseProductFilters, type SearchParams } from '@/lib/list-filters';
 import { Button } from '@/components/ui/button';
@@ -136,6 +137,11 @@ export default async function ProductsPage({
                 <Link href="/products/categories">
                   <Button variant="secondary" size="sm">
                     Categories
+                  </Button>
+                </Link>
+                <Link href="/products/units">
+                  <Button variant="secondary" size="sm">
+                    Units
                   </Button>
                 </Link>
                 <Link href="/products/new">
@@ -373,7 +379,7 @@ export default async function ProductsPage({
                   <TD numeric>
                     {item.trackInventory ? (
                       <span className="inline-flex items-center gap-2">
-                        {quantity(item.qtyOnHand, item.unit)}
+                        {formatQtyAlt(item.qtyOnHand, item.unit, item.altUnit, item.altFactor)}
                         {item.qtyOnHand < 0 ? (
                           <Badge tone="danger">Negative</Badge>
                         ) : item.outOfStock ? (

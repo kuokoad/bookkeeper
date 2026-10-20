@@ -6,6 +6,7 @@ import { businessSettings } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { getFeatures } from '@/lib/business-type.server';
 import { listCategories } from '@/services/catalog.service';
+import { listUnits } from '@/services/units.service';
 import { createProductAction } from '@/actions/catalog.actions';
 import { PageHeader } from '@/components/ui/page';
 import { ProductForm } from '../product-form';
@@ -32,12 +33,17 @@ export default async function NewProductPage() {
         currencyCode={settings?.currencyCode ?? 'GHS'}
         submitLabel="Create product"
         showStockNotice
+        units={listUnits(db)}
         initial={{
           name: '',
           sku: '',
           barcode: '',
           categoryId: '',
           unit: 'pcs',
+          altUnit: '',
+          altFactor: '',
+          altCostPrice: '',
+          altSellingPrice: '',
           description: '',
           costPrice: '0.00',
           sellingPrice: '0.00',

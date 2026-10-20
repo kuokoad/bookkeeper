@@ -35,7 +35,10 @@ export default async function NewQuotationPage() {
           id: product.id,
           name: product.name,
           unit: product.unit,
+          altUnit: product.altUnit,
+          altFactorMilli: product.altFactor,
           sellingPrice: product.sellingPrice,
+          altSellingPrice: product.altSellingPrice,
         }))}
         customers={listCustomers(db, {}).map((customer) => ({
           id: customer.id,

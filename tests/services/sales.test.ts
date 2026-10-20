@@ -42,10 +42,10 @@ const u = (n: number): Qty => fromUnits(n);
 let CASH_ACCOUNT = 0;
 let MOMO_ACCOUNT = 0;
 
-function makeProduct(name: string, cost = 500, price = 800): number {
+function makeProduct(name: string, cost = 500, price = 800, unit = 'pcs'): number {
   return createProduct(
     context.db,
-    { name, costPrice: m(cost), sellingPrice: m(price), unit: 'pcs' },
+    { name, costPrice: m(cost), sellingPrice: m(price), unit },
     ACTOR,
   );
 }
@@ -778,8 +778,9 @@ describe('reads', () => {
 });
 
 describe('fractional quantities end to end', () => {
+  // Rice is weighed, so it needs a unit that allows decimals: pcs refuses 25.5.
   it('sells 2.5 kg of rice correctly', () => {
-    const id = makeProduct('Rice', 1_400, 1_900);
+    const id = makeProduct('Rice', 1_400, 1_900, 'kg');
     createStockAdjustment(
       context.db,
       {

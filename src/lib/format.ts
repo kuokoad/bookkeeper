@@ -34,6 +34,21 @@ export function quantity(value: Qty, unit?: string): string {
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
+/**
+ * A document line's quantity the way it was entered: "2 Carton" for a line
+ * taken in the alternate unit, otherwise "48 pcs". Its price is per that unit.
+ */
+export function lineQuantity(item: {
+  qtyMilli: number;
+  unit: string;
+  entryUnit?: string | null;
+  entryQtyMilli?: number | null;
+}): string {
+  return item.entryUnit && item.entryQtyMilli !== null && item.entryQtyMilli !== undefined
+    ? quantity(item.entryQtyMilli as Qty, item.entryUnit)
+    : quantity(item.qtyMilli as Qty, item.unit);
+}
+
 // --- dates -----------------------------------------------------------------
 
 const DAY_MS = 24 * 60 * 60 * 1000;

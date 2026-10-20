@@ -66,6 +66,8 @@ const cartSchema = z.object({
         qty: z.string().trim().min(1),
         unitPrice: z.string().trim().min(1),
         discount: z.string().trim().optional(),
+        // True when qty and price are in the product's alternate unit.
+        alt: z.boolean().optional(),
       }),
     )
     .min(1, 'Add at least one item to the sale.'),
@@ -140,6 +142,7 @@ export async function createSaleAction(
         productId: item.productId,
         qty: parsePositiveQty(item.qty, `Item ${index + 1} quantity`),
         unitPrice: parseMoney(item.unitPrice),
+        ...(item.alt === true ? { alt: true } : {}),
         ...(item.discount && item.discount.length > 0
           ? { discount: parseMoney(item.discount) }
           : {}),

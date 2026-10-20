@@ -20,6 +20,8 @@ import {
   type TaxComponent,
   type TaxLine,
 } from '@/domain/tax/components';
+import { formatQtyAlt, type Qty } from '@/domain/quantity';
+import { baseMilliOf, unitLabel, UnitPicker } from '@/components/shared/unit-picker';
 
 export interface PosProduct {
   id: number;
@@ -27,8 +29,12 @@ export interface PosProduct {
   sku: string | null;
   barcode: string | null;
   unit: string;
+  altUnit: string | null;
+  altFactorMilli: number | null;
   /** Minor units. */
   sellingPrice: number;
+  /** Per alternate unit, minor units. Null when there is no alternate. */
+  altSellingPrice: number | null;
   qtyOnHandMilli: number;
   trackInventory: boolean;
   /** Stock that has not passed its date. Everything undated counts. */
@@ -57,6 +63,12 @@ interface CartLine {
   productId: number;
   name: string;
   unit: string;
+  altUnit: string | null;
+  altFactorMilli: number | null;
+  /** True when qty and price are in the alternate unit. */
+  alt: boolean;
+  sellingPrice: number;
+  altSellingPrice: number | null;
   qty: string;
   unitPrice: string;
   discount: string;
@@ -203,11 +215,13 @@ export function Pos({
 
   function addProduct(product: PosProduct) {
     setLines((current) => {
-      const existing = current.find((line) => line.productId === product.id);
+      // A scan is one piece, so it bumps the line taken in the base unit; a line
+      // switched to cartons is left alone and the piece gets its own line.
+      const existing = current.find((line) => line.productId === product.id && !line.alt);
       if (existing) {
         // Scanning the same item again bumps the quantity, as a till should.
         return current.map((line) =>
-          line.productId === product.id
+          line.key === existing.key
             ? { ...line, qty: String((toMilli(line.qty) + 1000) / 1000) }
             : line,
         );
@@ -219,6 +233,11 @@ export function Pos({
           productId: product.id,
           name: product.name,
           unit: product.unit,
+          altUnit: product.altUnit,
+          altFactorMilli: product.altFactorMilli,
+          alt: false,
+          sellingPrice: product.sellingPrice,
+          altSellingPrice: product.altSellingPrice,
           qty: '1',
           unitPrice: fmt(product.sellingPrice),
           discount: '',
@@ -371,7 +390,8 @@ export function Pos({
       : '';
 
   const overselling = lines.filter(
-    (line) => line.trackInventory && toMilli(line.qty) > line.qtyOnHandMilli,
+    (line) =>
+      line.trackInventory && baseMilliOf(toMilli(line.qty), line.alt, line) > line.qtyOnHandMilli,
   );
   const needsCustomer = totals.outstanding > 0 && customerId === '';
   const canSubmit =
@@ -432,6 +452,7 @@ export function Pos({
       qty: line.qty.trim(),
       unitPrice: line.unitPrice.trim(),
       discount: line.discount.trim() || undefined,
+      ...(line.alt ? { alt: true } : {}),
     })),
     tenders: [
       ...(tenderAmount.trim() && tenderAccountId
@@ -505,7 +526,7 @@ export function Pos({
                         </span>
                         <span className="block text-xs text-content-subtle">
                           {product.trackInventory
-                            ? `${fmtQty(product.qtyOnHandMilli)} ${product.unit} in stock`
+                            ? `${formatQtyAlt(product.qtyOnHandMilli as Qty, product.unit, product.altUnit, product.altFactorMilli)} in stock`
                             : 'Not stock-tracked'}
                           {product.sku ? ` · ${product.sku}` : ''}
                         </span>
@@ -548,7 +569,9 @@ export function Pos({
                 const discount = line.discount ? toMinor(line.discount) : 0;
                 const bad = Number.isNaN(qtyMilli) || Number.isNaN(price) || Number.isNaN(discount);
                 const lineTotal = bad ? 0 : Math.round((price * qtyMilli) / 1000) - discount;
-                const short = line.trackInventory && qtyMilli > line.qtyOnHandMilli;
+                // Stock is counted in the base unit; a line in Cartons is compared as pieces.
+                const baseQty = baseMilliOf(qtyMilli, line.alt, line);
+                const short = line.trackInventory && baseQty > line.qtyOnHandMilli;
 
                 /**
                  * The date situation for this line, in the SAME place the stock
@@ -565,7 +588,7 @@ export function Pos({
                   line.trackInventory &&
                   expiryBlocksSales &&
                   !short &&
-                  qtyMilli > line.goodQtyMilli;
+                  baseQty > line.goodQtyMilli;
 
                 // This product's own window, not the shop's: bread wants three
                 // days' notice and tinned milk wants thirty, and one number for
@@ -581,7 +604,8 @@ export function Pos({
                       <div className="min-w-0">
                         <p className="truncate font-medium text-content">{line.name}</p>
                         <p className="text-xs text-content-subtle">
-                          {fmtQty(line.qtyOnHandMilli)} {line.unit} in stock
+                          {formatQtyAlt(line.qtyOnHandMilli as Qty, line.unit, line.altUnit, line.altFactorMilli)}{' '}
+                          in stock
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -609,7 +633,7 @@ export function Pos({
                           htmlFor={`qty-${line.key}`}
                           className="mb-1 block text-xs text-content-muted"
                         >
-                          Qty ({line.unit})
+                          Qty ({unitLabel(line.alt, line)})
                         </label>
                         <AmountInput
                           id={`qty-${line.key}`}
@@ -618,6 +642,22 @@ export function Pos({
                           invalid={Number.isNaN(qtyMilli) || short}
                           className="h-10"
                         />
+                        {line.altUnit && (
+                          <div className="mt-1">
+                            <UnitPicker
+                              id={`unit-${line.key}`}
+                              alt={line.alt}
+                              units={line}
+                              onChange={(alt) =>
+                                // Switching unit re-prices the line at that unit's own price.
+                                updateLine(line.key, {
+                                  alt,
+                                  unitPrice: fmt(alt ? (line.altSellingPrice ?? 0) : line.sellingPrice),
+                                })
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                       <div>
                         {/*

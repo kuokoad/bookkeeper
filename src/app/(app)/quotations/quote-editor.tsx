@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/page';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
 import { DateField } from '@/components/ui/date-field';
+import { unitLabel, UnitPicker } from '@/components/shared/unit-picker';
 
 /**
  * Writing a quote.
@@ -30,7 +31,11 @@ export interface EditorProduct {
   id: number;
   name: string;
   unit: string;
+  altUnit: string | null;
+  altFactorMilli: number | null;
   sellingPrice: number;
+  /** Per alternate unit. Null when there is no alternate. */
+  altSellingPrice: number | null;
 }
 
 export interface EditorCustomer {
@@ -49,13 +54,15 @@ export interface QuoteEditorValues {
   reference: string;
   notes: string;
   quoteDiscount: string;
-  lines: { productId: number; qty: string; unitPrice: string; discount: string }[];
+  lines: { productId: number; qty: string; unitPrice: string; discount: string; alt: boolean }[];
 }
 
 interface Line {
   key: number;
   productId: string;
   qty: string;
+  /** True when qty and price are in the product's alternate unit. */
+  alt: boolean;
   unitPrice: string;
   discount: string;
 }
@@ -106,10 +113,11 @@ export function QuoteEditor({
           key: index + 1,
           productId: String(line.productId),
           qty: line.qty,
+          alt: line.alt,
           unitPrice: line.unitPrice,
           discount: line.discount,
         }))
-      : [{ key: 1, productId: '', qty: '', unitPrice: '', discount: '' }],
+      : [{ key: 1, productId: '', qty: '', alt: false, unitPrice: '', discount: '' }],
   );
   const [quoteDiscount, setQuoteDiscount] = useState(values.quoteDiscount);
   const [customerName, setCustomerName] = useState(values.customerName);
@@ -129,6 +137,7 @@ export function QuoteEditor({
     const product = byId.get(productId);
     updateLine(key, {
       productId,
+      alt: false,
       // Pre-filled with the shelf price, and freely editable: quoting is
       // negotiation, and a yard that could not offer a keener price than the
       // shelf would have no reason to write a quote at all.
@@ -168,6 +177,7 @@ export function QuoteEditor({
         productId: Number(line.productId),
         qty: line.qty.trim(),
         unitPrice: line.unitPrice.trim() || '0',
+        ...(line.alt ? { alt: true } : {}),
         ...(line.discount.trim() ? { discount: line.discount.trim() } : {}),
       })),
   );
@@ -311,7 +321,7 @@ export function QuoteEditor({
                     htmlFor={`qty-${line.key}`}
                     className="mb-1 block text-xs text-content-muted"
                   >
-                    Qty {product ? `(${product.unit})` : ''}
+                    Qty {product ? `(${unitLabel(line.alt, product)})` : ''}
                   </label>
                   <AmountInput
                     id={`qty-${line.key}`}
@@ -320,6 +330,23 @@ export function QuoteEditor({
                     invalid={Number.isNaN(qty) && line.qty.trim() !== ''}
                     className="h-10"
                   />
+                  {product?.altUnit && (
+                    <div className="mt-1">
+                      <UnitPicker
+                        id={`unit-${line.key}`}
+                        alt={line.alt}
+                        units={product}
+                        onChange={(alt) =>
+                          updateLine(line.key, {
+                            alt,
+                            unitPrice: (
+                              (alt ? (product.altSellingPrice ?? 0) : product.sellingPrice) / 100
+                            ).toFixed(2),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -386,6 +413,7 @@ export function QuoteEditor({
                 key: Math.max(0, ...current.map((row) => row.key)) + 1,
                 productId: '',
                 qty: '',
+                alt: false,
                 unitPrice: '',
                 discount: '',
               },

@@ -19,6 +19,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { recordStockMovement } from './inventory.service';
+import { resolveLineUnit } from './units.service';
 import { formatQty } from '@/domain/inventory/batches';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 
@@ -82,6 +83,8 @@ export interface AdjustmentItemInput {
   productId: number;
   direction: AdjustmentDirection;
   qty: Qty;
+  /** `qty` is in the product's alternate unit ("2 Carton"). */
+  alt?: boolean;
   /**
    * Required when adding stock — the value entering inventory. Ignored when
    * removing stock, where the cost basis comes from the weighted average.
@@ -169,7 +172,12 @@ export function createStockAdjustment(
     const inValues: Minor[] = [];
     const outValues: Minor[] = [];
 
-    for (const item of input.items) {
+    for (const entered of input.items) {
+      const product = tx.select().from(products).where(eq(products.id, entered.productId)).get();
+      if (!product) throw new NotFoundError('Product', entered.productId);
+      const lineUnit = resolveLineUnit(tx, product, entered.qty, entered.alt);
+      // From here on the line is in the base unit, like every stock movement.
+      const item = { ...entered, qty: lineUnit.baseQty };
       if (item.qty <= 0) {
         throw new ValidationError('Every adjustment line needs a quantity greater than zero.');
       }
@@ -224,6 +232,9 @@ export function createStockAdjustment(
           batchId: batch?.id ?? null,
           direction: item.direction,
           qtyMilli: item.qty,
+          entryUnit: lineUnit.entryUnit,
+          entryQtyMilli: lineUnit.entryQtyMilli,
+          entryFactorMilli: lineUnit.entryFactorMilli,
           unitCostMinor: movement.unitCost,
           totalCostMinor: movement.totalCost,
           note: item.note ?? null,
@@ -436,6 +447,9 @@ export function voidStockAdjustment(
           productId: item.productId,
           direction: opposite,
           qtyMilli: item.qtyMilli,
+          entryUnit: item.entryUnit,
+          entryQtyMilli: item.entryQtyMilli,
+          entryFactorMilli: item.entryFactorMilli,
           unitCostMinor: movement.unitCost,
           totalCostMinor: movement.totalCost,
           note: `Void of ${original.adjustmentNo}`,
@@ -578,6 +592,8 @@ export function getStockAdjustment(db: Db, adjustmentId: number) {
       unit: products.unit,
       direction: stockAdjustmentItems.direction,
       qtyMilli: stockAdjustmentItems.qtyMilli,
+      entryUnit: stockAdjustmentItems.entryUnit,
+      entryQtyMilli: stockAdjustmentItems.entryQtyMilli,
       unitCostMinor: stockAdjustmentItems.unitCostMinor,
       totalCostMinor: stockAdjustmentItems.totalCostMinor,
       note: stockAdjustmentItems.note,

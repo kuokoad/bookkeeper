@@ -6,11 +6,12 @@ import { db } from '@/db/client';
 import { businessSettings, products } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { getFeatures } from '@/lib/business-type.server';
-import { getProduct, listCategories } from '@/services/catalog.service';
+import { getProduct, listCategories, productUnitsLocked } from '@/services/catalog.service';
+import { listUnits } from '@/services/units.service';
 import { updateProductAction } from '@/actions/catalog.actions';
 import { PageHeader } from '@/components/ui/page';
-import { toInputString } from '@/domain/money';
-import { toQtyInputString } from '@/domain/quantity';
+import { minor, toInputString } from '@/domain/money';
+import { qty, toQtyInputString } from '@/domain/quantity';
 import { ProductForm } from '../../product-form';
 
 export const metadata: Metadata = { title: 'Edit product' };
@@ -49,12 +50,23 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
         currencyCode={settings?.currencyCode ?? 'GHS'}
         submitLabel="Save changes"
         showStockNotice={false}
+        units={listUnits(db)}
+        unitsLocked={productUnitsLocked(db, productId)}
         initial={{
           name: product.name,
           sku: product.sku ?? '',
           barcode: product.barcode ?? '',
           categoryId: product.categoryId ? String(product.categoryId) : '',
           unit: product.unit,
+          altUnit: row?.altUnit ?? '',
+          altFactor:
+            !row || row.altFactorMilli === null ? '' : toQtyInputString(qty(row.altFactorMilli)),
+          altCostPrice:
+            !row || row.altCostPriceMinor === null ? '' : toInputString(minor(row.altCostPriceMinor)),
+          altSellingPrice:
+            !row || row.altSellingPriceMinor === null
+              ? ''
+              : toInputString(minor(row.altSellingPriceMinor)),
           description: row?.description ?? '',
           costPrice: toInputString(product.costPrice),
           sellingPrice: toInputString(product.sellingPrice),

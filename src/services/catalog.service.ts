@@ -12,11 +12,12 @@ import {
   stockLedger,
 } from '@/db/schema';
 import { minor, type Minor } from '@/domain/money';
-import { qty as makeQty, type Qty } from '@/domain/quantity';
+import { extendPrice, qty as makeQty, type Qty } from '@/domain/quantity';
 import { averageUnitCost, isLowStock, isOutOfStock } from '@/domain/inventory/costing';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { toBusinessDate } from '@/lib/format';
 import { writeAudit } from './audit.service';
+import { ensureUnit } from './units.service';
 import type { Actor } from './journal.service';
 
 /**
@@ -176,6 +177,12 @@ export interface ProductInput {
   barcode?: string | undefined;
   categoryId?: number | null;
   unit?: string;
+  /** The one alternate unit, or null/absent for none. */
+  altUnit?: string | null;
+  /** Base quantity in one alternate unit: 24 Pcs in a Carton is 24_000. */
+  altFactor?: Qty | null;
+  altCostPrice?: Minor | null;
+  altSellingPrice?: Minor | null;
   description?: string | undefined;
   costPrice: Minor;
   sellingPrice: Minor;
@@ -186,6 +193,40 @@ export interface ProductInput {
    */
   warnDays?: number | null;
   trackInventory?: boolean;
+}
+
+/**
+ * The unit columns as stored. The base unit must exist (or is created, for
+ * callers that name it in text); the alternate must differ from it.
+ */
+function unitColumns(tx: Db, input: ProductInput, fallbackUnit: string) {
+  const unit = ensureUnit(tx, input.unit ?? fallbackUnit);
+  if (!input.altUnit) {
+    return { unit, altUnit: null, altFactorMilli: null, altCostPriceMinor: null, altSellingPriceMinor: null };
+  }
+  const altUnit = ensureUnit(tx, input.altUnit);
+  if (altUnit === unit) {
+    throw new ValidationError('The alternate unit must be different from the base unit.');
+  }
+  return {
+    unit,
+    altUnit,
+    altFactorMilli: input.altFactor ?? null,
+    altCostPriceMinor: input.altCostPrice ?? null,
+    altSellingPriceMinor: input.altSellingPrice ?? null,
+  };
+}
+
+/** True once any stock has moved for the product — its units are fixed from then on. */
+export function productUnitsLocked(db: Db, productId: number): boolean {
+  return (
+    db
+      .select({ id: stockLedger.id })
+      .from(stockLedger)
+      .where(eq(stockLedger.productId, productId))
+      .limit(1)
+      .get() !== undefined
+  );
 }
 
 function normaliseCode(value: string | undefined): string | null {
@@ -199,6 +240,14 @@ function assertProductInput(input: ProductInput): void {
   if (input.sellingPrice < 0) throw new ValidationError('Selling price cannot be negative.');
   if (input.minStock !== null && input.minStock !== undefined && input.minStock < 0) {
     throw new ValidationError('Reorder level cannot be negative.');
+  }
+  if (input.altUnit) {
+    if (!input.altFactor || input.altFactor <= 0) {
+      throw new ValidationError('Say how many base units are in one alternate unit.');
+    }
+    if ((input.altCostPrice ?? 0) < 0 || (input.altSellingPrice ?? 0) < 0) {
+      throw new ValidationError('Alternate unit prices cannot be negative.');
+    }
   }
   if (input.warnDays !== null && input.warnDays !== undefined) {
     if (!Number.isInteger(input.warnDays) || input.warnDays < 0) {
@@ -225,7 +274,7 @@ export function createProduct(db: Db, input: ProductInput, actor: Actor): number
         sku,
         barcode,
         categoryId: input.categoryId ?? null,
-        unit: (input.unit ?? 'pcs').trim() || 'pcs',
+        ...unitColumns(tx, input, 'pcs'),
         description: input.description?.trim() || null,
         costPriceMinor: input.costPrice,
         sellingPriceMinor: input.sellingPrice,
@@ -281,6 +330,20 @@ export function updateProduct(db: Db, id: number, input: ProductInput, actor: Ac
       );
     }
 
+    // Every past line's base quantity was converted with these. Changing them
+    // after stock has moved would make the same figure mean something else.
+    const unitCols = unitColumns(tx, input, existing.unit);
+    const unitsChanged =
+      unitCols.unit !== existing.unit ||
+      unitCols.altUnit !== existing.altUnit ||
+      unitCols.altFactorMilli !== existing.altFactorMilli;
+    if (unitsChanged && productUnitsLocked(tx, id)) {
+      throw new ValidationError(
+        `"${existing.name}" already has stock movements, so its units and conversion cannot change. ` +
+          'Create a new product for the new unit.',
+      );
+    }
+
     const now = new Date();
     tx.update(products)
       .set({
@@ -288,7 +351,7 @@ export function updateProduct(db: Db, id: number, input: ProductInput, actor: Ac
         sku,
         barcode,
         categoryId: input.categoryId ?? null,
-        unit: (input.unit ?? existing.unit).trim() || 'pcs',
+        ...unitCols,
         description: input.description?.trim() || null,
         costPriceMinor: input.costPrice,
         sellingPriceMinor: input.sellingPrice,
@@ -401,6 +464,15 @@ export interface ProductListItem {
   categoryId: number | null;
   categoryName: string | null;
   unit: string;
+  /** Decimal places the base unit allows. */
+  unitDecimals: number;
+  /** The alternate unit, if any: "1 Carton = 24 pcs" is 'Carton' and 24_000. */
+  altUnit: string | null;
+  altFactor: Qty | null;
+  altUnitDecimals: number;
+  /** Per alternate unit, falling back to the base price times the conversion. */
+  altCostPrice: Minor | null;
+  altSellingPrice: Minor | null;
   costPrice: Minor;
   sellingPrice: Minor;
   qtyOnHand: Qty;
@@ -596,6 +668,12 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
       categoryId: products.categoryId,
       categoryName: categories.name,
       unit: products.unit,
+      unitDecimals: sql<number>`(SELECT u.decimal_places FROM units u WHERE u.symbol = products.unit)`,
+      altUnit: products.altUnit,
+      altFactorMilli: products.altFactorMilli,
+      altUnitDecimals: sql<number | null>`(SELECT u.decimal_places FROM units u WHERE u.symbol = products.alt_unit)`,
+      altCostPriceMinor: products.altCostPriceMinor,
+      altSellingPriceMinor: products.altSellingPriceMinor,
       costPriceMinor: products.costPriceMinor,
       sellingPriceMinor: products.sellingPriceMinor,
       qtyOnHandMilli: products.qtyOnHandMilli,
@@ -618,6 +696,7 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
     const qtyOnHand = makeQty(row.qtyOnHandMilli);
     const stockValue = minor(row.stockValueMinor);
     const minStock = row.minStockMilli === null ? null : makeQty(row.minStockMilli);
+    const altFactor = row.altFactorMilli === null ? null : makeQty(row.altFactorMilli);
 
     return {
       warnDays: row.warnDays,
@@ -628,6 +707,18 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
       categoryId: row.categoryId,
       categoryName: row.categoryName,
       unit: row.unit,
+      unitDecimals: row.unitDecimals,
+      altUnit: row.altUnit,
+      altFactor: altFactor,
+      altUnitDecimals: row.altUnitDecimals ?? 0,
+      altCostPrice:
+        altFactor === null
+          ? null
+          : minor(row.altCostPriceMinor ?? extendPrice(minor(row.costPriceMinor), altFactor)),
+      altSellingPrice:
+        altFactor === null
+          ? null
+          : minor(row.altSellingPriceMinor ?? extendPrice(minor(row.sellingPriceMinor), altFactor)),
       costPrice: minor(row.costPriceMinor),
       sellingPrice: minor(row.sellingPriceMinor),
       qtyOnHand,

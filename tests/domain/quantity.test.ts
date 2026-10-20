@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   addQty,
+  assertUnitDecimals,
+  formatQtyAlt,
+  perBaseUnitPrice,
+  toBaseQty,
   derivedUnitPrice,
   extendPrice,
   formatQty,
@@ -148,5 +152,40 @@ describe('formatting', () => {
     for (const value of [0, 750, 1500, 3000, 1_200_000]) {
       expect(parseQty(toQtyInputString(q(value)))).toBe(value);
     }
+  });
+});
+
+describe('units of measure', () => {
+  it('converts an alternate-unit quantity to the base unit exactly', () => {
+    // 2 Carton of 24 pcs is 48 pcs.
+    expect(toBaseQty(qty(2_000), 24_000)).toBe(48_000);
+    // Half a sack of 50 kg is 25 kg.
+    expect(toBaseQty(qty(500), 50_000)).toBe(25_000);
+  });
+
+  it('refuses a conversion that would need rounding into stock', () => {
+    // 0.001 of a 0.5 kg tin is 0.0005 kg — not representable, so not guessed.
+    expect(() => toBaseQty(qty(1), 500)).toThrow(ValidationError);
+  });
+
+  it('refuses a fraction of a unit counted in whole numbers', () => {
+    expect(() => assertUnitDecimals(qty(1_500), 0, 'pcs')).toThrow(/whole numbers/);
+    expect(() => assertUnitDecimals(qty(1_250), 1, 'kg')).toThrow(/1 decimal place/);
+    expect(() => assertUnitDecimals(qty(1_250), 2, 'kg')).not.toThrow();
+    expect(() => assertUnitDecimals(qty(2_000), 0, 'pcs')).not.toThrow();
+  });
+
+  it('shows stock in both units, the way Tally does', () => {
+    expect(formatQtyAlt(qty(40_000), 'pcs', 'Carton', 24_000)).toBe('40 pcs (1 Carton 16 pcs)');
+    expect(formatQtyAlt(qty(48_000), 'pcs', 'Carton', 24_000)).toBe('48 pcs (2 Carton)');
+    expect(formatQtyAlt(qty(21_000), 'pcs', 'Carton', 24_000)).toBe('21 pcs (0 Carton 21 pcs)');
+    expect(formatQtyAlt(qty(-30_000), 'pcs', 'Carton', 24_000)).toBe('-30 pcs (-1 Carton 6 pcs)');
+    expect(formatQtyAlt(qty(40_000), 'pcs', null, null)).toBe('40 pcs');
+  });
+
+  it('prices a carton line per piece for a return', () => {
+    // 110.00 a carton of 24 is 4.58 a tin, rounded.
+    expect(perBaseUnitPrice(minor(11_000), 24_000)).toBe(458);
+    expect(perBaseUnitPrice(minor(500), null)).toBe(500);
   });
 });

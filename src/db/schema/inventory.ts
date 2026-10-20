@@ -202,6 +202,11 @@ export const stockAdjustmentItems = sqliteTable(
     direction: text('direction', { enum: ADJUSTMENT_DIRECTIONS }).notNull(),
     qtyMilli: qtyMilli('qty_milli').notNull(),
 
+    /** As entered, when that was the alternate unit. Display only. */
+    entryUnit: text('entry_unit'),
+    entryQtyMilli: qtyMilli('entry_qty_milli'),
+    entryFactorMilli: qtyMilli('entry_factor_milli'),
+
     /** Snapshot of the cost basis actually applied at the time. */
     unitCostMinor: moneyMinor('unit_cost_minor').notNull().default(0),
     totalCostMinor: moneyMinor('total_cost_minor').notNull().default(0),

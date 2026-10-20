@@ -26,7 +26,7 @@ import {
   parseSupplierFilters,
   type SearchParams,
 } from '@/lib/list-filters';
-import { csvFilename, csvMoney, csvQty, csvResponse, toCsv, type CsvValue } from '@/lib/csv';
+import { altQty, csvFilename, csvMoney, csvQty, csvResponse, toCsv, type CsvValue } from '@/lib/csv';
 import { minor } from '@/domain/money';
 import { qty as makeQty } from '@/domain/quantity';
 import { parseId } from '@/lib/filters';
@@ -253,6 +253,7 @@ function buildTable(list: string, request: NextRequest): Table | null {
           'Category',
           'Unit',
           'In stock',
+          'In stock (alternate unit)',
           'Average cost',
           'Selling price',
           'Stock value',
@@ -266,6 +267,7 @@ function buildTable(list: string, request: NextRequest): Table | null {
           row.categoryName ?? '',
           row.unit,
           row.trackInventory ? csvQty(row.qtyOnHand) : '',
+          row.trackInventory ? altQty(row.qtyOnHand, row.unit, row.altUnit, row.altFactor) : '',
           row.trackInventory ? csvMoney(row.averageCost) : '',
           csvMoney(row.sellingPrice),
           csvMoney(row.stockValue),

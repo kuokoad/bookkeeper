@@ -10,9 +10,8 @@ import { can } from '@/lib/auth/permissions';
 import { getSale } from '@/services/sale.service';
 import { getReturnableSaleItems } from '@/services/returns.service';
 import { createCustomerReturnAction } from '@/actions/purchase.actions';
-import { formatDate, formatDateTime, money, quantity, toBusinessDate } from '@/lib/format';
+import { formatDate, formatDateTime, money, toBusinessDate, lineQuantity } from '@/lib/format';
 import { minor } from '@/domain/money';
-import { qty as makeQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
@@ -191,7 +190,7 @@ export default async function SaleDetailPage({
               <TD>
                 <span className="font-medium text-content">{item.productName}</span>
               </TD>
-              <TD numeric>{quantity(makeQty(item.qtyMilli), item.unit)}</TD>
+              <TD numeric>{lineQuantity(item)}</TD>
               <TD numeric>{money(minor(item.unitPriceMinor), { bare: true })}</TD>
               <TD numeric>
                 {item.discountMinor > 0 ? money(minor(item.discountMinor), { bare: true }) : '—'}

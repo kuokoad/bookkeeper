@@ -30,7 +30,10 @@ export default async function NewPurchasePage() {
     id: product.id,
     name: product.name,
     unit: product.unit,
+    altUnit: product.altUnit,
+    altFactorMilli: product.altFactor as number | null,
     costPrice: product.costPrice as number,
+    altCostPrice: product.altCostPrice as number | null,
     qtyOnHandMilli: product.qtyOnHand as number,
   }));
 

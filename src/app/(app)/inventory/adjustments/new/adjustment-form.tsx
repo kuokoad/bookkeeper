@@ -12,11 +12,14 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { AmountInput, Field, TextInput } from '@/components/ui/field';
 import { DateField } from '@/components/ui/date-field';
+import { unitLabel, UnitPicker } from '@/components/shared/unit-picker';
 
 export interface ProductOption {
   id: number;
   name: string;
   unit: string;
+  altUnit: string | null;
+  altFactorMilli: number | null;
   qtyOnHandLabel: string;
   /** Crates of this product that have passed their date. Usually empty. */
   expiredBatches: { id: number; label: string }[];
@@ -34,6 +37,8 @@ interface Row {
   productId: string;
   direction: 'IN' | 'OUT';
   qty: string;
+  /** True when qty is in the product's alternate unit. */
+  alt: boolean;
   value: string;
   /** Which crate expired, when the reason is that something did. */
   batchId: string;
@@ -62,7 +67,7 @@ export function AdjustmentForm({
   const [state, formAction] = useActionState<FormState, FormData>(createAdjustmentAction, {});
   const [reason, setReason] = useState(reasons[0]?.value ?? 'COUNT_CORRECTION');
   const [rows, setRows] = useState<Row[]>([
-    { key: 1, productId: '', direction: 'IN', qty: '', value: '', batchId: '' },
+    { key: 1, productId: '', direction: 'IN', qty: '', alt: false, value: '', batchId: '' },
   ]);
 
   const selectedReason = reasons.find((option) => option.value === reason);
@@ -81,6 +86,7 @@ export function AdjustmentForm({
         batchId: '',
         direction: (forcedDirection as 'IN' | 'OUT') ?? 'OUT',
         qty: '',
+        alt: false,
         value: '',
       },
     ]);
@@ -174,7 +180,7 @@ export function AdjustmentForm({
                   onChange={(event) =>
                     // Clearing the crate too: it belongs to the old product and
                     // the service would refuse it.
-                    updateRow(row.key, { productId: event.target.value, batchId: '' })
+                    updateRow(row.key, { productId: event.target.value, batchId: '', alt: false })
                   }
                   className="h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
                 >
@@ -218,7 +224,7 @@ export function AdjustmentForm({
                   htmlFor={`qty-${row.key}`}
                   className="mb-1 block text-xs font-medium text-content-muted"
                 >
-                  Quantity
+                  Quantity {chosenProduct ? `(${unitLabel(row.alt, chosenProduct)})` : ''}
                 </label>
                 <AmountInput
                   id={`qty-${row.key}`}
@@ -227,6 +233,20 @@ export function AdjustmentForm({
                   onChange={(event) => updateRow(row.key, { qty: event.target.value })}
                   placeholder="0"
                 />
+                {/* One per row, always — the action reads these arrays by position. */}
+                {chosenProduct?.altUnit ? (
+                  <div className="mt-1">
+                    <UnitPicker
+                      id={`unit-${row.key}`}
+                      name="unitChoice"
+                      alt={row.alt}
+                      units={chosenProduct}
+                      onChange={(alt) => updateRow(row.key, { alt })}
+                    />
+                  </div>
+                ) : (
+                  <input type="hidden" name="unitChoice" value="base" />
+                )}
               </div>
 
               {reason === 'EXPIRED' && (

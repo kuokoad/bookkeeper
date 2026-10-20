@@ -5,7 +5,7 @@ import type { Db, Tx } from '@/db/types';
 import { customers, products, quotationItems, quotations } from '@/db/schema';
 import { calculateSale } from '@/domain/sales/calculate';
 import { toBusinessDate } from '@/lib/format';
-import { minor, type Minor } from '@/domain/money';
+import type { Minor } from '@/domain/money';
 import type { Qty } from '@/domain/quantity';
 import { NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
@@ -13,6 +13,7 @@ import type { Actor } from './journal.service';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { getTaxProfile } from './tax.service';
 import { createSale } from './sale.service';
+import { resolveLineUnit } from './units.service';
 
 /**
  * Quotations: offering a price, and later honouring it.
@@ -38,6 +39,8 @@ export interface QuotationLineRequest {
   /** What is being offered. Defaults to the product's list price. */
   unitPrice?: Minor;
   discount?: Minor;
+  /** `qty` and `unitPrice` are in the product's alternate unit. */
+  alt?: boolean;
 }
 
 export interface CreateQuotationInput {
@@ -67,6 +70,9 @@ export interface QuotationItemRow {
   productName: string;
   unit: string;
   qtyMilli: number;
+  entryUnit: string | null;
+  entryQtyMilli: number | null;
+  entryFactorMilli: number | null;
   unitPriceMinor: number;
   discountMinor: number;
   lineTotalMinor: number;
@@ -95,7 +101,8 @@ function priceLines(tx: Tx, input: CreateQuotationInput) {
     if (!product.isActive) {
       throw new ValidationError(`"${product.name}" is archived and cannot be quoted.`);
     }
-    return { request: line, product, unitPrice: line.unitPrice ?? minor(product.sellingPriceMinor) };
+    const lineUnit = resolveLineUnit(tx, product, line.qty, line.alt);
+    return { request: line, product, lineUnit, unitPrice: line.unitPrice ?? lineUnit.listSellingPrice };
   });
 
   // Read once, inside the transaction, so a rate changed mid-edit cannot apply
@@ -142,7 +149,10 @@ function writeItems(
         // Snapshotted, so a reprint shows what was offered even after a rename.
         productName: entry.product.name,
         unit: entry.product.unit,
-        qtyMilli: entry.request.qty,
+        qtyMilli: entry.lineUnit.baseQty,
+        entryUnit: entry.lineUnit.entryUnit,
+        entryQtyMilli: entry.lineUnit.entryQtyMilli,
+        entryFactorMilli: entry.lineUnit.entryFactorMilli,
         unitPriceMinor: entry.unitPrice,
         discountMinor: entry.request.discount ?? 0,
         lineTotalMinor: line.lineTotal,
@@ -528,7 +538,9 @@ export function convertQuotation(
         customerId,
         items: quote.items.map((item) => ({
           productId: item.productId,
-          qty: item.qtyMilli as Qty,
+          // As quoted: "2 Carton" stays 2 Carton, re-converted at today's factor.
+          qty: (item.entryQtyMilli ?? item.qtyMilli) as Qty,
+          alt: item.entryUnit !== null,
           unitPrice: item.unitPriceMinor as Minor,
           discount: item.discountMinor as Minor,
         })),

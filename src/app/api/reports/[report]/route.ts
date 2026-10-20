@@ -31,7 +31,7 @@ import {
   parseSalesReportFilters,
   type SearchParams,
 } from '@/lib/list-filters';
-import { csvFilename, csvMoney, csvQty, csvResponse, toCsv, type CsvValue } from '@/lib/csv';
+import { altQty, csvFilename, csvMoney, csvQty, csvResponse, toCsv, type CsvValue } from '@/lib/csv';
 import { toBusinessDate, isValidBusinessDate } from '@/lib/format';
 import { isDomainError } from '@/domain/errors';
 
@@ -284,6 +284,7 @@ function buildTable(report: string, request: NextRequest): Table | null {
           row.categoryName ?? '',
           row.unit,
           csvQty(row.qtyOnHand),
+          altQty(row.qtyOnHand, row.unit, row.altUnit, row.altFactorMilli),
           csvMoney(row.averageCost),
           csvMoney(row.stockValue),
           csvMoney(row.sellingPrice),
@@ -301,6 +302,7 @@ function buildTable(report: string, request: NextRequest): Table | null {
           'Category',
           'Unit',
           'On hand',
+          'On hand (alternate unit)',
           'Average cost',
           'Value at cost',
           'Selling price',

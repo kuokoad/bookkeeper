@@ -11,7 +11,7 @@ import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
 import { getExpiryAgeing } from '@/services/inventory.service';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { money, quantity, toBusinessDate } from '@/lib/format';
-import { qty as makeQty } from '@/domain/quantity';
+import { qty as makeQty, formatQtyAlt } from '@/domain/quantity';
 import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
 import { PageHeader, Stat } from '@/components/ui/page';
@@ -275,7 +275,7 @@ export default async function InventoryReportPage({
               <TD>
                 <span className="text-content-muted">{row.categoryName ?? '—'}</span>
               </TD>
-              <TD numeric>{quantity(row.qtyOnHand, row.unit)}</TD>
+              <TD numeric>{formatQtyAlt(row.qtyOnHand, row.unit, row.altUnit, row.altFactorMilli)}</TD>
               <TD numeric>
                 {row.qtyOnHand === 0 ? '—' : money(row.averageCost, { bare: true })}
               </TD>

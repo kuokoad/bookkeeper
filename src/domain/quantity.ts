@@ -197,3 +197,78 @@ export function formatQtyWithUnit(value: Qty, unit: string): string {
 export function toQtyInputString(value: Qty): string {
   return formatQty(value).replace(/,/g, '');
 }
+
+// --- units of measure ------------------------------------------------------
+
+/**
+ * Refuse a quantity with more decimal places than its unit allows. Pcs counts
+ * in whole numbers, so 1.5 Pcs is a typing mistake, not half a bottle.
+ */
+export function assertUnitDecimals(value: Qty, decimals: number, unit: string): void {
+  const step = 10 ** (QTY_DECIMALS - decimals);
+  if (value % step !== 0) {
+    throw new ValidationError(
+      decimals === 0
+        ? `${unit} is counted in whole numbers, and ${formatQty(value)} is not one.`
+        : `${unit} allows at most ${decimals} decimal place${decimals === 1 ? '' : 's'}, and ${formatQty(value)} has more.`,
+      { value, decimals, unit },
+    );
+  }
+}
+
+/**
+ * A quantity entered in an alternate unit, in base milli-units: 2 Carton of
+ * 24 Pcs (factor 24_000) is 48_000. Exact or refused — a conversion that would
+ * need rounding (0.0005 Carton) is never quietly rounded into stock.
+ */
+export function toBaseQty(entry: Qty, factorMilli: number): Qty {
+  const scaled = BigInt(entry) * BigInt(factorMilli);
+  if (scaled % BigInt(QTY_SCALE) !== 0n) {
+    throw new ValidationError(
+      `${formatQty(entry)} does not convert to an exact quantity in the base unit.`,
+      { entry, factorMilli },
+    );
+  }
+  return fromBig(scaled / BigInt(QTY_SCALE));
+}
+
+/**
+ * Stock in the alternate unit alone, the way Tally shows it beside the base:
+ * 40 pcs with a Carton of 24 is "1 Carton 16 pcs". Null with no alternate.
+ */
+export function formatAltQty(
+  value: Qty,
+  unit: string,
+  altUnit: string | null | undefined,
+  factorMilli: number | null | undefined,
+): string | null {
+  if (!altUnit || !factorMilli) return null;
+  const magnitude = Math.abs(value);
+  const whole = Math.floor(magnitude / factorMilli);
+  const rest = (magnitude - whole * factorMilli) as Qty;
+  const sign = value < 0 ? '-' : '';
+  return rest === 0
+    ? `${sign}${whole} ${altUnit}`
+    : `${sign}${whole} ${altUnit} ${formatQtyWithUnit(rest, unit)}`;
+}
+
+/** "40 pcs (1 Carton 16 pcs)", or plain "40 pcs" with no alternate unit. */
+export function formatQtyAlt(
+  value: Qty,
+  unit: string,
+  altUnit: string | null | undefined,
+  factorMilli: number | null | undefined,
+): string {
+  const base = formatQtyWithUnit(value, unit);
+  const alt = formatAltQty(value, unit, altUnit, factorMilli);
+  return alt === null ? base : `${base} (${alt})`;
+}
+
+/**
+ * A line's price per BASE unit, for a line priced per alternate unit ("110.00
+ * a Carton of 24" is 4.58 a tin). Rounded, so display and return lines only —
+ * every money figure that matters is pro-rated from the line total instead.
+ */
+export function perBaseUnitPrice(price: Minor, entryFactorMilli: number | null): Minor {
+  return entryFactorMilli === null ? price : mulDiv(price, QTY_SCALE, entryFactorMilli);
+}

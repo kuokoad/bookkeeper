@@ -208,6 +208,18 @@ export const saleItems = sqliteTable(
     unit: text('unit').notNull(),
 
     qtyMilli: qtyMilli('qty_milli').notNull(),
+
+    /**
+     * How the line was ENTERED, when that was the product's alternate unit:
+     * "2 Carton" is entryUnit 'Carton', entryQtyMilli 2_000, entryFactorMilli
+     * 24_000, while `qtyMilli` and `unit` above stay 48 Pcs. Null means the
+     * line was entered in the base unit. When set, `unitPriceMinor` is per
+     * entry unit and the line amount is unit price x entry quantity.
+     */
+    entryUnit: text('entry_unit'),
+    entryQtyMilli: qtyMilli('entry_qty_milli'),
+    entryFactorMilli: qtyMilli('entry_factor_milli'),
+
     /** Selling price at the moment of sale, not today's price. */
     unitPriceMinor: moneyMinor('unit_price_minor').notNull(),
     discountMinor: moneyMinor('discount_minor').notNull().default(0),

@@ -112,7 +112,7 @@ describe('production preflight', () => {
   it('BLOCKS on demo records left in the books', () => {
     context.connection
       .prepare(
-        "INSERT INTO products (sku, name, unit, selling_price_minor, is_demo, created_at, updated_at) VALUES ('DEMO-1', 'Demo Milo', 'tin', 1000, 1, 0, 0)",
+        "INSERT INTO products (sku, name, unit, selling_price_minor, is_demo, created_at, updated_at) VALUES ('DEMO-1', 'Demo Milo', 'pcs', 1000, 1, 0, 0)",
       )
       .run();
 

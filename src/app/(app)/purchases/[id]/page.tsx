@@ -10,7 +10,7 @@ import { can } from '@/lib/auth/permissions';
 import { getPurchase } from '@/services/purchase.service';
 import { getReturnablePurchaseItems } from '@/services/returns.service';
 import { createSupplierReturnAction, voidPurchaseAction } from '@/actions/purchase.actions';
-import { formatDate, formatDateTime, money, quantity, toBusinessDate } from '@/lib/format';
+import { formatDate, formatDateTime, money, quantity, toBusinessDate, lineQuantity } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { qty as makeQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
@@ -190,7 +190,7 @@ export default async function PurchaseDetailPage({
                   </span>
                 ))}
               </TD>
-              <TD numeric>{quantity(makeQty(item.qtyMilli), item.unit)}</TD>
+              <TD numeric>{lineQuantity(item)}</TD>
               <TD numeric>{money(minor(item.unitCostMinor), { bare: true })}</TD>
               <TD numeric>
                 {item.discountMinor > 0 ? money(minor(item.discountMinor), { bare: true }) : '—'}

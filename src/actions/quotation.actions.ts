@@ -33,6 +33,8 @@ const lineSchema = z.object({
   qty: z.string().trim().min(1),
   unitPrice: z.string().trim().min(1),
   discount: z.string().trim().optional(),
+  /** True when qty and price are in the product's alternate unit. */
+  alt: z.boolean().optional(),
 });
 
 const quotationSchema = z.object({
@@ -93,6 +95,7 @@ function toLines(
     productId: line.productId,
     qty: parseQty(line.qty),
     unitPrice: parseMoney(line.unitPrice),
+    ...(line.alt === true ? { alt: true } : {}),
     ...(line.discount ? { discount: parseMoney(line.discount) } : {}),
   }));
 }

@@ -56,7 +56,10 @@ export default async function EditQuotationPage({ params }: { params: Promise<{ 
           id: product.id,
           name: product.name,
           unit: product.unit,
+          altUnit: product.altUnit,
+          altFactorMilli: product.altFactor,
           sellingPrice: product.sellingPrice,
+          altSellingPrice: product.altSellingPrice,
         }))}
         customers={listCustomers(db, {}).map((customer) => ({
           id: customer.id,
@@ -76,7 +79,9 @@ export default async function EditQuotationPage({ params }: { params: Promise<{ 
           quoteDiscount: quote.quoteDiscountMinor > 0 ? major(quote.quoteDiscountMinor) : '',
           lines: quote.items.map((item) => ({
             productId: item.productId,
-            qty: units(item.qtyMilli),
+            // As quoted: a line in Cartons comes back in Cartons.
+            qty: units(item.entryQtyMilli ?? item.qtyMilli),
+            alt: item.entryUnit !== null,
             unitPrice: major(item.unitPriceMinor),
             discount: item.discountMinor > 0 ? major(item.discountMinor) : '',
           })),

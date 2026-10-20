@@ -1,5 +1,5 @@
 import { toDecimalString, type Minor } from '@/domain/money';
-import { formatQty, type Qty } from '@/domain/quantity';
+import { formatAltQty, formatQty, type Qty } from '@/domain/quantity';
 
 /**
  * CSV generation.
@@ -57,6 +57,11 @@ export function csvMoney(value: Minor): string {
 /** Quantity for a spreadsheet column. */
 export function csvQty(value: Qty): string {
   return formatQty(value).replace(/,/g, '');
+}
+
+/** The same stock in the alternate unit ("1 Carton 16 pcs"), blank with none. */
+export function altQty(value: Qty, unit: string, altUnit: string | null, factorMilli: number | null): string {
+  return formatAltQty(value, unit, altUnit, factorMilli)?.replace(/,/g, '') ?? '';
 }
 
 /** A safe, descriptive filename. */

@@ -25,6 +25,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { readBatchSplits, recordStockMovement } from './inventory.service';
+import { resolveLineUnit } from './units.service';
 import type { Allocation } from '@/domain/inventory/batches';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import { getCustomerBalance } from './customer.service';
@@ -60,6 +61,11 @@ export interface SaleLineRequest {
   unitPrice?: Minor;
   /** Money off this line. Also gated by `allowPriceOverride`. */
   discount?: Minor;
+  /**
+   * `qty` and `unitPrice` are in the product's alternate unit ("2 Carton").
+   * Stock still moves in the base unit — see `resolveLineUnit`.
+   */
+  alt?: boolean;
 }
 
 export interface TenderRequest {
@@ -210,10 +216,12 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
       if (!product.isActive) {
         throw new ValidationError(`"${product.name}" is archived and cannot be sold.`);
       }
+      const lineUnit = resolveLineUnit(tx, product, item.qty, item.alt);
       return {
         request: item,
         product,
-        unitPrice: item.unitPrice ?? minor(product.sellingPriceMinor),
+        lineUnit,
+        unitPrice: item.unitPrice ?? lineUnit.listSellingPrice,
       };
     });
 
@@ -224,13 +232,15 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
     // for every line, so "did they change it?" can only be answered here.
     if (input.allowPriceOverride !== true) {
       for (const [index, entry] of resolved.entries()) {
-        const listPrice = minor(entry.product.sellingPriceMinor);
+        const listPrice = entry.lineUnit.listSellingPrice;
 
         if (entry.unitPrice !== listPrice) {
           throw new ForbiddenError(
             `change the price of "${entry.product.name}"`,
             `Only a supervisor can change a price. "${entry.product.name}" sells for ` +
-              `${formatMoney(listPrice, settings.currencyCode)}. Sell it at that, or ask someone who can approve the change.`,
+              `${formatMoney(listPrice, settings.currencyCode)}` +
+              `${entry.lineUnit.entryUnit ? ` a ${entry.lineUnit.entryUnit}` : ''}. ` +
+              'Sell it at that, or ask someone who can approve the change.',
           );
         }
 
@@ -376,7 +386,7 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
         const movement = recordStockMovement(tx, {
           productId: entry.product.id,
           direction: 'OUT',
-          qty: entry.request.qty,
+          qty: entry.lineUnit.baseQty,
           movementType: 'SALE',
           sourceType: 'SALE',
           sourceId: sale.id,
@@ -406,7 +416,10 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
           // Snapshot: a receipt reprinted later shows what was actually sold.
           productName: entry.product.name,
           unit: entry.product.unit,
-          qtyMilli: entry.request.qty,
+          qtyMilli: entry.lineUnit.baseQty,
+          entryUnit: entry.lineUnit.entryUnit,
+          entryQtyMilli: entry.lineUnit.entryQtyMilli,
+          entryFactorMilli: entry.lineUnit.entryFactorMilli,
           unitPriceMinor: entry.unitPrice,
           discountMinor: line.discount,
           lineTotalMinor: line.lineTotal,
@@ -773,6 +786,9 @@ export function voidSale(
           productName: item.productName,
           unit: item.unit,
           qtyMilli: -item.qtyMilli,
+          entryUnit: item.entryUnit,
+          entryQtyMilli: item.entryQtyMilli === null ? null : -item.entryQtyMilli,
+          entryFactorMilli: item.entryFactorMilli,
           unitPriceMinor: item.unitPriceMinor,
           discountMinor: item.discountMinor,
           lineTotalMinor: -item.lineTotalMinor,

@@ -9,10 +9,9 @@ import { requirePageAccess } from '@/lib/auth/current-user';
 import { getSale } from '@/services/sale.service';
 import { daysOverdue } from '@/domain/business-date';
 import { isDomainError } from '@/domain/errors';
-import { formatDate, money, quantity, toBusinessDate } from '@/lib/format';
+import { formatDate, money, toBusinessDate, lineQuantity } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { saleDocumentTotals } from '@/domain/sales/present';
-import { qty as makeQty } from '@/domain/quantity';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { PrintButton } from '../receipt/print-button';
@@ -155,7 +154,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
               <tr key={item.id} className="border-b border-line last:border-b-0">
                 <td className="py-1.5 pr-2 text-content">{item.productName}</td>
                 <td className="tabular py-1.5 text-right text-content-muted">
-                  {quantity(makeQty(item.qtyMilli), item.unit)}
+                  {lineQuantity(item)}
                 </td>
                 <td className="tabular py-1.5 text-right text-content-muted">
                   {money(minor(item.unitPriceMinor), { currencyCode: currency, bare: true })}

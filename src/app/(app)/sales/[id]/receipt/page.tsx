@@ -7,10 +7,9 @@ import { db } from '@/db/client';
 import { businessSettings } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { getSale } from '@/services/sale.service';
-import { formatDate, formatTime, money, quantity } from '@/lib/format';
+import { formatDate, formatTime, money, lineQuantity } from '@/lib/format';
 import { minor } from '@/domain/money';
 import { saleDocumentTotals } from '@/domain/sales/present';
-import { qty as makeQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
 import { Button } from '@/components/ui/button';
 import { PrintButton } from './print-button';
@@ -174,7 +173,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
               <tr key={item.id} className="align-top">
                 <td className="py-1 pr-2 text-content">{item.productName}</td>
                 <td className="tabular py-1 text-right text-content-muted">
-                  {quantity(makeQty(item.qtyMilli), item.unit)}
+                  {lineQuantity(item)}
                 </td>
                 <td className="tabular py-1 text-right text-content-muted">
                   {money(minor(item.unitPriceMinor), { bare: true })}

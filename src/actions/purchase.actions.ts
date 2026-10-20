@@ -143,6 +143,8 @@ const purchaseSchema = z.object({
           .trim()
           .refine((value) => value === '' || isValidBusinessDate(value), 'Enter a valid date.')
           .optional(),
+        // True when qty and price are in the product's alternate unit.
+        alt: z.boolean().optional(),
       }),
     )
     .min(1, 'Add at least one product to the purchase.'),
@@ -182,6 +184,7 @@ export async function createPurchaseAction(
         productId: item.productId,
         qty: parsePositiveQty(item.qty, `Line ${index + 1} quantity`),
         unitCost: parseMoney(item.unitCost),
+        ...(item.alt === true ? { alt: true } : {}),
         ...(item.discount && item.discount.length > 0
           ? { discount: parseMoney(item.discount) }
           : {}),

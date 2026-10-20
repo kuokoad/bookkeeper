@@ -8,9 +8,8 @@ import { journalEntries, journalLines, accounts } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { can } from '@/lib/auth/permissions';
 import { getStockAdjustment, REASON_LABELS } from '@/services/stock-adjustment.service';
-import { formatDate, formatDateTime, money, quantity } from '@/lib/format';
+import { formatDate, formatDateTime, money, lineQuantity } from '@/lib/format';
 import { minor } from '@/domain/money';
-import { qty as makeQty } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
@@ -144,7 +143,7 @@ export default async function AdjustmentDetailPage({
                   {item.direction === 'IN' ? 'In' : 'Out'}
                 </Badge>
               </TD>
-              <TD numeric>{quantity(makeQty(item.qtyMilli), item.unit)}</TD>
+              <TD numeric>{lineQuantity(item)}</TD>
               <TD numeric>{money(minor(item.unitCostMinor), { bare: true })}</TD>
               <TD numeric>{money(minor(item.totalCostMinor), { bare: true })}</TD>
             </TR>

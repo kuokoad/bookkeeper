@@ -69,6 +69,8 @@ export async function createAdjustmentAction(
    * below reads `undefined`, which is exactly "no crate named".
    */
   const batchIds = formData.getAll('batchId');
+  /** 'alt' when the row's quantity is in the product's alternate unit. */
+  const unitChoices = formData.getAll('unitChoice');
 
   const items: AdjustmentItemInput[] = [];
 
@@ -96,6 +98,8 @@ export async function createAdjustmentAction(
       return { error: isDomainError(error) ? error.userMessage : `Line ${index + 1}: bad quantity.` };
     }
 
+    const alt = String(unitChoices[index] ?? '') === 'alt';
+
     if (direction === 'IN') {
       const rawValue = String(values[index] ?? '').trim();
       if (rawValue === '') {
@@ -104,7 +108,7 @@ export async function createAdjustmentAction(
         };
       }
       try {
-        items.push({ productId, direction, qty, totalCost: parseMoney(rawValue) });
+        items.push({ productId, direction, qty, alt, totalCost: parseMoney(rawValue) });
       } catch (error) {
         return { error: isDomainError(error) ? error.userMessage : `Line ${index + 1}: bad value.` };
       }
@@ -116,7 +120,7 @@ export async function createAdjustmentAction(
         return { error: `Line ${index + 1}: that batch could not be read.` };
       }
 
-      items.push({ productId, direction, qty, ...(batchId === undefined ? {} : { batchId }) });
+      items.push({ productId, direction, qty, alt, ...(batchId === undefined ? {} : { batchId }) });
     }
   }
 

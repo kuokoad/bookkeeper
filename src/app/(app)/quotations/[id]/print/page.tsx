@@ -8,9 +8,8 @@ import { businessSettings } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { getQuotation, isExpired } from '@/services/quotation.service';
 import { isDomainError } from '@/domain/errors';
-import { formatDate, money, quantity, toBusinessDate } from '@/lib/format';
+import { formatDate, money, toBusinessDate, lineQuantity } from '@/lib/format';
 import { minor } from '@/domain/money';
-import { qty as makeQty } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
 import { PrintButton } from '../../../sales/[id]/receipt/print-button';
 
@@ -108,7 +107,7 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
               <tr key={item.id} className="border-b border-line">
                 <td className="py-2.5 text-content">{item.productName}</td>
                 <td className="tabular py-2.5 text-right text-content">
-                  {quantity(makeQty(item.qtyMilli))} {item.unit}
+                  {lineQuantity(item)}
                 </td>
                 <td className="tabular py-2.5 text-right text-content">
                   {cash(item.unitPriceMinor)}

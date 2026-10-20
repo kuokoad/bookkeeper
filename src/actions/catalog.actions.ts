@@ -14,8 +14,9 @@ import {
   updateCategory,
   updateProduct,
 } from '@/services/catalog.service';
+import { createUnit, deleteUnit, updateUnit } from '@/services/units.service';
 import { parseMoney } from '@/domain/money';
-import { parseQty } from '@/domain/quantity';
+import { parsePositiveQty, parseQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
 import type { FormState } from './auth.actions';
 
@@ -50,7 +51,11 @@ const productSchema = z.object({
   sku: z.string().trim().max(60).optional(),
   barcode: z.string().trim().max(60).optional(),
   categoryId: z.string().optional(),
-  unit: z.string().trim().min(1, 'Enter a unit.').max(20),
+  unit: z.string().trim().min(1, 'Choose a unit.').max(20),
+  altUnit: z.string().trim().max(20).optional(),
+  altFactor: z.string().trim().optional(),
+  altCostPrice: z.string().trim().optional(),
+  altSellingPrice: z.string().trim().optional(),
   description: z.string().trim().max(500).optional(),
   costPrice: z.string().trim().min(1, 'Enter a cost price.'),
   sellingPrice: z.string().trim().min(1, 'Enter a selling price.'),
@@ -66,6 +71,10 @@ function readProductForm(formData: FormData) {
     barcode: formData.get('barcode') ?? undefined,
     categoryId: formData.get('categoryId') ?? undefined,
     unit: formData.get('unit') ?? 'pcs',
+    altUnit: formData.get('altUnit') ?? undefined,
+    altFactor: formData.get('altFactor') ?? undefined,
+    altCostPrice: formData.get('altCostPrice') ?? undefined,
+    altSellingPrice: formData.get('altSellingPrice') ?? undefined,
     description: formData.get('description') ?? undefined,
     costPrice: formData.get('costPrice'),
     sellingPrice: formData.get('sellingPrice'),
@@ -112,7 +121,42 @@ function parseProductNumbers(data: z.infer<typeof productSchema>) {
     }
   }
 
-  return { costPrice, sellingPrice, minStock, warnDays, fieldErrors };
+  // The alternate unit: "1 Carton = 24 pcs", with optional prices of its own.
+  let altFactor: number | null = null;
+  let altCostPrice: number | null = null;
+  let altSellingPrice: number | null = null;
+  if (data.altUnit) {
+    try {
+      altFactor = parsePositiveQty(data.altFactor ?? '', 'The conversion');
+    } catch (error) {
+      fieldErrors['altFactor'] = isDomainError(error) ? error.userMessage : 'Invalid quantity.';
+    }
+    for (const [key, text] of [
+      ['altCostPrice', data.altCostPrice],
+      ['altSellingPrice', data.altSellingPrice],
+    ] as const) {
+      if (!text) continue;
+      try {
+        const value = parseMoney(text);
+        if (key === 'altCostPrice') altCostPrice = value;
+        else altSellingPrice = value;
+      } catch (error) {
+        fieldErrors[key] = isDomainError(error) ? error.userMessage : 'Invalid amount.';
+      }
+    }
+  }
+
+  return { costPrice, sellingPrice, minStock, warnDays, altFactor, altCostPrice, altSellingPrice, fieldErrors };
+}
+
+/** The unit fields as the service takes them. */
+function altUnitInput(data: z.infer<typeof productSchema>, numbers: ReturnType<typeof parseProductNumbers>) {
+  return {
+    altUnit: data.altUnit || null,
+    altFactor: numbers.altFactor as never,
+    altCostPrice: numbers.altCostPrice as never,
+    altSellingPrice: numbers.altSellingPrice as never,
+  };
 }
 
 export async function createProductAction(
@@ -138,6 +182,7 @@ export async function createProductAction(
         barcode: parsed.data.barcode,
         categoryId: Number.isFinite(categoryId) ? categoryId : null,
         unit: parsed.data.unit,
+        ...altUnitInput(parsed.data, numbers),
         description: parsed.data.description,
         costPrice: numbers.costPrice as never,
         sellingPrice: numbers.sellingPrice as never,
@@ -181,6 +226,7 @@ export async function updateProductAction(
         barcode: parsed.data.barcode,
         categoryId: Number.isFinite(categoryId) ? categoryId : null,
         unit: parsed.data.unit,
+        ...altUnitInput(parsed.data, numbers),
         description: parsed.data.description,
         costPrice: numbers.costPrice as never,
         sellingPrice: numbers.sellingPrice as never,
@@ -265,4 +311,54 @@ export async function setCategoryActiveAction(
   const actor = await requirePermission('products', 'edit');
   setCategoryActive(db, categoryId, isActive, { id: actor.id, username: actor.username });
   revalidatePath('/products/categories');
+}
+
+// --- units of measure -----------------------------------------------------
+
+const unitSchema = z.object({
+  symbol: z.string().trim().min(1, 'Enter a symbol, e.g. pcs.').max(20),
+  name: z.string().trim().min(1, 'Enter a name, e.g. Pieces.').max(60),
+  decimalPlaces: z.coerce.number().int().min(0).max(3),
+});
+
+/**
+ * Add a unit (`symbol` null) or change one. A rename carries every product
+ * using the unit with it.
+ */
+export async function saveUnitAction(
+  symbol: string | null,
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await requirePermission('products', symbol === null ? 'create' : 'edit');
+
+  const parsed = unitSchema.safeParse({
+    symbol: formData.get('symbol'),
+    name: formData.get('name'),
+    decimalPlaces: formData.get('decimalPlaces') ?? 0,
+  });
+  if (!parsed.success) return { fieldErrors: collectFieldErrors(parsed.error) };
+
+  try {
+    const who = { id: actor.id, username: actor.username };
+    if (symbol === null) createUnit(db, parsed.data, who);
+    else updateUnit(db, symbol, parsed.data, who);
+  } catch (error) {
+    return toFormState(error);
+  }
+
+  revalidatePath('/products/units');
+  revalidatePath('/products');
+  return {};
+}
+
+export async function deleteUnitAction(symbol: string, _previous: FormState): Promise<FormState> {
+  const actor = await requirePermission('products', 'edit');
+  try {
+    deleteUnit(db, symbol, { id: actor.id, username: actor.username });
+  } catch (error) {
+    return toFormState(error);
+  }
+  revalidatePath('/products/units');
+  return {};
 }

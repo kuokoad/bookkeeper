@@ -10,9 +10,8 @@ import { can } from '@/lib/auth/permissions';
 import { getQuotation, isExpired } from '@/services/quotation.service';
 import { listPaymentAccounts } from '@/services/payment-account.service';
 import { isDomainError } from '@/domain/errors';
-import { formatDate, money, quantity, toBusinessDate } from '@/lib/format';
+import { formatDate, money, toBusinessDate, lineQuantity } from '@/lib/format';
 import { minor } from '@/domain/money';
-import { qty as makeQty } from '@/domain/quantity';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, PageHeader } from '@/components/ui/page';
@@ -169,7 +168,7 @@ export default async function QuotationPage({
                 <tr key={item.id} className="border-b border-line">
                   <td className="py-2 text-content">{item.productName}</td>
                   <td className="tabular py-2 text-right text-content">
-                    {quantity(makeQty(item.qtyMilli))} {item.unit}
+                    {lineQuantity(item)}
                   </td>
                   <td className="tabular py-2 text-right text-content">
                     {money(minor(item.unitPriceMinor), { currencyCode: currency })}

@@ -36,6 +36,8 @@ interface ProductOverrides {
   soonestExpiry?: string | null;
   warnDays?: number;
   qtyOnHandMilli?: number;
+  /** "1 Carton = 24 tin", sold at its own price. */
+  carton?: boolean;
 }
 
 const product = (overrides: ProductOverrides = {}) => ({
@@ -44,7 +46,10 @@ const product = (overrides: ProductOverrides = {}) => ({
   sku: 'MILK170',
   barcode: null,
   unit: 'tin',
+  altUnit: overrides.carton ? 'Carton' : null,
+  altFactorMilli: overrides.carton ? 24_000 : null,
   sellingPrice: 500,
+  altSellingPrice: overrides.carton ? 11_000 : null,
   qtyOnHandMilli: overrides.qtyOnHandMilli ?? 50_000,
   trackInventory: true,
   goodQtyMilli: overrides.goodQtyMilli ?? 50_000,
@@ -273,6 +278,18 @@ describe('the cart', () => {
     setQuantity('5');
 
     expect(screen.getByText(/Only 2 tin in stock/i)).toBeDefined();
+  });
+
+  it('sells by the carton at the carton price, and checks stock in tins', () => {
+    renderTill({ carton: true, qtyOnHandMilli: 30_000, goodQtyMilli: 30_000 });
+    addToCart();
+    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'alt' } });
+    setQuantity('2');
+
+    // 2 cartons at 110.00 — the carton's own price, not 2 x 5.00.
+    expect(screen.getByRole('button', { name: /save on credit/i }).textContent).toContain('220.00');
+    // 2 cartons is 48 tins and the shelf holds 30.
+    expect(screen.getByText(/Only 30 tin in stock/i)).toBeDefined();
   });
 });
 

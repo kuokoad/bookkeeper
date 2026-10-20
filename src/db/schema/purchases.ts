@@ -111,6 +111,16 @@ export const purchaseItems = sqliteTable(
     unit: text('unit').notNull(),
 
     qtyMilli: qtyMilli('qty_milli').notNull(),
+
+    /**
+     * How the line was entered, when that was the product's alternate unit.
+     * Null means the base unit. Same meaning as on `sale_items`. When set,
+     * `unitCostMinor` is per entry unit.
+     */
+    entryUnit: text('entry_unit'),
+    entryQtyMilli: qtyMilli('entry_qty_milli'),
+    entryFactorMilli: qtyMilli('entry_factor_milli'),
+
     /** What the shop actually paid per unit on this purchase. */
     unitCostMinor: moneyMinor('unit_cost_minor').notNull(),
     discountMinor: moneyMinor('discount_minor').notNull().default(0),

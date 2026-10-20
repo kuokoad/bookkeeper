@@ -17,7 +17,7 @@ import {
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
 import { add, allocate, isZero, minor, mulDiv, subtract, sum, ZERO, type Minor } from '@/domain/money';
-import { qty as makeQty, QTY_SCALE, type Qty } from '@/domain/quantity';
+import { perBaseUnitPrice, qty as makeQty, QTY_SCALE, type Qty } from '@/domain/quantity';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, type Actor } from './journal.service';
@@ -317,7 +317,8 @@ export function createCustomerReturn(
           productName: line.item.productName,
           unit: line.item.unit,
           qtyMilli: -line.request.qty,
-          unitPriceMinor: line.item.unitPriceMinor,
+          // The return is in base units, so its price is too.
+          unitPriceMinor: perBaseUnitPrice(minor(line.item.unitPriceMinor), line.item.entryFactorMilli),
           discountMinor: 0,
           lineTotalMinor: -line.revenueShare,
           unitCostMinor: line.item.unitCostMinor,
@@ -679,7 +680,7 @@ export function createSupplierReturn(
           productName: line.item.productName,
           unit: line.item.unit,
           qtyMilli: -line.request.qty,
-          unitCostMinor: line.item.unitCostMinor,
+          unitCostMinor: perBaseUnitPrice(minor(line.item.unitCostMinor), line.item.entryFactorMilli),
           discountMinor: 0,
           lineTotalMinor: -line.costShare,
           createdAt: occurredAt,
@@ -821,7 +822,7 @@ export function getReturnableSaleItems(db: Db, saleId: number) {
       qtyMilli: item.qtyMilli,
       returnedQtyMilli: item.returnedQtyMilli,
       returnableMilli: item.qtyMilli - item.returnedQtyMilli,
-      unitPriceMinor: item.unitPriceMinor,
+      unitPriceMinor: perBaseUnitPrice(minor(item.unitPriceMinor), item.entryFactorMilli),
     }))
     .filter((item) => item.returnableMilli > 0);
 }
@@ -840,7 +841,7 @@ export function getReturnablePurchaseItems(db: Db, purchaseId: number) {
       qtyMilli: item.qtyMilli,
       returnedQtyMilli: item.returnedQtyMilli,
       returnableMilli: item.qtyMilli - item.returnedQtyMilli,
-      unitCostMinor: item.unitCostMinor,
+      unitCostMinor: perBaseUnitPrice(minor(item.unitCostMinor), item.entryFactorMilli),
     }))
     .filter((item) => item.returnableMilli > 0);
 }

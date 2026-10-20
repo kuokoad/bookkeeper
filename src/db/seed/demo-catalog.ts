@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 
+import { createUnit, listUnits } from '@/services/units.service';
 import type { Db } from '@/db/types';
 import { categories, products } from '@/db/schema';
 import { createCategory, createProduct } from '@/services/catalog.service';
@@ -41,7 +42,21 @@ interface DemoProduct {
    * free-text line. A yard demo without one would not show that working.
    */
   service?: boolean;
+  /** One alternate unit, as a yard sells fittings by the box. */
+  alt?: { unit: string; factor: number; price: number };
 }
+
+/** Counted whole, except nails, which are weighed. */
+const DEMO_UNITS: readonly { symbol: string; name: string; decimalPlaces: number }[] = [
+  { symbol: 'bag', name: 'Bag', decimalPlaces: 0 },
+  { symbol: 'load', name: 'Load', decimalPlaces: 0 },
+  { symbol: 'length', name: 'Length', decimalPlaces: 0 },
+  { symbol: 'roll', name: 'Roll', decimalPlaces: 0 },
+  { symbol: 'sheet', name: 'Sheet', decimalPlaces: 0 },
+  { symbol: 'kg', name: 'Kilogram', decimalPlaces: 3 },
+  { symbol: 'trip', name: 'Trip', decimalPlaces: 0 },
+  { symbol: 'box', name: 'Box', decimalPlaces: 0 },
+];
 
 const DEMO_CATEGORIES = ['Cement', 'Steel', 'Plumbing', 'Roofing', 'Fixings', 'Services'] as const;
 
@@ -139,6 +154,7 @@ const DEMO_PRODUCTS: readonly DemoProduct[] = [
     category: 'Plumbing',
     sku: 'ELB4',
     unit: 'pcs',
+    alt: { unit: 'box', factor: 10, price: 220 },
     cost: 16,
     price: 24,
     minStock: 40,
@@ -192,6 +208,12 @@ export function seedDemoCatalog(db: Db, actor: Actor, businessDate: string): voi
     categoryIds.set(name, found ? found.id : createCategory(db, { name }, actor));
   }
 
+  for (const unit of DEMO_UNITS) {
+    if (!listUnits(db).some((existingUnit) => existingUnit.symbol.toLowerCase() === unit.symbol)) {
+      createUnit(db, unit, actor);
+    }
+  }
+
   const openingItems: {
     productId: number;
     direction: 'IN';
@@ -208,6 +230,9 @@ export function seedDemoCatalog(db: Db, actor: Actor, businessDate: string): voi
         ...(demo.barcode ? { barcode: demo.barcode } : {}),
         categoryId: categoryIds.get(demo.category) ?? null,
         unit: demo.unit,
+        ...(demo.alt
+          ? { altUnit: demo.alt.unit, altFactor: u(demo.alt.factor), altSellingPrice: m(demo.alt.price) }
+          : {}),
         costPrice: m(demo.cost),
         sellingPrice: m(demo.price),
         minStock: u(demo.minStock),

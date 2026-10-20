@@ -673,6 +673,8 @@ export interface StockValuationRow {
   productName: string;
   sku: string | null;
   unit: string;
+  altUnit: string | null;
+  altFactorMilli: number | null;
   categoryName: string | null;
   qtyOnHand: Qty;
   averageCost: Minor;
@@ -747,6 +749,8 @@ export function getStockValuation(db: Db, query: StockValuationQuery = {}): Stoc
       productName: products.name,
       sku: products.sku,
       unit: products.unit,
+      altUnit: products.altUnit,
+      altFactorMilli: products.altFactorMilli,
       categoryName: categories.name,
       qtyOnHandMilli: products.qtyOnHandMilli,
       stockValueMinor: products.stockValueMinor,
@@ -771,6 +775,8 @@ export function getStockValuation(db: Db, query: StockValuationQuery = {}): Stoc
         productName: row.productName,
         sku: row.sku,
         unit: row.unit,
+        altUnit: row.altUnit,
+        altFactorMilli: row.altFactorMilli,
         categoryName: row.categoryName,
         qtyOnHand,
         averageCost: averageUnitCost({ qty: qtyOnHand, value: stockValue }),

@@ -32,8 +32,8 @@ function renderForm() {
   return render(
     <PurchaseEntry
       products={[
-        { id: 1, name: 'Evaporated Milk', unit: 'tin', costPrice: 300, qtyOnHandMilli: 0 },
-        { id: 2, name: 'Rice 5kg', unit: 'bag', costPrice: 1_000, qtyOnHandMilli: 0 },
+        { id: 1, name: 'Evaporated Milk', unit: 'tin', altUnit: 'Carton', altFactorMilli: 24_000, costPrice: 300, altCostPrice: 6_600, qtyOnHandMilli: 0 },
+        { id: 2, name: 'Rice 5kg', unit: 'bag', altUnit: null, altFactorMilli: null, costPrice: 1_000, altCostPrice: null, qtyOnHandMilli: 0 },
       ]}
       suppliers={[{ id: 1, name: 'Kofi Wholesale', balanceMinor: 0 }]}
       accounts={[{ id: 1, name: 'Cash', isDefault: true }]}

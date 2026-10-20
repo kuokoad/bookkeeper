@@ -35,6 +35,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { readBatchSplits, recordStockMovement } from './inventory.service';
+import { resolveLineUnit } from './units.service';
 import type { Allocation } from '@/domain/inventory/batches';
 import { DOC_TYPES, nextDocumentNumber } from './sequence.service';
 import {
@@ -72,6 +73,8 @@ export interface PurchaseLineRequest {
    * Nobody is made to answer a question about a bag of rice.
    */
   expiryDate?: string | null;
+  /** `qty` and `unitCost` are in the product's alternate unit ("3 Carton"). */
+  alt?: boolean;
 }
 
 export interface PurchaseTenderRequest {
@@ -146,7 +149,8 @@ export function createPurchase(
         throw new ValidationError('A line discount cannot be more than the line total.');
       }
 
-      return { item, product, gross, discount, lineTotal: subtract(gross, discount) };
+      const lineUnit = resolveLineUnit(tx, product, item.qty, item.alt);
+      return { item, product, lineUnit, gross, discount, lineTotal: subtract(gross, discount) };
     });
 
     const subtotal = sum(lines.map((line) => line.lineTotal));
@@ -269,7 +273,7 @@ export function createPurchase(
         recordStockMovement(tx, {
           productId: line.product.id,
           direction: 'IN',
-          qty: line.item.qty,
+          qty: line.lineUnit.baseQty,
           totalCost: lineCost,
           movementType: 'PURCHASE',
           sourceType: 'PURCHASE',
@@ -299,7 +303,10 @@ export function createPurchase(
           productId: line.product.id,
           productName: line.product.name,
           unit: line.product.unit,
-          qtyMilli: line.item.qty,
+          qtyMilli: line.lineUnit.baseQty,
+          entryUnit: line.lineUnit.entryUnit,
+          entryQtyMilli: line.lineUnit.entryQtyMilli,
+          entryFactorMilli: line.lineUnit.entryFactorMilli,
           unitCostMinor: line.item.unitCost,
           discountMinor: line.discount,
           lineTotalMinor: line.lineTotal,
@@ -631,6 +638,9 @@ export function voidPurchase(
           productName: item.productName,
           unit: item.unit,
           qtyMilli: -item.qtyMilli,
+          entryUnit: item.entryUnit,
+          entryQtyMilli: item.entryQtyMilli === null ? null : -item.entryQtyMilli,
+          entryFactorMilli: item.entryFactorMilli,
           unitCostMinor: item.unitCostMinor,
           discountMinor: item.discountMinor,
           lineTotalMinor: -item.lineTotalMinor,

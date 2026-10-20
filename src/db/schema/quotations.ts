@@ -193,6 +193,16 @@ export const quotationItems = sqliteTable(
     unit: text('unit').notNull(),
 
     qtyMilli: qtyMilli('qty_milli').notNull(),
+
+    /**
+     * How the line was entered, when that was the product's alternate unit.
+     * Null means the base unit. Same meaning as on `sale_items`. When set,
+     * `unitPriceMinor` is per entry unit.
+     */
+    entryUnit: text('entry_unit'),
+    entryQtyMilli: qtyMilli('entry_qty_milli'),
+    entryFactorMilli: qtyMilli('entry_factor_milli'),
+
     unitPriceMinor: moneyMinor('unit_price_minor').notNull(),
     discountMinor: moneyMinor('discount_minor').notNull().default(0),
     /** qty x unitPrice - discount */

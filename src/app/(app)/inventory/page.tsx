@@ -22,7 +22,7 @@ import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
 import { MOVEMENT_TYPES } from '@/db/schema/inventory';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { formatDate, formatTime, money, quantity, toBusinessDate } from '@/lib/format';
-import { qty as makeQty } from '@/domain/quantity';
+import { qty as makeQty, formatQtyAlt } from '@/domain/quantity';
 import { minor } from '@/domain/money';
 import {
   filterValueName,
@@ -279,7 +279,7 @@ export default async function InventoryPage({
                   </TD>
                   <TD numeric>
                     <span className="inline-flex items-center gap-2">
-                      {quantity(item.qtyOnHand, item.unit)}
+                      {formatQtyAlt(item.qtyOnHand, item.unit, item.altUnit, item.altFactor)}
                       {item.outOfStock ? (
                         <Badge tone="danger">Out</Badge>
                       ) : (
