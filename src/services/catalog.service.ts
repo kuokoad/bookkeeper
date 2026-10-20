@@ -183,6 +183,11 @@ export interface ProductInput {
   altFactor?: Qty | null;
   altCostPrice?: Minor | null;
   altSellingPrice?: Minor | null;
+  /**
+   * Refuse a unit that is not on the Units list instead of creating it. Set by
+   * the product form; seeds and scripts that name units in text leave it off.
+   */
+  onlyListedUnits?: boolean;
   description?: string | undefined;
   costPrice: Minor;
   sellingPrice: Minor;
@@ -200,11 +205,11 @@ export interface ProductInput {
  * callers that name it in text); the alternate must differ from it.
  */
 function unitColumns(tx: Db, input: ProductInput, fallbackUnit: string) {
-  const unit = ensureUnit(tx, input.unit ?? fallbackUnit);
+  const unit = ensureUnit(tx, input.unit ?? fallbackUnit, input.onlyListedUnits);
   if (!input.altUnit) {
     return { unit, altUnit: null, altFactorMilli: null, altCostPriceMinor: null, altSellingPriceMinor: null };
   }
-  const altUnit = ensureUnit(tx, input.altUnit);
+  const altUnit = ensureUnit(tx, input.altUnit, input.onlyListedUnits);
   if (altUnit === unit) {
     throw new ValidationError('The alternate unit must be different from the base unit.');
   }
@@ -464,12 +469,9 @@ export interface ProductListItem {
   categoryId: number | null;
   categoryName: string | null;
   unit: string;
-  /** Decimal places the base unit allows. */
-  unitDecimals: number;
   /** The alternate unit, if any: "1 Carton = 24 pcs" is 'Carton' and 24_000. */
   altUnit: string | null;
   altFactor: Qty | null;
-  altUnitDecimals: number;
   /** Per alternate unit, falling back to the base price times the conversion. */
   altCostPrice: Minor | null;
   altSellingPrice: Minor | null;
@@ -668,10 +670,8 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
       categoryId: products.categoryId,
       categoryName: categories.name,
       unit: products.unit,
-      unitDecimals: sql<number>`(SELECT u.decimal_places FROM units u WHERE u.symbol = products.unit)`,
       altUnit: products.altUnit,
       altFactorMilli: products.altFactorMilli,
-      altUnitDecimals: sql<number | null>`(SELECT u.decimal_places FROM units u WHERE u.symbol = products.alt_unit)`,
       altCostPriceMinor: products.altCostPriceMinor,
       altSellingPriceMinor: products.altSellingPriceMinor,
       costPriceMinor: products.costPriceMinor,
@@ -707,10 +707,8 @@ export function listProducts(db: Db, query: ProductQuery = {}): ProductListItem[
       categoryId: row.categoryId,
       categoryName: row.categoryName,
       unit: row.unit,
-      unitDecimals: row.unitDecimals,
       altUnit: row.altUnit,
       altFactor: altFactor,
-      altUnitDecimals: row.altUnitDecimals ?? 0,
       altCostPrice:
         altFactor === null
           ? null

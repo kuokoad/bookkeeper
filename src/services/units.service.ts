@@ -118,6 +118,26 @@ export function updateUnit(db: Db, symbol: string, input: UnitInput, actor: Acto
       throw new ConflictError(`There is already a unit called "${next}".`);
     }
 
+    // Narrowing the decimals must not strand a fraction already held: every
+    // later line in this unit would be refused, so it could never be sold or
+    // written off.
+    if (input.decimalPlaces < existing.decimalPlaces) {
+      const step = 10 ** (QTY_DECIMALS - input.decimalPlaces);
+      const misfit = tx
+        .select({ name: products.name })
+        .from(products)
+        .where(
+          sql`${products.unit} = ${existing.symbol} AND (${products.qtyOnHandMilli} % ${step} <> 0 OR coalesce(${products.minStockMilli}, 0) % ${step} <> 0)`,
+        )
+        .get();
+      if (misfit) {
+        throw new ValidationError(
+          `"${misfit.name}" holds a quantity in ${existing.symbol} that does not fit ${input.decimalPlaces} decimal places. ` +
+            'Adjust its stock or reorder level first.',
+        );
+      }
+    }
+
     const now = new Date();
     tx.update(units)
       .set({ symbol: next, name: input.name.trim(), decimalPlaces: input.decimalPlaces, updatedAt: now })
@@ -173,11 +193,14 @@ export function deleteUnit(db: Db, symbol: string, actor: Actor): void {
  * decimals — the behaviour every product had before units existed — and the
  * owner can tighten it on the Units screen.
  */
-export function ensureUnit(tx: Tx, symbol: string): string {
+export function ensureUnit(tx: Tx, symbol: string, onlyListed = false): string {
   const text = symbol.trim();
   if (text.length === 0) throw new ValidationError('Choose a unit.');
   const existing = findBySymbol(tx, text);
   if (existing) return existing.symbol;
+  // A form only ever offers listed units, so anything else is a stale tab or a
+  // forged request, and must not become a unit nobody chose.
+  if (onlyListed) throw new ValidationError(`"${text}" is not a unit. Choose a unit from the list.`);
   const now = new Date();
   tx.insert(units)
     .values({ symbol: text, name: text, decimalPlaces: QTY_DECIMALS, createdAt: now, updatedAt: now })

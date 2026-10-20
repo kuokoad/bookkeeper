@@ -18,7 +18,9 @@ SELECT min(trim("unit")), min(trim("unit")), 0 FROM `products` GROUP BY lower(tr
 INSERT OR IGNORE INTO `units` ("symbol", "name", "decimal_places") VALUES ('pcs', 'Pieces', 0);--> statement-breakpoint
 UPDATE `products` SET "unit" = (SELECT u."symbol" FROM `units` u WHERE lower(u."symbol") = lower(trim(`products`."unit")));--> statement-breakpoint
 -- Decimals are enforced from now on, so a unit already holding a fraction
--- anywhere (stock, the ledger, a quote, a reorder level) keeps three places.
+-- anywhere (stock, the ledger, a document line, a reorder level) keeps three
+-- places. Document lines are checked as well as the ledger because a service
+-- (labour by the hour, cartage) is sold without ever touching stock.
 -- Everything else starts whole; the owner can widen it on the Units screen.
 UPDATE `units` SET "decimal_places" = 3 WHERE "symbol" IN (
   SELECT p."unit" FROM `products` p WHERE p."qty_on_hand_milli" % 1000 <> 0 OR coalesce(p."min_stock_milli", 0) % 1000 <> 0
@@ -26,6 +28,10 @@ UPDATE `units` SET "decimal_places" = 3 WHERE "symbol" IN (
     WHERE l."qty_in_milli" % 1000 <> 0 OR l."qty_out_milli" % 1000 <> 0
   UNION SELECT p."unit" FROM `products` p JOIN `quotation_items` q ON q."product_id" = p."id"
     WHERE q."qty_milli" % 1000 <> 0
+  UNION SELECT p."unit" FROM `products` p JOIN `sale_items` s ON s."product_id" = p."id"
+    WHERE s."qty_milli" % 1000 <> 0
+  UNION SELECT p."unit" FROM `products` p JOIN `purchase_items` pi ON pi."product_id" = p."id"
+    WHERE pi."qty_milli" % 1000 <> 0
 );--> statement-breakpoint
 PRAGMA foreign_keys=OFF;--> statement-breakpoint
 CREATE TABLE `__new_products` (

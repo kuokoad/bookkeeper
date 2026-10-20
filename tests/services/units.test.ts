@@ -5,9 +5,13 @@ import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import { paymentAccounts, products, purchaseItems, saleItems, stockLedger } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { createProduct, getProduct, updateProduct, type ProductInput } from '@/services/catalog.service';
-import { createStockAdjustment } from '@/services/stock-adjustment.service';
+import {
+  createStockAdjustment,
+  getStockAdjustment,
+  voidStockAdjustment,
+} from '@/services/stock-adjustment.service';
 import { createSale, getSale, voidSale } from '@/services/sale.service';
-import { createPurchase } from '@/services/purchase.service';
+import { createPurchase, voidPurchase } from '@/services/purchase.service';
 import { createSupplier } from '@/services/supplier.service';
 import { convertQuotation, createQuotation } from '@/services/quotation.service';
 import { createCustomerReturn } from '@/services/returns.service';
@@ -361,5 +365,111 @@ describe('the Units list', () => {
     expect(() =>
       createUnit(context.db, { symbol: 'PCS', name: 'Pieces', decimalPlaces: 0 }, ACTOR),
     ).toThrow(ConflictError);
+  });
+});
+
+describe('narrowing a unit that already holds fractions', () => {
+  it('refuses to make kg whole while 2.5 kg of rice is on the shelf', () => {
+    createUnitOnce('kg', 3);
+    const rice = createProduct(
+      context.db,
+      { name: 'Rice', unit: 'kg', costPrice: m(1_400), sellingPrice: m(1_900) },
+      ACTOR,
+    );
+    createStockAdjustment(
+      context.db,
+      {
+        businessDate: TODAY,
+        reason: 'OPENING_STOCK',
+        items: [{ productId: rice, direction: 'IN', qty: u(2.5), totalCost: m(3_500) }],
+      },
+      ACTOR,
+    );
+
+    // The last half kilo could never be sold or written off again.
+    expect(() =>
+      updateUnit(context.db, 'kg', { symbol: 'kg', name: 'Kilogram', decimalPlaces: 0 }, ACTOR),
+    ).toThrow(/Rice/);
+    expect(listUnits(context.db).find((unit) => unit.symbol === 'kg')!.decimalPlaces).toBe(3);
+
+    // One decimal still fits 2.5, so that is allowed.
+    updateUnit(context.db, 'kg', { symbol: 'kg', name: 'Kilogram', decimalPlaces: 1 }, ACTOR);
+    expect(listUnits(context.db).find((unit) => unit.symbol === 'kg')!.decimalPlaces).toBe(1);
+  });
+});
+
+describe('a product form naming a unit that is not on the list', () => {
+  it('is refused, rather than quietly adding the unit', () => {
+    const before = listUnits(context.db).length;
+
+    // A stale tab still showing a unit that has since been renamed.
+    expect(() =>
+      createProduct(
+        context.db,
+        { ...MILK, altUnit: null, altFactor: null, altSellingPrice: null, unit: 'Tinz', onlyListedUnits: true },
+        ACTOR,
+      ),
+    ).toThrow(/Choose a unit from the list/);
+    expect(listUnits(context.db).length).toBe(before);
+
+    const id = makeMilk();
+    expect(() =>
+      updateProduct(context.db, id, { ...MILK, altUnit: 'Crate', onlyListedUnits: true }, ACTOR),
+    ).toThrow(/Choose a unit from the list/);
+    expect(listUnits(context.db).some((unit) => unit.symbol === 'Crate')).toBe(false);
+  });
+});
+
+describe('voiding documents taken in cartons', () => {
+  it('takes a voided carton purchase back off the shelf and the books', () => {
+    const id = makeMilk();
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    const purchase = createPurchase(
+      context.db,
+      {
+        supplierId,
+        businessDate: TODAY,
+        items: [{ productId: id, qty: u(3), alt: true, unitCost: m(20_000) }],
+        tenders: [{ paymentAccountId: CASH, amount: m(60_000) }],
+      },
+      ACTOR,
+    );
+
+    const { reversalPurchaseId } = voidPurchase(context.db, purchase.purchaseId, 'Wrong supplier', ACTOR);
+
+    expect(qtyOnHand(id)).toBe(0);
+    expect(getProduct(context.db, id).stockValue).toBe(0);
+    const mirror = context.db
+      .select()
+      .from(purchaseItems)
+      .where(eq(purchaseItems.purchaseId, reversalPurchaseId))
+      .get()!;
+    expect(mirror.qtyMilli).toBe(-72_000);
+    expect(mirror.entryUnit).toBe('Carton');
+    expect(mirror.entryQtyMilli).toBe(-3_000);
+    assertBooksHealthy('carton purchase void');
+  });
+
+  it('puts a voided carton write-off back on the shelf', () => {
+    const id = makeMilk();
+    stockUp(id);
+    const writeOff = createStockAdjustment(
+      context.db,
+      {
+        businessDate: TODAY,
+        reason: 'DAMAGED',
+        items: [{ productId: id, direction: 'OUT', qty: u(1), alt: true }],
+      },
+      ACTOR,
+    );
+
+    const reversal = voidStockAdjustment(context.db, writeOff.adjustmentId, 'Found it unbroken', ACTOR);
+
+    expect(qtyOnHand(id)).toBe(100_000);
+    const mirror = getStockAdjustment(context.db, reversal.adjustmentId).items[0]!;
+    expect(mirror.qtyMilli).toBe(24_000);
+    expect(mirror.entryUnit).toBe('Carton');
+    expect(mirror.entryQtyMilli).toBe(1_000);
+    assertBooksHealthy('carton write-off void');
   });
 });

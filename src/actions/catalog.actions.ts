@@ -152,6 +152,7 @@ function parseProductNumbers(data: z.infer<typeof productSchema>) {
 /** The unit fields as the service takes them. */
 function altUnitInput(data: z.infer<typeof productSchema>, numbers: ReturnType<typeof parseProductNumbers>) {
   return {
+    onlyListedUnits: true,
     altUnit: data.altUnit || null,
     altFactor: numbers.altFactor as never,
     altCostPrice: numbers.altCostPrice as never,

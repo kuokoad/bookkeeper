@@ -22,6 +22,11 @@ export default async function NewProductPage() {
     name: category.name,
   }));
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 1)).get();
+  const units = listUnits(db);
+  // An upgraded shop may spell it 'Pcs'. A default the list does not hold would
+  // leave the select on whichever unit sorts first.
+  const defaultUnit =
+    units.find((unit) => unit.symbol.toLowerCase() === 'pcs')?.symbol ?? units[0]?.symbol ?? '';
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -33,13 +38,13 @@ export default async function NewProductPage() {
         currencyCode={settings?.currencyCode ?? 'GHS'}
         submitLabel="Create product"
         showStockNotice
-        units={listUnits(db)}
+        units={units}
         initial={{
           name: '',
           sku: '',
           barcode: '',
           categoryId: '',
-          unit: 'pcs',
+          unit: defaultUnit,
           altUnit: '',
           altFactor: '',
           altCostPrice: '',

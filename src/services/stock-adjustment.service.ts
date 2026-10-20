@@ -594,6 +594,7 @@ export function getStockAdjustment(db: Db, adjustmentId: number) {
       qtyMilli: stockAdjustmentItems.qtyMilli,
       entryUnit: stockAdjustmentItems.entryUnit,
       entryQtyMilli: stockAdjustmentItems.entryQtyMilli,
+      entryFactorMilli: stockAdjustmentItems.entryFactorMilli,
       unitCostMinor: stockAdjustmentItems.unitCostMinor,
       totalCostMinor: stockAdjustmentItems.totalCostMinor,
       note: stockAdjustmentItems.note,
