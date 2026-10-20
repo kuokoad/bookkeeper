@@ -390,14 +390,20 @@ export function PurchaseEntry({
                   />
                 </div>
 
-                <div className="flex items-end justify-between gap-2 sm:col-span-2">
-                  <span className="tabular text-sm font-semibold text-content">
-                    {fmt(lineTotal)}
-                  </span>
+                <div className="flex items-start justify-between gap-2 sm:col-span-2">
+                  <div>
+                    <span className="mb-1 block text-xs font-medium text-content-muted">
+                      Line total
+                    </span>
+                    <span className="tabular flex h-11 items-center text-sm font-semibold text-content">
+                      {fmt(lineTotal)}
+                    </span>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
+                    className="mt-6"
                     onClick={() =>
                       setRows((current) =>
                         current.length === 1 ? current : current.filter((r) => r.key !== row.key),
