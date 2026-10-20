@@ -1,5 +1,19 @@
 # TODOS
 
+## CI
+
+### The end-to-end smoke test has been red on main since 31 August
+
+**What:** Find out why 16 checks in CI's "End-to-end against a running server" smoke job fail, and fix the script or the app so the job is green again.
+
+**Why:** A smoke test that is always red cannot catch the regression it exists for. Every `verify` run on main since 2026-08-31 has concluded failure, so a real break would look like business as usual.
+
+**Context:** Found while shipping the-screen-agrees-with-the-books (2026-10-20). Run 39516297909 (branch, 99ee459) and run 39407460849 (main, bc7f6bc) fail the identical 16 checks. Failing: books balanced, where the figures come from, dashboard money cards, chosen period, product search, seeded products, fractional kg quantity, seeded categories, customers, suppliers, expenses, other income, no negative account, supplier owed, purchase form lists suppliers, and filtering ("all NaN, filtered NaN"). Neighbouring checks on the same pages pass (stock quantities, low stock, seeded shortage, both demo accounts, phone sign-out), so suspect the script's text matchers drifted when UI work changed those pages, not the pages themselves. The script prints no failure reason; make it print what it looked for and what it saw first. The "Typecheck, lint, migrations, tests" job is green on Node 22 and 24.
+
+**Effort:** M
+**Priority:** P0
+**Depends on:** None
+
 ## Purchases
 
 ### One validation pass for the new-purchase form, so the screen agrees with what Save stores
