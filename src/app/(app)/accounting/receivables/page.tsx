@@ -152,7 +152,7 @@ export default async function ReceivablesPage({
               { value: 'current', label: 'Within 90 days' },
             ],
           },
-          { kind: 'date', key: 'asAt', label: 'As at' },
+          { kind: 'date', key: 'asAt', label: 'As at', value: asAt },
         ]}
       />
 

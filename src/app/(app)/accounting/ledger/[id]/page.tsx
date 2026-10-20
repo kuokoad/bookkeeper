@@ -7,6 +7,7 @@ import { db } from '@/db/client';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { getGeneralLedger } from '@/services/reporting/ledger.service';
 import { formatDate, money, toBusinessDate } from '@/lib/format';
+import { parseDate } from '@/lib/filters';
 import { isDomainError } from '@/domain/errors';
 import { Badge } from '@/components/ui/badge';
 
@@ -31,12 +32,14 @@ export default async function GeneralLedgerPage({
 
   const accountId = Number(id);
   if (!Number.isInteger(accountId) || accountId <= 0) notFound();
+  const from = parseDate(query.from);
+  const to = parseDate(query.to);
 
   let ledger;
   try {
     ledger = getGeneralLedger(db, accountId, {
-      ...(query.from ? { from: query.from } : {}),
-      ...(query.to ? { to: query.to } : {}),
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
     });
   } catch (error) {
     if (isDomainError(error) && error.code === 'NOT_FOUND') notFound();
@@ -79,10 +82,11 @@ export default async function GeneralLedgerPage({
       </div>
 
       <FilterBar compact basePath={`/accounting/ledger/${accountId}`}
-        active={Object.entries(query).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'from' ? 'From' : 'To', value: value! }))}
+        active={Object.entries({ from, to }).filter(([, value]) => Boolean(value)).map(([key, value]) => ({ key, label: key === 'from' ? 'From' : 'To', value: value! }))}
         fields={[
-          { kind: 'date', key: 'from', label: 'From' },
-          { kind: 'date', key: 'to', label: 'To', defaultValue: toBusinessDate() },
+          { kind: 'date', key: 'from', label: 'From', value: from ?? '' },
+          // With no valid `to` the ledger runs to today, so the box says today, never the junk typed.
+          { kind: 'date', key: 'to', label: 'To', defaultValue: toBusinessDate(), value: to ?? toBusinessDate() },
         ]}
       />
 
@@ -103,10 +107,10 @@ export default async function GeneralLedgerPage({
             <TH numeric>Balance</TH>
           </THead>
           <tbody>
-            {query.from && (
+            {from && (
               <TR className="bg-surface-sunken">
                 <TD>
-                  <span className="text-content-muted">{formatDate(query.from)}</span>
+                  <span className="text-content-muted">{formatDate(from)}</span>
                 </TD>
                 <TD />
                 <TD />
