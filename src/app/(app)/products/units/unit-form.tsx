@@ -68,7 +68,7 @@ export function UnitForm({ unit }: { unit: UnitValues | null }) {
               id={id('symbol')}
               name="symbol"
               defaultValue={unit?.symbol ?? ''}
-              placeholder="e.g. Carton"
+              placeholder="e.g. ctn"
               required
               autoComplete="off"
               invalid={Boolean(state.fieldErrors?.['symbol'])}
