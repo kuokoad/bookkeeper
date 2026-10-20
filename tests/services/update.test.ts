@@ -42,7 +42,10 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('checking for updates', () => {
+// Real git processes: several seconds each on Windows, more under the full suite's load.
+const GIT_TIMEOUT = 60_000;
+
+describe('checking for updates', { timeout: GIT_TIMEOUT }, () => {
   let shop: string;
   let developer: string;
 
@@ -55,7 +58,7 @@ describe('checking for updates', () => {
     git(developer, 'push', '-q', 'origin', 'main');
     shop = join(dir, 'shop');
     git(dir, 'clone', '-q', origin, shop);
-  });
+  }, GIT_TIMEOUT);
 
   it('says the shop is on the newest version when nothing has been released since', async () => {
     const result = await checkForUpdates(shop);
