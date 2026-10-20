@@ -105,7 +105,8 @@ export function UnitForm({ unit }: { unit: UnitValues | null }) {
         </div>
         <SubmitButton adding={adding} />
         {!adding && (
-          <>
+          // One fixed-width slot whether or not Delete shows, so every row's columns line up.
+          <div className="flex w-44 items-end gap-3">
             <span className="tabular w-20 pb-3 text-xs text-content-subtle">
               {unit.productCount} product{unit.productCount === 1 ? '' : 's'}
             </span>
@@ -114,7 +115,7 @@ export function UnitForm({ unit }: { unit: UnitValues | null }) {
                 Delete
               </Button>
             )}
-          </>
+          </div>
         )}
       </div>
     </form>
