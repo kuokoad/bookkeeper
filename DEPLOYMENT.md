@@ -27,6 +27,47 @@ live in one file you can copy.
 
 ---
 
+## The checklist
+
+Everything below in the order you do it. Each step links to its section.
+
+**On the machine where the code is written, before you go to the shop:**
+
+1. **Get the work onto `main` and pushed.** The installer and the in-app
+   updater both fetch `main` from GitHub, not whatever branch you have checked
+   out. Anything not merged and pushed does not reach the shop PC.
+2. **Check `main` builds.** `npm run verify` and `npm run build` on a fresh
+   pull of `main`. A failing build stops the installer halfway.
+
+**On the shop PC:**
+
+3. Sign in to Windows as the account the shop will use day to day.
+   Auto-start is tied to that account's log on.
+4. Open PowerShell as Administrator and run the line in
+   [On a bare PC](#on-a-bare-pc). It ends with the app running in that window.
+5. Open <http://localhost:5177> and create the shop and its owner on the setup
+   screen.
+6. Run `npm run preflight` in `C:\NunaBooks`. Every line must pass. See
+   [Before you trade on it](#before-you-trade-on-it).
+7. Reserve this PC's address in the router, then check a phone or till on the
+   same Wi-Fi can open `http://<the-pc-address>:5177`. See
+   [Reaching it from the counter](#reaching-it-from-the-counter-the-office-a-phone).
+8. Optional: give it a name and a desktop icon. See
+   [Giving it a name](#giving-it-a-name-and-a-desktop-icon).
+9. Restart the PC once and check the app comes back by itself. If it does not,
+   see [Keeping it running](#keeping-it-running).
+10. Take the first backup and copy it off the PC. See [Backups](#backups).
+
+**Bringing records over from another machine.** Take a backup there
+(**Settings → Health & backup → Download a backup**), copy the file to the shop
+PC, stop the app, and run the restore command in
+[Putting a backup back](#putting-a-backup-back) before step 5. Only do this
+with a database that never had demo data in it: demo records cannot be removed,
+and preflight will refuse to pass. A database from a development machine almost
+always has them, so a shop usually starts fresh.
+
+---
+
 ## On a bare PC
 
 Open PowerShell with **Run as Administrator** and paste:
