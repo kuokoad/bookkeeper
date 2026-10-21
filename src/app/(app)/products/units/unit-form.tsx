@@ -68,7 +68,7 @@ export function UnitForm({ unit }: { unit: UnitValues | null }) {
               id={id('symbol')}
               name="symbol"
               defaultValue={unit?.symbol ?? ''}
-              placeholder="e.g. Carton"
+              placeholder="e.g. ctn"
               required
               autoComplete="off"
               invalid={Boolean(state.fieldErrors?.['symbol'])}
@@ -105,8 +105,9 @@ export function UnitForm({ unit }: { unit: UnitValues | null }) {
         </div>
         <SubmitButton adding={adding} />
         {!adding && (
-          <>
-            <span className="tabular pb-3 text-xs text-content-subtle">
+          // One fixed-width slot whether or not Delete shows, so every row's columns line up.
+          <div className="flex w-44 items-end gap-3">
+            <span className="tabular w-20 whitespace-nowrap pb-3 text-xs text-content-subtle">
               {unit.productCount} product{unit.productCount === 1 ? '' : 's'}
             </span>
             {unit.productCount === 0 && (
@@ -114,7 +115,7 @@ export function UnitForm({ unit }: { unit: UnitValues | null }) {
                 Delete
               </Button>
             )}
-          </>
+          </div>
         )}
       </div>
     </form>

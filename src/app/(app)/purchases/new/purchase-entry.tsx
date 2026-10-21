@@ -292,10 +292,12 @@ export function PurchaseEntry({
             const qty = toMilli(row.qty);
             const cost = toMinor(row.unitCost);
             const discount = row.discount ? toMinor(row.discount) : 0;
-            const lineTotal =
-              Number.isNaN(qty) || Number.isNaN(cost) || Number.isNaN(discount)
-                ? 0
-                : Math.round((cost * qty) / 1000) - discount;
+            // An unreadable entry shows a dash, never a plausible 0.00 under the caption.
+            const lineUnreadable = Number.isNaN(qty) || Number.isNaN(cost) || Number.isNaN(discount);
+            const lineGross = lineUnreadable ? 0 : Math.round((cost * qty) / 1000);
+            const lineTotal = lineGross - (lineUnreadable ? 0 : discount);
+            // The server refuses a discount larger than the line, so say so before Save.
+            const discountTooBig = !lineUnreadable && discount > lineGross;
 
             return (
               <div key={row.key} className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-12">
@@ -387,17 +389,24 @@ export function PurchaseEntry({
                     value={row.discount}
                     onChange={(event) => updateRow(row.key, { discount: event.target.value })}
                     placeholder="0.00"
+                    invalid={Number.isNaN(discount) || discountTooBig}
                   />
                 </div>
 
-                <div className="flex items-end justify-between gap-2 sm:col-span-2">
-                  <span className="tabular text-sm font-semibold text-content">
-                    {fmt(lineTotal)}
-                  </span>
+                <div className="flex items-start justify-between gap-2 sm:col-span-2">
+                  <div>
+                    <span className="mb-1 block text-xs font-medium text-content-muted">
+                      Line total
+                    </span>
+                    <span className="tabular flex h-11 items-center text-sm font-semibold text-content">
+                      {lineUnreadable ? '—' : fmt(lineTotal)}
+                    </span>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
+                    className="mt-6"
                     onClick={() =>
                       setRows((current) =>
                         current.length === 1 ? current : current.filter((r) => r.key !== row.key),

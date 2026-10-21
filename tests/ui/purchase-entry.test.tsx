@@ -155,6 +155,62 @@ describe('what the delivery adds up to', () => {
     expect(screen.getAllByText(/156\.00/).length).toBeGreaterThan(0);
   });
 
+  it('shows the line total under its own caption, net of the line discount', () => {
+    /**
+     * Value: protects=the figure captioned "Line total" is that line's qty*cost - discount;
+     * fails_when=the caption drifts off the figure, or the line figure ignores the discount;
+     * why_new=the test above matches 156.00 anywhere, so the grand total alone satisfies it;
+     * seam=none; no_claim=layout (centring, alignment) or the grand total's arithmetic.
+     */
+    renderForm();
+    chooseProduct();
+    fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '24' } });
+    fireEvent.change(screen.getByLabelText(/cost each/i), { target: { value: '6.50' } });
+    fireEvent.change(screen.getByLabelText(/^discount$/i), { target: { value: '5.00' } });
+
+    // 24 at 6.50 is 156.00, less 5.00 off the line.
+    expect(screen.getByText('Line total').parentElement?.textContent).toContain('151.00');
+  });
+
+  it('shows a dash, not 0.00, when a line figure cannot be read', () => {
+    /**
+     * Value: protects=an unreadable cost leaves the captioned line total blank (—), never a plausible 0.00;
+     * fails_when=the line total falls back to 0 again; why_new=no test covered unreadable input on a line;
+     * seam=none; no_claim=what the server does with the bad value.
+     */
+    renderForm();
+    chooseProduct();
+    fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '24' } });
+    fireEvent.change(screen.getByLabelText(/cost each/i), { target: { value: '6.5.0' } });
+
+    const lineTotal = screen.getByText('Line total').parentElement?.textContent ?? '';
+    expect(lineTotal).toContain('—');
+    expect(lineTotal).not.toContain('0.00');
+  });
+
+  it('flags a line discount that is unreadable or larger than the line', () => {
+    /**
+     * Value: protects=the discount box is marked invalid before Save when the server would refuse it;
+     * fails_when=the discount loses its invalid flag; why_new=discount had no invalid state at all;
+     * seam=none; no_claim=the server-side refusal itself (purchase.service tests own that).
+     */
+    renderForm();
+    chooseProduct();
+    fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText(/cost each/i), { target: { value: '10.00' } });
+    const discount = screen.getByLabelText(/^discount$/i);
+
+    fireEvent.change(discount, { target: { value: '5.00' } });
+    expect(discount.getAttribute('aria-invalid')).toBeNull();
+
+    // 2 at 10.00 is 20.00, so 25.00 off is more than the line.
+    fireEvent.change(discount, { target: { value: '25.00' } });
+    expect(discount.getAttribute('aria-invalid')).toBe('true');
+
+    fireEvent.change(discount, { target: { value: '5.0.0' } });
+    expect(discount.getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('will not save without a supplier', () => {
     renderForm();
     chooseProduct();
