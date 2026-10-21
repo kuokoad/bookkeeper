@@ -182,9 +182,10 @@ export function seedDemoSales(db: Db, actor: Actor, today: string): void {
       customerId: walkIn,
       items: [
         { productId: need('Cement 50kg'), qty: u(15) },
-        { productId: need('Roofing nails 3in'), qty: u(3) },
+        // Nails are weighed, so the scale decides: 2.5 kg, not a round number.
+        { productId: need('Roofing nails 3in'), qty: u(2.5) },
       ],
-      tenders: [{ paymentAccountId: cash.id, amount: m(1_497) }],
+      tenders: [{ paymentAccountId: cash.id, amount: m(1_487.5) }],
       isDemo: true,
     },
     actor,
