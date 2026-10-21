@@ -2,6 +2,34 @@
 
 ## Purchases
 
+### Tie the "Line total" caption to its figure for screen readers
+
+**What:** Give each purchase line's total a programmatic label, e.g. `<output aria-label="Line total">` or a `dl`/`dt`/`dd` pair, instead of two sibling spans.
+
+**Why:** A screen reader reads the caption and the amount as unrelated text.
+
+**Context:** `src/app/(app)/purchases/new/purchase-entry.tsx`, the "Line total" block (around line 432). Raised by the adversarial review on 2026-10-20 and deliberately skipped then. `tests/ui/purchase-entry.test.tsx` reads the figure via `getByText('Line total').parentElement`; switch it to `getByRole('status', { name: 'Line total' })` or similar when this changes.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+
+## Completed
+
+### The end-to-end smoke test has been red on main since 31 August
+
+**What:** Find out why 16 checks in CI's "End-to-end against a running server" smoke job fail, and fix the script or the app so the job is green again.
+
+**Why:** A smoke test that is always red cannot catch the regression it exists for. Every `verify` run on main since 2026-08-31 has concluded failure, so a real break would look like business as usual.
+
+**Context:** Found while shipping the-screen-agrees-with-the-books (2026-10-20). Run 39516297909 (branch, 99ee459) and run 39407460849 (main, bc7f6bc) fail the identical 16 checks. Failing: books balanced, where the figures come from, dashboard money cards, chosen period, product search, seeded products, fractional kg quantity, seeded categories, customers, suppliers, expenses, other income, no negative account, supplier owed, purchase form lists suppliers, and filtering ("all NaN, filtered NaN"). Neighbouring checks on the same pages pass (stock quantities, low stock, seeded shortage, both demo accounts, phone sign-out), so suspect the script's text matchers drifted when UI work changed those pages, not the pages themselves. The script prints no failure reason; make it print what it looked for and what it saw first. The "Typecheck, lint, migrations, tests" job is green on Node 22 and 24.
+
+**Effort:** M
+**Priority:** P0
+**Depends on:** None
+**Completed:** 2026-10-21, branch claude/fix-e2e-smoke. Three causes, not one. (1) Matcher drift from dc742f9, which replaced the provisions demo with a building-materials yard on 31 August: product, category, customer, supplier, expense and income names. (2) Matcher drift from the dashboard redesign and the Stat card icon: Books Check wording, card titles, the 7d/30d/90d picker, and the audit count regex (the NaN). (3) A real figure: the demo seed left the Bank Account at GHS -7,288, overdrawn for ten weeks, because the owner float was dated after the deliveries it paid for. Seed fixed, test added in tests/db/demo-seed.test.ts. The script now prints what it looked for and what the page showed.
+
 ### One validation pass for the new-purchase form, so the screen agrees with what Save stores
 
 **What:** Make the purchase form flag, and refuse to Save, every entry the server refuses or would store wrongly. Make the line figures, Subtotal, Total, Paid and the Save button agree with each other.
@@ -23,30 +51,4 @@ Prefer reusing the server's parsers (`src/domain/` `parseMoney`, `parseQty`) on 
 **Effort:** M
 **Priority:** P1
 **Depends on:** None
-
-### Tie the "Line total" caption to its figure for screen readers
-
-**What:** Give each purchase line's total a programmatic label, e.g. `<output aria-label="Line total">` or a `dl`/`dt`/`dd` pair, instead of two sibling spans.
-
-**Why:** A screen reader reads the caption and the amount as unrelated text.
-
-**Context:** `src/app/(app)/purchases/new/purchase-entry.tsx`, the "Line total" block (around line 397). Raised by the adversarial review on 2026-10-20 and deliberately skipped then. `tests/ui/purchase-entry.test.tsx` reads the figure via `getByText('Line total').parentElement`; switch it to `getByRole('status', { name: 'Line total' })` or similar when this changes.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-## Completed
-
-### The end-to-end smoke test has been red on main since 31 August
-
-**What:** Find out why 16 checks in CI's "End-to-end against a running server" smoke job fail, and fix the script or the app so the job is green again.
-
-**Why:** A smoke test that is always red cannot catch the regression it exists for. Every `verify` run on main since 2026-08-31 has concluded failure, so a real break would look like business as usual.
-
-**Context:** Found while shipping the-screen-agrees-with-the-books (2026-10-20). Run 39516297909 (branch, 99ee459) and run 39407460849 (main, bc7f6bc) fail the identical 16 checks. Failing: books balanced, where the figures come from, dashboard money cards, chosen period, product search, seeded products, fractional kg quantity, seeded categories, customers, suppliers, expenses, other income, no negative account, supplier owed, purchase form lists suppliers, and filtering ("all NaN, filtered NaN"). Neighbouring checks on the same pages pass (stock quantities, low stock, seeded shortage, both demo accounts, phone sign-out), so suspect the script's text matchers drifted when UI work changed those pages, not the pages themselves. The script prints no failure reason; make it print what it looked for and what it saw first. The "Typecheck, lint, migrations, tests" job is green on Node 22 and 24.
-
-**Effort:** M
-**Priority:** P0
-**Depends on:** None
-**Completed:** 2026-10-21, branch claude/fix-e2e-smoke. Three causes, not one. (1) Matcher drift from dc742f9, which replaced the provisions demo with a building-materials yard on 31 August: product, category, customer, supplier, expense and income names. (2) Matcher drift from the dashboard redesign and the Stat card icon: Books Check wording, card titles, the 7d/30d/90d picker, and the audit count regex (the NaN). (3) A real figure: the demo seed left the Bank Account at GHS -7,288, overdrawn for ten weeks, because the owner float was dated after the deliveries it paid for. Seed fixed, test added in tests/db/demo-seed.test.ts. The script now prints what it looked for and what the page showed.
+**Completed:** 2026-10-21, branch the-purchase-form-agrees-with-save. One reading of the form (`read-purchase.ts`, on the server's `parseMoney`, `parsePositiveQty`, unit checks and `taxOnNet`) now drives every line figure, the totals and Save. All eight are fixed. A cost is never pre-filled as 0.00, an empty cost box blocks Save, and a 0 typed on purpose is allowed and labelled as free goods. Found on the way and fixed with them: the form left out the tax the server adds on top, so its Total was short and it refused payment of the full amount; and a quantity finer than its unit allows (1.5 Pcs) was only refused after Save.
