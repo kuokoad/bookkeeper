@@ -7,6 +7,7 @@ import { seedDemo } from '@/db/seed/demo';
 import { countRealRecords } from '@/db/seed';
 import { verifyBatchCoverage, verifyProductStock } from '@/services/inventory.service';
 import { getTrialBalance } from '@/services/reporting/balances.service';
+import { getPaymentAccountBalance, listPaymentAccounts } from '@/services/payment-account.service';
 
 /**
  * `npm run db:seed` has to actually run.
@@ -50,6 +51,36 @@ describe('the demo seed', () => {
   it('leaves a shop whose books balance', async () => {
     await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
     expect(getTrialBalance(context.db).balanced).toBe(true);
+  });
+
+  it('never shows a money account below zero, on any day of its history', async () => {
+    /**
+     * The demo dated the owner's opening float a week back, after two months
+     * of rent and cement deliveries paid from the bank. A fresh install opened
+     * on "Bank Account shows less than zero" (GHS -7,288), with a running
+     * balance that sat below zero for ten weeks. The warning was correct, and
+     * the first thing a new owner sees in the demo shop should not need it.
+     */
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+
+    const negative: string[] = [];
+    for (const account of listPaymentAccounts(context.db)) {
+      for (let day = new Date('2026-05-01'); day <= new Date('2026-08-25'); day.setUTCDate(day.getUTCDate() + 1)) {
+        const date = day.toISOString().slice(0, 10);
+        const balance = getPaymentAccountBalance(context.db, account.id, date);
+        if (balance < 0) negative.push(`${account.name} ${date}: ${balance}`);
+      }
+    }
+    expect(negative).toEqual([]);
+  });
+
+  it('sells something by weight, so a fractional quantity reaches the screens', async () => {
+    // The smoke test proves milli-unit quantities survive to the products page,
+    // and needs a demo product whose stock is not a whole number to look at.
+    await seedDemo(context.db, new Date('2026-08-25T09:00:00Z'));
+
+    const nails = context.db.select().from(products).where(eq(products.name, 'Roofing nails 3in')).get()!;
+    expect(nails.qtyOnHandMilli % 1000).not.toBe(0);
   });
 
   it('leaves every product agreeing with its own movement history', async () => {

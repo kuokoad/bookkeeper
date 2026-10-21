@@ -82,12 +82,13 @@ export function seedDemoCashbook(db: Db, actor: Actor, today: string): void {
 
   // The owner's starting float. Without this the shop would appear to trade
   // from an impossible negative cash position — every real shop starts with
-  // money the owner put in.
+  // money the owner put in. Dated before the first demo cement delivery (74
+  // days back, paid from the bank), or every account starts life overdrawn.
   const startingFloat = (accountId: number, cedis: number, what: string) =>
     recordOwnerCapital(
       db,
       {
-        businessDate: daysBefore(today, 7),
+        businessDate: daysBefore(today, 75),
         paymentAccountId: accountId,
         amount: m(cedis),
         description: what,
@@ -97,9 +98,10 @@ export function seedDemoCashbook(db: Db, actor: Actor, today: string): void {
     );
 
   // A yard carries far more float than a corner shop: it pays for truckloads.
+  // The bank pays GHS 100,400 of deliveries and GHS 7,200 of rent; it has to cover them.
   startingFloat(cash.id, 8_000, 'Owner opening cash float');
   startingFloat(momo.id, 2_000, 'Owner opening MoMo balance');
-  startingFloat(bank.id, 60_000, 'Owner opening bank balance');
+  startingFloat(bank.id, 80_000, 'Owner opening bank balance');
 
   spend(68, 'Rent', 'Yard rent for the month', 2_400, bank.id);
   spend(60, 'Transport', 'Tipper hire, Adenta delivery', 900, cash.id);
