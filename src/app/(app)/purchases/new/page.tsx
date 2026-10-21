@@ -8,6 +8,9 @@ import { requirePageAccess } from '@/lib/auth/current-user';
 import { defaultFeatures, featuresFromRow } from '@/lib/business-type';
 import { listProducts } from '@/services/catalog.service';
 import { listSuppliers } from '@/services/supplier.service';
+import { getTaxProfile } from '@/services/tax.service';
+import { listUnits } from '@/services/units.service';
+import { QTY_DECIMALS } from '@/domain/quantity';
 import { toBusinessDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/ui/page';
@@ -26,6 +29,11 @@ export default async function NewPurchasePage() {
     balanceMinor: supplier.balance as number,
   }));
 
+  // Looked up the way the server does, ignoring case, so the screen refuses
+  // 1.5 Pcs before Save rather than after.
+  const decimals = new Map(listUnits(db).map((unit) => [unit.symbol.toLowerCase(), unit.decimalPlaces]));
+  const decimalsOf = (symbol: string) => decimals.get(symbol.trim().toLowerCase()) ?? QTY_DECIMALS;
+
   const products = listProducts(db, { limit: 500 }).map((product) => ({
     id: product.id,
     name: product.name,
@@ -35,6 +43,8 @@ export default async function NewPurchasePage() {
     costPrice: product.costPrice as number,
     altCostPrice: product.altCostPrice as number | null,
     qtyOnHandMilli: product.qtyOnHand as number,
+    unitDecimals: decimalsOf(product.unit),
+    altUnitDecimals: product.altUnit === null ? null : decimalsOf(product.altUnit),
   }));
 
   const accounts = db
@@ -98,6 +108,7 @@ export default async function NewPurchasePage() {
         accounts={accounts}
         today={toBusinessDate()}
         currencyCode={settings?.currencyCode ?? 'GHS'}
+        taxComponents={getTaxProfile(db).components}
         offerExpiry={
           settings ? featuresFromRow(settings).expiry_batches : defaultFeatures('general_retail').expiry_batches
         }

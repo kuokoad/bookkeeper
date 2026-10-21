@@ -11,6 +11,11 @@ import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
 import { DateField } from '@/components/ui/date-field';
 import { unitLabel, UnitPicker } from '@/components/shared/unit-picker';
+import { cn } from '@/lib/cn';
+import { isValidBusinessDate } from '@/lib/format';
+import { toInputString, type Minor } from '@/domain/money';
+import type { TaxComponent } from '@/domain/tax/components';
+import { readPurchase } from './read-purchase';
 
 export interface EntryProduct {
   id: number;
@@ -22,6 +27,10 @@ export interface EntryProduct {
   /** Per alternate unit. Null when there is no alternate. */
   altCostPrice: number | null;
   qtyOnHandMilli: number;
+  /** Decimal places the base unit allows, so 1.5 Pcs is caught before Save. */
+  unitDecimals: number;
+  /** Decimal places the alternate unit allows. Null when there is no alternate. */
+  altUnitDecimals: number | null;
 }
 
 export interface EntrySupplier {
@@ -43,6 +52,12 @@ interface Row {
   /** True when qty and cost are in the product's alternate unit. */
   alt: boolean;
   unitCost: string;
+  /**
+   * True while the cost is the one the form filled in from the catalog, so it
+   * may follow a change of product or unit. A cost somebody typed is theirs and
+   * stays.
+   */
+  costFilled: boolean;
   discount: string;
   /**
    * When these goods run out, 'YYYY-MM-DD', or '' for goods that do not.
@@ -56,20 +71,39 @@ interface Row {
   showExpiry: boolean;
 }
 
-function toMinor(text: string): number {
-  const trimmed = text.trim().replace(/,/g, '');
-  if (trimmed === '') return 0;
-  if (!/^\d*\.?\d{0,2}$/.test(trimmed)) return Number.NaN;
-  const [whole = '0', fraction = ''] = trimmed.split('.');
-  return Number(whole || '0') * 100 + Number(fraction.padEnd(2, '0') || '0');
+function blankRow(key: number): Row {
+  return {
+    key,
+    productId: '',
+    qty: '',
+    alt: false,
+    unitCost: '',
+    costFilled: false,
+    discount: '',
+    expiryDate: '',
+    showExpiry: false,
+  };
 }
 
-function toMilli(text: string): number {
-  const trimmed = text.trim().replace(/,/g, '');
-  if (trimmed === '') return 0;
-  if (!/^\d*\.?\d{0,3}$/.test(trimmed)) return Number.NaN;
-  const [whole = '0', fraction = ''] = trimmed.split('.');
-  return Number(whole || '0') * 1000 + Number(fraction.padEnd(3, '0') || '0');
+/**
+ * The catalog cost to pre-fill, or nothing.
+ *
+ * Never a 0.00: a product or carton with no cost on file used to fill the box
+ * with one, which looked typed and saved the stock at no cost.
+ */
+function catalogCost(product: EntryProduct | undefined, alt: boolean): string {
+  const cost = product ? (alt ? product.altCostPrice : product.costPrice) : null;
+  return cost !== null && cost > 0 ? toInputString(cost as Minor) : '';
+}
+
+/** Why a field is red, where `aria-describedby` on that field points. */
+function FieldError({ id, message }: { id: string; message: string | undefined }) {
+  if (!message) return null;
+  return (
+    <p id={`${id}-error`} className="mt-1 text-xs font-medium text-danger">
+      {message}
+    </p>
+  );
 }
 
 function fmt(minorValue: number): string {
@@ -92,12 +126,15 @@ export function PurchaseEntry({
   today,
   currencyCode,
   offerExpiry,
+  taxComponents,
 }: {
   products: EntryProduct[];
   suppliers: EntrySupplier[];
   accounts: EntryAccount[];
   today: string;
   currencyCode: string;
+  /** The shop's taxes, which the server adds on top of every purchase. */
+  taxComponents: TaxComponent[];
   /**
    * Whether to OFFER a date on a delivery. A shop selling pipes has no use for
    * one. It only hides the button below: a row that already carries a date
@@ -115,9 +152,7 @@ export function PurchaseEntry({
   const [invoiceNo, setInvoiceNo] = useState('');
   const [note, setNote] = useState('');
   const [invoiceDiscount, setInvoiceDiscount] = useState('');
-  const [rows, setRows] = useState<Row[]>([
-    { key: 1, productId: '', qty: '', alt: false, unitCost: '', discount: '', expiryDate: '', showExpiry: false },
-  ]);
+  const [rows, setRows] = useState<Row[]>([blankRow(1)]);
   const [payAccountId, setPayAccountId] = useState(
     String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? ''),
   );
@@ -129,9 +164,7 @@ export function PurchaseEntry({
   const [handled, setHandled] = useState<string | undefined>(undefined);
   if (state.purchaseNo && state.purchaseNo !== handled) {
     setHandled(state.purchaseNo);
-    setRows([
-      { key: 1, productId: '', qty: '', alt: false, unitCost: '', discount: '', expiryDate: '', showExpiry: false },
-    ]);
+    setRows([blankRow(1)]);
     setInvoiceNo('');
     setNote('');
     setInvoiceDiscount('');
@@ -144,55 +177,35 @@ export function PurchaseEntry({
   }
 
   function addRow() {
-    setRows((current) => [
-      ...current,
-      {
-        key: Math.max(0, ...current.map((row) => row.key)) + 1,
-        productId: '',
-        qty: '',
-        alt: false,
-        unitCost: '',
-        discount: '',
-        expiryDate: '',
-        showExpiry: false,
-      },
-    ]);
+    setRows((current) => [...current, blankRow(Math.max(0, ...current.map((row) => row.key)) + 1)]);
   }
 
-  const totals = useMemo(() => {
-    let subtotal = 0;
-    let invalid = false;
+  const reading = useMemo(
+    () =>
+      readPurchase({
+        rows,
+        products,
+        invoiceDiscount,
+        payAmount,
+        canPay: payAccountId !== '',
+        taxComponents,
+      }),
+    [rows, products, invoiceDiscount, payAmount, payAccountId, taxComponents],
+  );
 
-    for (const row of rows) {
-      if (row.productId === '' || row.qty.trim() === '') continue;
-      const qty = toMilli(row.qty);
-      const cost = toMinor(row.unitCost);
-      const discount = row.discount ? toMinor(row.discount) : 0;
-      if (Number.isNaN(qty) || Number.isNaN(cost) || Number.isNaN(discount)) {
-        invalid = true;
-        continue;
-      }
-      subtotal += Math.round((cost * qty) / 1000) - discount;
-    }
-
-    const discount = invoiceDiscount ? toMinor(invoiceDiscount) : 0;
-    const total = Math.max(0, subtotal - (Number.isNaN(discount) ? 0 : discount));
-    const paid = Number.isNaN(toMinor(payAmount)) ? 0 : toMinor(payAmount);
-
-    return {
-      subtotal,
-      discount: Number.isNaN(discount) ? 0 : discount,
-      total,
-      paid,
-      outstanding: Math.max(0, total - paid),
-      overpaid: paid > total,
-      invalid,
-    };
-  }, [rows, invoiceDiscount, payAmount]);
-
-  const filledRows = rows.filter((row) => row.productId !== '' && row.qty.trim() !== '');
-  const canSubmit =
-    supplierId !== '' && filledRows.length > 0 && !totals.invalid && !totals.overpaid && !pending;
+  /** Why Save is not offered yet, said beside it rather than left to be guessed. */
+  const blocker =
+    supplierId === ''
+      ? 'Choose a supplier.'
+      : !isValidBusinessDate(businessDate)
+        ? 'Enter the delivery date.'
+        : reading.filled === 0
+          ? 'Add what arrived.'
+          : !reading.acceptable
+            ? 'Correct what is marked in red.'
+            : null;
+  const canSubmit = blocker === null && !pending;
+  const sentRows = rows.filter((_, index) => !reading.lines[index]?.blank);
 
   const basket = JSON.stringify({
     supplierId: supplierId === '' ? 0 : Number(supplierId),
@@ -200,10 +213,10 @@ export function PurchaseEntry({
     invoiceNo: invoiceNo.trim() || undefined,
     note: note.trim() || undefined,
     invoiceDiscount: invoiceDiscount.trim() || undefined,
-    items: filledRows.map((row) => ({
+    items: sentRows.map((row) => ({
       productId: Number(row.productId),
       qty: row.qty.trim(),
-      unitCost: row.unitCost.trim() || '0',
+      unitCost: row.unitCost.trim(),
       discount: row.discount.trim() || undefined,
       ...(row.alt ? { alt: true } : {}),
       expiryDate: row.expiryDate.trim() || undefined,
@@ -289,15 +302,8 @@ export function PurchaseEntry({
         <div className="space-y-3">
           {rows.map((row, index) => {
             const product = products.find((item) => String(item.id) === row.productId);
-            const qty = toMilli(row.qty);
-            const cost = toMinor(row.unitCost);
-            const discount = row.discount ? toMinor(row.discount) : 0;
-            // An unreadable entry shows a dash, never a plausible 0.00 under the caption.
-            const lineUnreadable = Number.isNaN(qty) || Number.isNaN(cost) || Number.isNaN(discount);
-            const lineGross = lineUnreadable ? 0 : Math.round((cost * qty) / 1000);
-            const lineTotal = lineGross - (lineUnreadable ? 0 : discount);
-            // The server refuses a discount larger than the line, so say so before Save.
-            const discountTooBig = !lineUnreadable && discount > lineGross;
+            const line = reading.lines[index];
+            const errors = line?.errors ?? {};
 
             return (
               <div key={row.key} className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-12">
@@ -317,10 +323,17 @@ export function PurchaseEntry({
                         productId: event.target.value,
                         alt: false,
                         // Pre-fill with the expected cost to save typing.
-                        unitCost: row.unitCost || (chosen ? fmt(chosen.costPrice) : ''),
+                        ...(row.costFilled || row.unitCost.trim() === ''
+                          ? { unitCost: catalogCost(chosen, false), costFilled: true }
+                          : {}),
                       });
                     }}
-                    className="h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
+                    aria-invalid={errors.product ? true : undefined}
+                    aria-describedby={errors.product ? `p-${row.key}-error` : undefined}
+                    className={cn(
+                      'h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content',
+                      errors.product && 'border-danger',
+                    )}
                   >
                     <option value="">Choose…</option>
                     {products.map((item) => (
@@ -329,6 +342,7 @@ export function PurchaseEntry({
                       </option>
                     ))}
                   </Select>
+                  <FieldError id={`p-${row.key}`} message={errors.product} />
                 </div>
 
                 <div className="sm:col-span-2">
@@ -342,8 +356,9 @@ export function PurchaseEntry({
                     id={`q-${row.key}`}
                     value={row.qty}
                     onChange={(event) => updateRow(row.key, { qty: event.target.value })}
-                    invalid={Number.isNaN(qty)}
+                    invalid={errors.qty !== undefined}
                   />
+                  <FieldError id={`q-${row.key}`} message={errors.qty} />
                   {product?.altUnit && (
                     <div className="mt-1">
                       <UnitPicker
@@ -354,7 +369,9 @@ export function PurchaseEntry({
                           // The expected cost follows the unit: a carton costs a carton's worth.
                           updateRow(row.key, {
                             alt,
-                            unitCost: fmt(alt ? (product.altCostPrice ?? 0) : product.costPrice),
+                            ...(row.costFilled || row.unitCost.trim() === ''
+                              ? { unitCost: catalogCost(product, alt), costFilled: true }
+                              : {}),
                           })
                         }
                       />
@@ -372,9 +389,24 @@ export function PurchaseEntry({
                   <AmountInput
                     id={`c-${row.key}`}
                     value={row.unitCost}
-                    onChange={(event) => updateRow(row.key, { unitCost: event.target.value })}
-                    invalid={Number.isNaN(cost)}
+                    onChange={(event) =>
+                      updateRow(row.key, { unitCost: event.target.value, costFilled: false })
+                    }
+                    invalid={errors.cost !== undefined}
+                    {...(line?.free ? { 'aria-describedby': `c-${row.key}-note` } : {})}
                   />
+                  <FieldError id={`c-${row.key}`} message={errors.cost} />
+                  {line?.free && (
+                    /**
+                     * A zero typed on purpose is free goods: a sample, the
+                     * thirteenth tin of a baker's dozen. Allowed, but said
+                     * out loud, because it pulls the product's average cost
+                     * down and every later sale's profit up.
+                     */
+                    <p id={`c-${row.key}-note`} className="mt-1 text-xs text-content-muted">
+                      Free goods. These bring the average cost down.
+                    </p>
+                  )}
                 </div>
 
                 <div className="sm:col-span-2">
@@ -389,8 +421,9 @@ export function PurchaseEntry({
                     value={row.discount}
                     onChange={(event) => updateRow(row.key, { discount: event.target.value })}
                     placeholder="0.00"
-                    invalid={Number.isNaN(discount) || discountTooBig}
+                    invalid={errors.discount !== undefined}
                   />
+                  <FieldError id={`d-${row.key}`} message={errors.discount} />
                 </div>
 
                 <div className="flex items-start justify-between gap-2 sm:col-span-2">
@@ -399,7 +432,7 @@ export function PurchaseEntry({
                       Line total
                     </span>
                     <span className="tabular flex h-11 items-center text-sm font-semibold text-content">
-                      {lineUnreadable ? '—' : fmt(lineTotal)}
+                      {line === undefined || line.total === null ? '—' : fmt(line.total)}
                     </span>
                   </div>
                   <Button
@@ -490,26 +523,43 @@ export function PurchaseEntry({
           <dl className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <dt className="text-content-muted">Subtotal</dt>
-              <dd className="tabular text-content">{fmt(totals.subtotal)}</dd>
+              <dd className="tabular text-content">
+                {reading.subtotal === null ? '—' : fmt(reading.subtotal)}
+              </dd>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-content-muted">Discount on the whole invoice</dt>
-              <dd className="w-32">
+            <div className="flex items-start justify-between gap-3">
+              <dt className="pt-2 text-content-muted">Discount on the whole invoice</dt>
+              <dd className="w-40 text-right">
                 <AmountInput
+                  id="invoiceDiscount"
                   value={invoiceDiscount}
                   onChange={(event) => setInvoiceDiscount(event.target.value)}
                   placeholder="0.00"
                   aria-label="Invoice discount"
                   className="h-9"
+                  invalid={reading.invoiceDiscountError !== undefined}
                 />
+                <FieldError id="invoiceDiscount" message={reading.invoiceDiscountError} />
               </dd>
             </div>
+            {reading.taxLines.map(
+              (tax) =>
+                tax.amount !== 0 && (
+                  <div key={tax.code} className="flex justify-between">
+                    <dt className="text-content-muted">{tax.name}</dt>
+                    <dd className="tabular text-content">{fmt(tax.amount)}</dd>
+                  </div>
+                ),
+            )}
             <div className="flex justify-between border-t border-line pt-2 text-lg font-semibold">
               <dt className="text-content">Total</dt>
               <dd className="tabular text-content">
-                {currencyCode} {fmt(totals.total)}
+                {reading.total === null ? '—' : `${currencyCode} ${fmt(reading.total)}`}
               </dd>
             </div>
+            {reading.totalError && (
+              <p className="text-right text-xs font-medium text-danger">{reading.totalError}</p>
+            )}
           </dl>
         </div>
 
@@ -544,17 +594,18 @@ export function PurchaseEntry({
                   value={payAmount}
                   onChange={(event) => setPayAmount(event.target.value)}
                   placeholder="0.00"
-                  invalid={totals.overpaid}
+                  invalid={reading.paidError !== undefined}
                 />
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => setPayAmount(fmt(totals.total))}
-                  disabled={totals.total === 0}
+                  onClick={() => reading.total !== null && setPayAmount(toInputString(reading.total))}
+                  disabled={reading.total === null || reading.total === 0}
                 >
                   All
                 </Button>
               </div>
+              <FieldError id="payAmount" message={reading.paidError} />
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="ref" className="mb-1 block text-xs text-content-muted">
@@ -573,33 +624,34 @@ export function PurchaseEntry({
           <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
             <div className="flex justify-between">
               <dt className="text-content-muted">Paid</dt>
-              <dd className="tabular text-content">{fmt(totals.paid)}</dd>
+              <dd className="tabular text-content">
+                {reading.paid === null ? '—' : fmt(reading.paid)}
+              </dd>
             </div>
-            {totals.outstanding > 0 && (
+            {reading.outstanding !== null && reading.outstanding > 0 && (
               <div className="flex justify-between text-base font-semibold">
                 <dt className="text-warning">Still owed to supplier</dt>
-                <dd className="tabular text-warning">{fmt(totals.outstanding)}</dd>
+                <dd className="tabular text-warning">{fmt(reading.outstanding)}</dd>
               </div>
             )}
           </dl>
-
-          {totals.overpaid && (
-            <Alert tone="danger" className="mt-3">
-              You cannot pay more than the purchase total.
-            </Alert>
-          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" size="lg" disabled={!canSubmit}>
-          {pending ? 'Saving…' : `Save purchase — ${currencyCode} ${fmt(totals.total)}`}
+          {pending
+            ? 'Saving…'
+            : reading.total === null
+              ? 'Save purchase'
+              : `Save purchase — ${currencyCode} ${fmt(reading.total)}`}
         </Button>
         <Link href="/purchases">
           <Button type="button" variant="ghost">
             Cancel
           </Button>
         </Link>
+        {blocker && !pending && <p className="text-sm text-content-muted">{blocker}</p>}
       </div>
     </form>
   );
