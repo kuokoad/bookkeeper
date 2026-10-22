@@ -52,6 +52,10 @@ You are now signed in, looking at the dashboard. It is empty. That is correct.
 Fill in the name, what it costs you, and what you sell it for. A soft drink, a bag of
 rice — anything real.
 
+Already keep a price list in Excel? **Products → Import** reads an .xlsx or .csv,
+shows you every row it would add (and why any row would be skipped), and saves
+nothing until you press **Import**. It adds products only, never stock.
+
 Save. The product exists, with **no stock**. That is deliberate and it is the most
 important idea in the app: you cannot type a stock figure in. Every unit on the shelf
 has to arrive through a recorded event.
