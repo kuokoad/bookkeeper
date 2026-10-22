@@ -1,3 +1,4 @@
+import { assertPeriodOpen } from '@/domain/accounting/period-lock';
 import { isDomainError } from '@/domain/errors';
 import { parseMoney, subtract, sum, toDecimalString, ZERO, type Minor } from '@/domain/money';
 import {
@@ -9,6 +10,7 @@ import {
   type Qty,
 } from '@/domain/quantity';
 import { taxOnNet, type TaxComponent, type TaxLine } from '@/domain/tax/components';
+import { isValidBusinessDate } from '@/lib/format';
 
 /**
  * What the new-purchase form would save, read the way the server reads it.
@@ -22,10 +24,12 @@ import { taxOnNet, type TaxComponent, type TaxLine } from '@/domain/tax/componen
  * read as 250.00 here while the server refused it.
  *
  * So the parsing is the server's own (`parseMoney`, `parsePositiveQty`, the
- * unit checks `resolveLineUnit` makes, the tax `createPurchase` adds), every
- * refusal the server would make is named against the field it belongs to, and
- * a figure is shown only when Save would store exactly that figure. Anything
- * else is a dash.
+ * unit checks `resolveLineUnit` makes, the tax `createPurchase` adds, the books
+ * lock `postJournalEntry` enforces), every refusal the server would make on
+ * the figures and the date is named against the field it belongs to, and a
+ * figure is shown only when Save would store exactly that figure. Anything
+ * else is a dash. `tests/app/purchase-form-parity.test.ts` runs the same
+ * entries through this and `createPurchase` to hold the two together.
  *
  * Only what the screen can know is checked here. An archived supplier or a
  * product deleted since the page loaded is still the server's to refuse.
@@ -60,7 +64,7 @@ export interface LineReading {
   errors: Partial<Record<LineField, string>>;
   /** What Save stores as this line's total, or null when it would store no such line. */
   total: Minor | null;
-  /** A cost of zero, typed on purpose: goods that came in free. */
+  /** The line comes to 0.00: free goods, by a zero cost or a discount of the whole line. */
   free: boolean;
 }
 
@@ -68,12 +72,14 @@ export interface PurchaseReading {
   lines: LineReading[];
   /** Lines Save would send. */
   filled: number;
+  /** Why the delivery date would be refused: missing, or inside the books lock. */
+  dateError: string | undefined;
   /** Null while any line cannot be saved: the readable lines alone are not this purchase. */
   subtotal: Minor | null;
   invoiceDiscountError: string | undefined;
   taxLines: TaxLine[];
   total: Minor | null;
-  /** Why there is no total when no box is to blame: an overflow, an unusable tax rate. */
+  /** Why there is no total when no one box is to blame: 0.00, an overflow, an unusable rate. */
   totalError: string | undefined;
   paid: Minor | null;
   paidError: string | undefined;
@@ -108,20 +114,16 @@ function readQty(entry: LineEntry, product: LineProduct | undefined): { qty?: Qt
   }
 }
 
-/** A required amount: what each one cost. Zero is a real cost; empty is not. */
-function readCost(text: string): { cost?: Minor; error?: string } {
-  if (text.trim() === '') return { error: 'Enter what each one cost.' };
-  try {
-    const cost = parseMoney(text);
-    return cost < 0 ? { error: 'A unit cost cannot be negative.' } : { cost };
-  } catch (error) {
-    return { error: refusal(error, 'That cost cannot be read.') };
-  }
-}
-
-/** An optional amount: empty is zero, anything typed must be a real one. */
-function readOptional(text: string, negative: string): { amount?: Minor; error?: string } {
-  if (text.trim() === '') return { amount: ZERO };
+/**
+ * An amount box. Empty is zero unless the box is `required`, in which case it
+ * is refused with that message: zero is a real cost, an empty cost box is not.
+ */
+function readAmount(
+  text: string,
+  negative: string,
+  required?: string,
+): { amount?: Minor; error?: string } {
+  if (text.trim() === '') return required ? { error: required } : { amount: ZERO };
   try {
     const amount = parseMoney(text);
     return amount < 0 ? { error: negative } : { amount };
@@ -130,7 +132,7 @@ function readOptional(text: string, negative: string): { amount?: Minor; error?:
   }
 }
 
-export function readLine(entry: LineEntry, products: readonly LineProduct[]): LineReading {
+export function readLine(entry: LineEntry, product: LineProduct | undefined): LineReading {
   const blank =
     entry.productId === '' &&
     entry.qty.trim() === '' &&
@@ -139,20 +141,19 @@ export function readLine(entry: LineEntry, products: readonly LineProduct[]): Li
   if (blank) return { blank, errors: {}, total: null, free: false };
 
   const errors: LineReading['errors'] = {};
-  const product = products.find((item) => String(item.id) === entry.productId);
   if (!product) errors.product = 'Choose a product.';
 
   const qty = readQty(entry, product);
   if (qty.error) errors.qty = qty.error;
-  const cost = readCost(entry.unitCost);
+  const cost = readAmount(entry.unitCost, 'A unit cost cannot be negative.', 'Enter what each one cost.');
   if (cost.error) errors.cost = cost.error;
-  const discount = readOptional(entry.discount, 'A discount cannot be negative.');
+  const discount = readAmount(entry.discount, 'A discount cannot be negative.');
   if (discount.error) errors.discount = discount.error;
 
   let total: Minor | null = null;
-  if (qty.qty !== undefined && cost.cost !== undefined && discount.amount !== undefined) {
+  if (qty.qty !== undefined && cost.amount !== undefined && discount.amount !== undefined) {
     try {
-      const gross = extendPrice(cost.cost, qty.qty);
+      const gross = extendPrice(cost.amount, qty.qty);
       if (discount.amount > gross) {
         errors.discount = `The discount cannot be more than the line, ${toDecimalString(gross)}.`;
       } else {
@@ -168,8 +169,19 @@ export function readLine(entry: LineEntry, products: readonly LineProduct[]): Li
     blank,
     errors,
     total: refused ? null : total,
-    free: !refused && cost.cost === 0,
+    free: !refused && total === 0,
   };
+}
+
+/** The delivery date as `postJournalEntry` will judge it. */
+function readDate(businessDate: string, lockedBefore: string | null): string | undefined {
+  if (!isValidBusinessDate(businessDate)) return 'Enter the delivery date.';
+  try {
+    assertPeriodOpen(businessDate, lockedBefore);
+    return undefined;
+  } catch (error) {
+    return refusal(error, 'The books are closed for that date.');
+  }
 }
 
 export function readPurchase(input: {
@@ -180,8 +192,13 @@ export function readPurchase(input: {
   /** False when there is no account a payment could come out of. */
   canPay: boolean;
   taxComponents: readonly TaxComponent[];
+  businessDate: string;
+  /** The books lock: nothing dated on or before it can be posted. */
+  lockedBefore: string | null;
 }): PurchaseReading {
-  const lines = input.rows.map((row) => readLine(row, input.products));
+  // One lookup table per reading, not a scan of the catalogue for every line.
+  const byId = new Map(input.products.map((product) => [String(product.id), product]));
+  const lines = input.rows.map((row) => readLine(row, byId.get(row.productId)));
   const sent = lines.filter((line) => !line.blank);
 
   // A refusal that belongs to no one box, said under the total it stops.
@@ -196,7 +213,7 @@ export function readPurchase(input: {
     }
   }
 
-  const discount = readOptional(input.invoiceDiscount, 'A discount cannot be negative.');
+  const discount = readAmount(input.invoiceDiscount, 'A discount cannot be negative.');
   let invoiceDiscountError = discount.error;
   if (subtotal !== null && discount.amount !== undefined && discount.amount > subtotal) {
     invoiceDiscountError = `The discount cannot be more than the subtotal, ${toDecimalString(subtotal)}.`;
@@ -220,7 +237,20 @@ export function readPurchase(input: {
     }
   }
 
-  const payment = readOptional(input.payAmount, 'A payment cannot be negative.');
+  /**
+   * A purchase worth nothing posts no journal lines, and `postJournalEntry`
+   * refuses an entry with none. Free goods are real, but they have to come in
+   * on a purchase that is worth something; until the server can record a
+   * delivery of nothing but free goods, the screen says so before Save does.
+   */
+  if (total === 0 && sent.length > 0) {
+    total = null;
+    taxLines = [];
+    totalError =
+      'A purchase that comes to 0.00 cannot be saved. Put free goods on the same purchase as something paid for.';
+  }
+
+  const payment = readAmount(input.payAmount, 'A payment cannot be negative.');
   let paidError = payment.error;
   if (payment.amount !== undefined && payment.amount > 0 && !input.canPay) {
     paidError = 'Add a payment account before recording a payment.';
@@ -228,10 +258,12 @@ export function readPurchase(input: {
     paidError = 'You cannot pay more than the purchase total.';
   }
   const paid = paidError === undefined ? (payment.amount ?? null) : null;
+  const dateError = readDate(input.businessDate, input.lockedBefore);
 
   return {
     lines,
     filled: sent.length,
+    dateError,
     subtotal,
     invoiceDiscountError,
     taxLines,
@@ -240,6 +272,6 @@ export function readPurchase(input: {
     paid,
     paidError,
     outstanding: total !== null && paid !== null ? subtract(total, paid) : null,
-    acceptable: total !== null && paidError === undefined,
+    acceptable: total !== null && paidError === undefined && dateError === undefined,
   };
 }

@@ -12,25 +12,19 @@ import { AmountInput, TextInput } from '@/components/ui/field';
 import { DateField } from '@/components/ui/date-field';
 import { unitLabel, UnitPicker } from '@/components/shared/unit-picker';
 import { cn } from '@/lib/cn';
-import { isValidBusinessDate } from '@/lib/format';
-import { toInputString, type Minor } from '@/domain/money';
+import { INVOICE_NO_MAX, PAYMENT_REFERENCE_MAX } from '@/lib/purchase-limits';
+import { toDecimalString, toInputString, type Minor } from '@/domain/money';
 import type { TaxComponent } from '@/domain/tax/components';
-import { readPurchase } from './read-purchase';
+import { readPurchase, type LineEntry, type LineProduct } from './read-purchase';
 
-export interface EntryProduct {
-  id: number;
+export interface EntryProduct extends LineProduct {
   name: string;
-  unit: string;
-  altUnit: string | null;
-  altFactorMilli: number | null;
   costPrice: number;
   /** Per alternate unit. Null when there is no alternate. */
   altCostPrice: number | null;
   qtyOnHandMilli: number;
-  /** Decimal places the base unit allows, so 1.5 Pcs is caught before Save. */
-  unitDecimals: number;
-  /** Decimal places the alternate unit allows. Null when there is no alternate. */
-  altUnitDecimals: number | null;
+  /** False for a service like cartage: free goods do nothing to an average cost there. */
+  trackInventory: boolean;
 }
 
 export interface EntrySupplier {
@@ -45,20 +39,20 @@ export interface EntryAccount {
   isDefault: boolean;
 }
 
-interface Row {
+interface Row extends LineEntry {
   key: number;
-  productId: string;
-  qty: string;
-  /** True when qty and cost are in the product's alternate unit. */
-  alt: boolean;
-  unitCost: string;
   /**
    * True while the cost is the one the form filled in from the catalog, so it
    * may follow a change of product or unit. A cost somebody typed is theirs and
    * stays.
    */
   costFilled: boolean;
-  discount: string;
+  /**
+   * The unit the figure in the cost box is for: true for the alternate unit.
+   * A typed cost is kept when the unit changes, so when this and `alt` differ
+   * the line says so instead of quietly reading 3.20 a tin as 3.20 a Carton.
+   */
+  costAlt: boolean;
   /**
    * When these goods run out, 'YYYY-MM-DD', or '' for goods that do not.
    *
@@ -79,6 +73,7 @@ function blankRow(key: number): Row {
     alt: false,
     unitCost: '',
     costFilled: false,
+    costAlt: false,
     discount: '',
     expiryDate: '',
     showExpiry: false,
@@ -106,12 +101,6 @@ function FieldError({ id, message }: { id: string; message: string | undefined }
   );
 }
 
-function fmt(minorValue: number): string {
-  const digits = Math.abs(Math.round(minorValue)).toString().padStart(3, '0');
-  const whole = digits.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${minorValue < 0 ? '-' : ''}${whole}.${digits.slice(-2)}`;
-}
-
 /**
  * Recording a delivery.
  *
@@ -127,6 +116,7 @@ export function PurchaseEntry({
   currencyCode,
   offerExpiry,
   taxComponents,
+  lockedBefore,
 }: {
   products: EntryProduct[];
   suppliers: EntrySupplier[];
@@ -135,6 +125,8 @@ export function PurchaseEntry({
   currencyCode: string;
   /** The shop's taxes, which the server adds on top of every purchase. */
   taxComponents: TaxComponent[];
+  /** The books lock: a delivery dated on or before it is refused. */
+  lockedBefore: string | null;
   /**
    * Whether to OFFER a date on a delivery. A shop selling pipes has no use for
    * one. It only hides the button below: a row that already carries a date
@@ -180,6 +172,11 @@ export function PurchaseEntry({
     setRows((current) => [...current, blankRow(Math.max(0, ...current.map((row) => row.key)) + 1)]);
   }
 
+  const productsById = useMemo(
+    () => new Map(products.map((product) => [String(product.id), product])),
+    [products],
+  );
+
   const reading = useMemo(
     () =>
       readPurchase({
@@ -189,21 +186,21 @@ export function PurchaseEntry({
         payAmount,
         canPay: payAccountId !== '',
         taxComponents,
+        businessDate,
+        lockedBefore,
       }),
-    [rows, products, invoiceDiscount, payAmount, payAccountId, taxComponents],
+    [rows, products, invoiceDiscount, payAmount, payAccountId, taxComponents, businessDate, lockedBefore],
   );
 
   /** Why Save is not offered yet, said beside it rather than left to be guessed. */
   const blocker =
     supplierId === ''
       ? 'Choose a supplier.'
-      : !isValidBusinessDate(businessDate)
-        ? 'Enter the delivery date.'
-        : reading.filled === 0
-          ? 'Add what arrived.'
-          : !reading.acceptable
-            ? 'Correct what is marked in red.'
-            : null;
+      : reading.filled === 0
+        ? 'Add what arrived.'
+        : !reading.acceptable
+          ? 'Correct the entries that have a message under them.'
+          : null;
   const canSubmit = blocker === null && !pending;
   const sentRows = rows.filter((_, index) => !reading.lines[index]?.blank);
 
@@ -263,7 +260,9 @@ export function PurchaseEntry({
               {suppliers.map((supplier) => (
                 <option key={supplier.id} value={String(supplier.id)}>
                   {supplier.name}
-                  {supplier.balanceMinor > 0 ? ` — owed ${fmt(supplier.balanceMinor)}` : ''}
+                  {supplier.balanceMinor > 0
+                    ? ` — owed ${toDecimalString(supplier.balanceMinor as Minor)}`
+                    : ''}
                 </option>
               ))}
             </Select>
@@ -280,6 +279,7 @@ export function PurchaseEntry({
               onChange={setBusinessDate}
               today={today}
             />
+            <FieldError id="date" message={reading.dateError} />
           </div>
 
           <div>
@@ -291,6 +291,7 @@ export function PurchaseEntry({
               value={invoiceNo}
               onChange={(event) => setInvoiceNo(event.target.value)}
               placeholder="Optional"
+              maxLength={INVOICE_NO_MAX}
             />
           </div>
         </div>
@@ -301,9 +302,18 @@ export function PurchaseEntry({
 
         <div className="space-y-3">
           {rows.map((row, index) => {
-            const product = products.find((item) => String(item.id) === row.productId);
+            const product = productsById.get(row.productId);
             const line = reading.lines[index];
             const errors = line?.errors ?? {};
+            // A typed cost kept across a change of unit is for the other unit.
+            const costUnitChanged =
+              product !== undefined &&
+              row.unitCost.trim() !== '' &&
+              unitLabel(row.costAlt, product) !== unitLabel(row.alt, product);
+            const costNotes = [
+              line?.free ? `c-${row.key}-free` : null,
+              costUnitChanged ? `c-${row.key}-unit` : null,
+            ].filter((id) => id !== null);
 
             return (
               <div key={row.key} className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-12">
@@ -318,13 +328,13 @@ export function PurchaseEntry({
                     id={`p-${row.key}`}
                     value={row.productId}
                     onChange={(event) => {
-                      const chosen = products.find((p) => String(p.id) === event.target.value);
+                      const chosen = productsById.get(event.target.value);
                       updateRow(row.key, {
                         productId: event.target.value,
                         alt: false,
                         // Pre-fill with the expected cost to save typing.
                         ...(row.costFilled || row.unitCost.trim() === ''
-                          ? { unitCost: catalogCost(chosen, false), costFilled: true }
+                          ? { unitCost: catalogCost(chosen, false), costFilled: true, costAlt: false }
                           : {}),
                       });
                     }}
@@ -366,11 +376,12 @@ export function PurchaseEntry({
                         alt={row.alt}
                         units={product}
                         onChange={(alt) =>
-                          // The expected cost follows the unit: a carton costs a carton's worth.
+                          // The expected cost follows the unit: a carton costs a
+                          // carton's worth. A typed cost stays, and is flagged below.
                           updateRow(row.key, {
                             alt,
                             ...(row.costFilled || row.unitCost.trim() === ''
-                              ? { unitCost: catalogCost(product, alt), costFilled: true }
+                              ? { unitCost: catalogCost(product, alt), costFilled: true, costAlt: alt }
                               : {}),
                           })
                         }
@@ -384,27 +395,37 @@ export function PurchaseEntry({
                     htmlFor={`c-${row.key}`}
                     className="mb-1 block text-xs font-medium text-content-muted"
                   >
-                    Cost each
+                    {product ? `Cost per ${unitLabel(row.alt, product)}` : 'Cost each'}
                   </label>
                   <AmountInput
                     id={`c-${row.key}`}
                     value={row.unitCost}
                     onChange={(event) =>
-                      updateRow(row.key, { unitCost: event.target.value, costFilled: false })
+                      updateRow(row.key, { unitCost: event.target.value, costFilled: false, costAlt: row.alt })
                     }
                     invalid={errors.cost !== undefined}
-                    {...(line?.free ? { 'aria-describedby': `c-${row.key}-note` } : {})}
+                    {...(errors.cost === undefined && costNotes.length > 0
+                      ? { 'aria-describedby': costNotes.join(' ') }
+                      : {})}
                   />
                   <FieldError id={`c-${row.key}`} message={errors.cost} />
                   {line?.free && (
                     /**
-                     * A zero typed on purpose is free goods: a sample, the
+                     * A line that comes to 0.00 is free goods: a sample, the
                      * thirteenth tin of a baker's dozen. Allowed, but said
                      * out loud, because it pulls the product's average cost
                      * down and every later sale's profit up.
                      */
-                    <p id={`c-${row.key}-note`} className="mt-1 text-xs text-content-muted">
-                      Free goods. These bring the average cost down.
+                    <p id={`c-${row.key}-free`} className="mt-1 text-xs font-medium text-warning">
+                      {product?.trackInventory === false
+                        ? 'Free: nothing is charged for this line.'
+                        : 'Free goods. These bring the average cost down.'}
+                    </p>
+                  )}
+                  {costUnitChanged && product && (
+                    <p id={`c-${row.key}-unit`} className="mt-1 text-xs font-medium text-warning">
+                      Check this cost: it was typed per {unitLabel(row.costAlt, product)}, and the line
+                      is now per {unitLabel(row.alt, product)}.
                     </p>
                   )}
                 </div>
@@ -432,7 +453,7 @@ export function PurchaseEntry({
                       Line total
                     </span>
                     <span className="tabular flex h-11 items-center text-sm font-semibold text-content">
-                      {line === undefined || line.total === null ? '—' : fmt(line.total)}
+                      {line === undefined || line.total === null ? '—' : toDecimalString(line.total)}
                     </span>
                   </div>
                   <Button
@@ -524,7 +545,7 @@ export function PurchaseEntry({
             <div className="flex justify-between">
               <dt className="text-content-muted">Subtotal</dt>
               <dd className="tabular text-content">
-                {reading.subtotal === null ? '—' : fmt(reading.subtotal)}
+                {reading.subtotal === null ? '—' : toDecimalString(reading.subtotal)}
               </dd>
             </div>
             <div className="flex items-start justify-between gap-3">
@@ -542,25 +563,36 @@ export function PurchaseEntry({
                 <FieldError id="invoiceDiscount" message={reading.invoiceDiscountError} />
               </dd>
             </div>
-            {reading.taxLines.map(
-              (tax) =>
-                tax.amount !== 0 && (
-                  <div key={tax.code} className="flex justify-between">
-                    <dt className="text-content-muted">{tax.name}</dt>
-                    <dd className="tabular text-content">{fmt(tax.amount)}</dd>
-                  </div>
-                ),
-            )}
+            {reading.total === null
+              ? // The taxes still apply while the total cannot be worked out, so
+                // their rows stay, with a dash, rather than vanish and come back.
+                taxComponents
+                  .filter((tax) => tax.rateBp > 0)
+                  .map((tax) => (
+                    <div key={tax.code} className="flex justify-between">
+                      <dt className="text-content-muted">{tax.name}</dt>
+                      <dd className="tabular text-content">—</dd>
+                    </div>
+                  ))
+              : reading.taxLines.map(
+                  (tax) =>
+                    tax.amount !== 0 && (
+                      <div key={tax.code} className="flex justify-between">
+                        <dt className="text-content-muted">{tax.name}</dt>
+                        <dd className="tabular text-content">{toDecimalString(tax.amount)}</dd>
+                      </div>
+                    ),
+                )}
             <div className="flex justify-between border-t border-line pt-2 text-lg font-semibold">
               <dt className="text-content">Total</dt>
               <dd className="tabular text-content">
-                {reading.total === null ? '—' : `${currencyCode} ${fmt(reading.total)}`}
+                {reading.total === null ? '—' : `${currencyCode} ${toDecimalString(reading.total)}`}
               </dd>
             </div>
-            {reading.totalError && (
-              <p className="text-right text-xs font-medium text-danger">{reading.totalError}</p>
-            )}
           </dl>
+          {reading.totalError && (
+            <p className="mt-1.5 text-right text-xs font-medium text-danger">{reading.totalError}</p>
+          )}
         </div>
 
         <div className="rounded-xl border border-line bg-surface-raised p-4">
@@ -617,6 +649,7 @@ export function PurchaseEntry({
                 onChange={(event) => setReference(event.target.value)}
                 placeholder="Optional"
                 className="h-10"
+                maxLength={PAYMENT_REFERENCE_MAX}
               />
             </div>
           </div>
@@ -625,13 +658,13 @@ export function PurchaseEntry({
             <div className="flex justify-between">
               <dt className="text-content-muted">Paid</dt>
               <dd className="tabular text-content">
-                {reading.paid === null ? '—' : fmt(reading.paid)}
+                {reading.paid === null ? '—' : toDecimalString(reading.paid)}
               </dd>
             </div>
             {reading.outstanding !== null && reading.outstanding > 0 && (
               <div className="flex justify-between text-base font-semibold">
                 <dt className="text-warning">Still owed to supplier</dt>
-                <dd className="tabular text-warning">{fmt(reading.outstanding)}</dd>
+                <dd className="tabular text-warning">{toDecimalString(reading.outstanding)}</dd>
               </div>
             )}
           </dl>
@@ -639,19 +672,27 @@ export function PurchaseEntry({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" size="lg" disabled={!canSubmit}>
+        <Button
+          type="submit"
+          size="lg"
+          disabled={!canSubmit}
+          aria-describedby={blocker && !pending ? 'save-reason' : undefined}
+        >
           {pending
             ? 'Saving…'
             : reading.total === null
               ? 'Save purchase'
-              : `Save purchase — ${currencyCode} ${fmt(reading.total)}`}
+              : `Save purchase — ${currencyCode} ${toDecimalString(reading.total)}`}
         </Button>
         <Link href="/purchases">
           <Button type="button" variant="ghost">
             Cancel
           </Button>
         </Link>
-        {blocker && !pending && <p className="text-sm text-content-muted">{blocker}</p>}
+        {/* Always present, so a reason that appears or changes is announced. */}
+        <p id="save-reason" aria-live="polite" className="text-sm text-content-muted">
+          {blocker && !pending ? blocker : ''}
+        </p>
       </div>
     </form>
   );

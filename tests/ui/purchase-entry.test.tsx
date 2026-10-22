@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import type { PurchaseFormState } from '@/actions/purchase.actions';
 import type { TaxComponent } from '@/domain/tax/components';
@@ -29,30 +29,51 @@ vi.mock('@/actions/purchase.actions', () => ({
 
 const { PurchaseEntry } = await import('@/app/(app)/purchases/new/purchase-entry');
 
-const PRODUCT_IDS = { 'Evaporated Milk': '1', 'Rice 5kg': '2', 'Sugar 1kg': '3' } as const;
+const PRODUCT_IDS = {
+  'Evaporated Milk': '1',
+  'Rice 5kg': '2',
+  'Sugar 1kg': '3',
+  'Bath soap': '4',
+  'Cartage to site': '5',
+} as const;
 
-function renderForm({ taxComponents = [] }: { taxComponents?: TaxComponent[] } = {}) {
+type ProductName = keyof typeof PRODUCT_IDS;
+
+function renderForm({
+  taxComponents = [],
+  accounts = [{ id: 1, name: 'Cash', isDefault: true }],
+  lockedBefore = null,
+}: {
+  taxComponents?: TaxComponent[];
+  accounts?: { id: number; name: string; isDefault: boolean }[];
+  lockedBefore?: string | null;
+} = {}) {
   return render(
     <PurchaseEntry
       products={[
-        { id: 1, name: 'Evaporated Milk', unit: 'tin', altUnit: 'Carton', altFactorMilli: 24_000, costPrice: 300, altCostPrice: 6_600, qtyOnHandMilli: 0, unitDecimals: 0, altUnitDecimals: 0 },
-        { id: 2, name: 'Rice 5kg', unit: 'bag', altUnit: null, altFactorMilli: null, costPrice: 1_000, altCostPrice: null, qtyOnHandMilli: 0, unitDecimals: 3, altUnitDecimals: null },
+        { id: 1, name: 'Evaporated Milk', unit: 'tin', altUnit: 'Carton', altFactorMilli: 24_000, costPrice: 300, altCostPrice: 6_600, qtyOnHandMilli: 0, unitDecimals: 0, altUnitDecimals: 0, trackInventory: true },
+        { id: 2, name: 'Rice 5kg', unit: 'bag', altUnit: null, altFactorMilli: null, costPrice: 1_000, altCostPrice: null, qtyOnHandMilli: 0, unitDecimals: 3, altUnitDecimals: null, trackInventory: true },
         // Added in a hurry with no cost on file, which is how a 0.00 got pre-filled.
-        { id: 3, name: 'Sugar 1kg', unit: 'pack', altUnit: 'Bale', altFactorMilli: 20_000, costPrice: 0, altCostPrice: 0, qtyOnHandMilli: 0, unitDecimals: 0, altUnitDecimals: 0 },
+        { id: 3, name: 'Sugar 1kg', unit: 'pack', altUnit: 'Bale', altFactorMilli: 20_000, costPrice: 0, altCostPrice: 0, qtyOnHandMilli: 0, unitDecimals: 0, altUnitDecimals: 0, trackInventory: true },
+        // Whole pieces, but a carton may be split to one decimal place.
+        { id: 4, name: 'Bath soap', unit: 'Pcs', altUnit: 'Carton', altFactorMilli: 24_000, costPrice: 100, altCostPrice: 2_400, qtyOnHandMilli: 0, unitDecimals: 0, altUnitDecimals: 1, trackInventory: true },
+        // A service: bought, never stocked.
+        { id: 5, name: 'Cartage to site', unit: 'trip', altUnit: null, altFactorMilli: null, costPrice: 5_000, altCostPrice: null, qtyOnHandMilli: 0, unitDecimals: 0, altUnitDecimals: null, trackInventory: false },
       ]}
       suppliers={[{ id: 1, name: 'Kofi Wholesale', balanceMinor: 0 }]}
-      accounts={[{ id: 1, name: 'Cash', isDefault: true }]}
+      accounts={accounts}
       today="2026-08-26"
       offerExpiry
       currencyCode="GHS"
       taxComponents={taxComponents}
+      lockedBefore={lockedBefore}
     />,
   );
 }
 
-/** Choose a product on the first line, which is what reveals the rest. */
-function chooseProduct(name: keyof typeof PRODUCT_IDS = 'Evaporated Milk') {
-  fireEvent.change(screen.getByLabelText(/^product$/i), { target: { value: PRODUCT_IDS[name] } });
+/** Choose a product on a line (the first by default), which is what reveals the rest. */
+function chooseProduct(name: ProductName = 'Evaporated Milk', line = 0) {
+  fireEvent.change(screen.getAllByLabelText(/^product$/i)[line]!, { target: { value: PRODUCT_IDS[name] } });
 }
 
 afterEach(() => {
@@ -153,7 +174,7 @@ describe('what the delivery adds up to', () => {
     renderForm();
     chooseProduct();
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '24' } });
-    fireEvent.change(screen.getByLabelText(/cost each/i), { target: { value: '6.50' } });
+    fireEvent.change(screen.getByLabelText(/^cost (each|per)/i), { target: { value: '6.50' } });
 
     // 24 at 6.50 is 156.00.
     expect(screen.getAllByText(/156\.00/).length).toBeGreaterThan(0);
@@ -169,7 +190,7 @@ describe('what the delivery adds up to', () => {
     renderForm();
     chooseProduct();
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '24' } });
-    fireEvent.change(screen.getByLabelText(/cost each/i), { target: { value: '6.50' } });
+    fireEvent.change(screen.getByLabelText(/^cost (each|per)/i), { target: { value: '6.50' } });
     fireEvent.change(screen.getByLabelText(/^discount$/i), { target: { value: '5.00' } });
 
     // 24 at 6.50 is 156.00, less 5.00 off the line.
@@ -185,7 +206,7 @@ describe('what the delivery adds up to', () => {
     renderForm();
     chooseProduct();
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '24' } });
-    fireEvent.change(screen.getByLabelText(/cost each/i), { target: { value: '6.5.0' } });
+    fireEvent.change(screen.getByLabelText(/^cost (each|per)/i), { target: { value: '6.5.0' } });
 
     const lineTotal = screen.getByText('Line total').parentElement?.textContent ?? '';
     expect(lineTotal).toContain('—');
@@ -201,7 +222,7 @@ describe('what the delivery adds up to', () => {
     renderForm();
     chooseProduct();
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '2' } });
-    fireEvent.change(screen.getByLabelText(/cost each/i), { target: { value: '10.00' } });
+    fireEvent.change(screen.getByLabelText(/^cost (each|per)/i), { target: { value: '10.00' } });
     const discount = screen.getByLabelText(/^discount$/i);
 
     fireEvent.change(discount, { target: { value: '5.00' } });
@@ -245,7 +266,7 @@ describe('what the delivery adds up to', () => {
  */
 
 const quantityBox = () => screen.getByLabelText(/quantity/i);
-const costBox = () => screen.getByLabelText(/cost each/i) as HTMLInputElement;
+const costBox = () => screen.getByLabelText(/^cost (each|per)/i) as HTMLInputElement;
 const discountBox = () => screen.getByLabelText(/^discount$/i);
 const saveButton = () => screen.getByRole('button', { name: /save purchase/i }) as HTMLButtonElement;
 const type = (box: HTMLElement, value: string) => fireEvent.change(box, { target: { value } });
@@ -301,14 +322,50 @@ describe('a cost of zero', () => {
     expect(saveButton().disabled).toBe(true);
   });
 
-  it('a 0 typed on purpose saves as free goods, and the line says so', () => {
+  it('a 0 typed on purpose is free goods: the line says so, and it saves beside something paid for', () => {
     readyToSave();
     type(costBox(), '0');
 
     expect(costBox().getAttribute('aria-invalid')).toBeNull();
     expect(reasonFor(costBox())).toMatch(/free goods/i);
     expect(lineTotal()).toContain('0.00');
+
+    fireEvent.click(screen.getByRole('button', { name: /add another line/i }));
+    chooseProduct('Rice 5kg', 1);
+    type(screen.getAllByLabelText(/quantity/i)[1]!, '1');
+
+    // 2 free tins and a bag at 10.00.
+    expect(figure('Total')).toBe('GHS 10.00');
     expect(saveButton().disabled).toBe(false);
+  });
+
+  it('a purchase of nothing but free goods is refused before Save, as the server refuses it', () => {
+    // A purchase worth 0.00 posts no journal lines, and the server refuses an
+    // entry with none. The form used to offer "Save purchase — GHS 0.00".
+    readyToSave();
+    type(costBox(), '0');
+
+    expect(figure('Total')).toBe('—');
+    expect(screen.getByText(/comes to 0\.00 cannot be saved/i)).toBeDefined();
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it('a discount of the whole line is free goods too, and is named as such', () => {
+    readyToSave();
+    type(discountBox(), '6.00');
+
+    expect(lineTotal()).toContain('0.00');
+    expect(reasonFor(costBox())).toMatch(/free goods/i);
+  });
+
+  it('a free service line does not claim to change an average cost', () => {
+    renderForm();
+    chooseProduct('Cartage to site');
+    type(quantityBox(), '1');
+    type(costBox(), '0');
+
+    expect(reasonFor(costBox())).toMatch(/nothing is charged/i);
+    expect(reasonFor(costBox())).not.toMatch(/average cost/i);
   });
 
   it('the pre-filled cost follows the unit, but a cost somebody typed is kept', () => {
@@ -533,5 +590,223 @@ describe('a red field says why', () => {
 
     expect(saveButton().disabled).toBe(true);
     expect(screen.getByText('Choose a supplier.')).toBeDefined();
+  });
+});
+
+describe('which cost the box holds', () => {
+  it('a pre-filled cost follows a change of product and never carries the old one over', () => {
+    // Before, the first product's pre-filled cost stayed: choose Milk, switch
+    // to Rice, and Rice was saved at Milk's 3.00.
+    renderForm();
+    chooseProduct('Evaporated Milk');
+    expect(costBox().value).toBe('3.00');
+    chooseProduct('Rice 5kg');
+    expect(costBox().value).toBe('10.00');
+    chooseProduct('Sugar 1kg');
+    expect(costBox().value).toBe('');
+    chooseProduct('Rice 5kg');
+    expect(costBox().value).toBe('10.00');
+  });
+
+  it('a cost somebody typed survives a change of product', () => {
+    renderForm();
+    chooseProduct('Evaporated Milk');
+    type(costBox(), '3.20');
+    chooseProduct('Rice 5kg');
+    expect(costBox().value).toBe('3.20');
+  });
+
+  it('a cost typed before the product is chosen is kept when it is chosen', () => {
+    renderForm();
+    type(costBox(), '25.00');
+    chooseProduct('Evaporated Milk');
+    expect(costBox().value).toBe('25.00');
+  });
+
+  it('a cleared cost box is filled again by a change of unit', () => {
+    renderForm();
+    chooseProduct('Evaporated Milk');
+    type(costBox(), '');
+    type(screen.getByLabelText('Unit'), 'alt');
+    expect(costBox().value).toBe('66.00');
+  });
+
+  it('names the unit the cost is per, and flags a typed cost the unit changed under', () => {
+    // 3.20 typed for a tin, then the line switched to cartons: without a word,
+    // that read as 3.20 a carton of 24, and the stock came in at 0.13 a tin.
+    readyToSave();
+    expect(screen.getByLabelText(/^cost per tin$/i)).toBeDefined();
+    type(costBox(), '3.20');
+    type(screen.getByLabelText('Unit'), 'alt');
+
+    expect(screen.getByLabelText(/^cost per carton$/i)).toBeDefined();
+    expect(costBox().value).toBe('3.20');
+    expect(reasonFor(costBox())).toMatch(/typed per tin, and the line is now per Carton/i);
+
+    // Back in the unit it was typed in, there is nothing to check.
+    type(screen.getByLabelText('Unit'), 'base');
+    expect(costBox().getAttribute('aria-describedby')).toBeNull();
+  });
+});
+
+describe('what Save sends', () => {
+  it('sends the cost as shown, leaves out a blank line, and starts afresh once saved', async () => {
+    let basket: { items: Record<string, unknown>[] } | undefined;
+    action.current = async (formData) => {
+      basket = JSON.parse(String(formData?.get('basket')));
+      return { purchaseNo: 'PUR-00042', purchaseId: 42 };
+    };
+    readyToSave();
+    fireEvent.click(screen.getByRole('button', { name: /add another line/i }));
+    fireEvent.submit(saveButton().closest('form')!);
+
+    expect(await screen.findByText(/PUR-00042/)).toBeDefined();
+    expect(basket?.items).toEqual([expect.objectContaining({ productId: 1, qty: '2', unitCost: '3.00' })]);
+    // A fresh line, with nothing carried over from the one just saved.
+    expect(screen.getAllByLabelText(/^product$/i)).toHaveLength(1);
+    expect(costBox().value).toBe('');
+  });
+
+  it('sends a typed 0 as 0 and a carton line as a carton line', async () => {
+    let basket: { items: Record<string, unknown>[] } | undefined;
+    action.current = async (formData) => {
+      basket = JSON.parse(String(formData?.get('basket')));
+      return {};
+    };
+    readyToSave();
+    type(costBox(), '0');
+    fireEvent.click(screen.getByRole('button', { name: /add another line/i }));
+    chooseProduct('Bath soap', 1);
+    type(screen.getAllByLabelText('Unit')[1]!, 'alt');
+    type(screen.getAllByLabelText(/quantity/i)[1]!, '2');
+    fireEvent.submit(saveButton().closest('form')!);
+
+    await vi.waitFor(() => expect(basket).toBeDefined());
+    expect(basket!.items).toEqual([
+      expect.objectContaining({ productId: 1, qty: '2', unitCost: '0' }),
+      expect.objectContaining({ productId: 4, qty: '2', unitCost: '24.00', alt: true }),
+    ]);
+  });
+
+  it('cannot be pressed again while the first save is still running', async () => {
+    // A second press that got through would record the delivery twice:
+    // double the stock and double what is owed.
+    let finish!: (state: PurchaseFormState) => void;
+    let calls = 0;
+    action.current = () => {
+      calls += 1;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    };
+    readyToSave();
+    await act(async () => {
+      fireEvent.submit(saveButton().closest('form')!);
+    });
+
+    const saving = screen.getByRole('button', { name: /saving/i }) as HTMLButtonElement;
+    expect(saving.disabled).toBe(true);
+    await act(async () => {
+      finish({ purchaseNo: 'PUR-00043', purchaseId: 43 });
+    });
+    expect(calls).toBe(1);
+  });
+});
+
+describe('the rest of what the server refuses', () => {
+  it('a carton must convert to whole pieces, and keep to its own decimal places', () => {
+    renderForm();
+    chooseSupplier();
+    chooseProduct('Bath soap');
+    type(screen.getByLabelText('Unit'), 'alt');
+
+    type(quantityBox(), '0.5');
+    expect(saveButton().disabled).toBe(false);
+
+    // A tenth of a carton of 24 is 2.4 pieces.
+    type(quantityBox(), '0.1');
+    expect(reasonFor(quantityBox())).toMatch(/Pcs is counted in whole numbers/);
+
+    type(quantityBox(), '1.25');
+    expect(reasonFor(quantityBox())).toMatch(/Carton allows at most 1 decimal place/);
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it('a negative discount is refused, not added to the total', () => {
+    readyToSave();
+    type(discountBox(), '-1.00');
+    expect(reasonFor(discountBox())).toMatch(/cannot be negative/i);
+    expect(figure('Subtotal')).toBe('—');
+
+    type(discountBox(), '');
+    const invoice = screen.getByLabelText(/invoice discount/i);
+    type(invoice, '(1.00)');
+    expect(reasonFor(invoice)).toMatch(/cannot be negative/i);
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it('a payment with no account to come out of is refused, not dropped', () => {
+    // With no account the basket sends no payment, and the server would save
+    // the purchase as owed in full while the screen showed it paid.
+    renderForm({ accounts: [] });
+    chooseSupplier();
+    chooseProduct();
+    type(quantityBox(), '2');
+    const paid = screen.getByLabelText(/amount paid now/i);
+    type(paid, '1.00');
+
+    expect(reasonFor(paid)).toMatch(/add a payment account/i);
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it('a delivery dated inside the books lock is refused before Save, with the server’s reason', () => {
+    renderForm({ lockedBefore: '2026-08-31' });
+    chooseSupplier();
+    chooseProduct();
+    type(quantityBox(), '2');
+
+    expect(screen.getByText(/books are closed up to/i)).toBeDefined();
+    expect(saveButton().disabled).toBe(true);
+
+    fillDate('Delivery date', '2026-09-01');
+    expect(screen.queryByText(/books are closed up to/i)).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it('stops the invoice number and reference where the server would refuse them', () => {
+    renderForm();
+    expect(screen.getByLabelText(/their invoice no/i).getAttribute('maxlength')).toBe('60');
+    expect(screen.getByLabelText(/^reference$/i).getAttribute('maxlength')).toBe('80');
+  });
+});
+
+describe('what the totals show while they cannot be worked out', () => {
+  const VAT: TaxComponent = { code: 'VAT', name: 'VAT', rateBp: 1_500, basis: 'NET', isRecoverable: true };
+
+  it('keeps each tax row, with a dash, rather than letting it vanish', () => {
+    renderForm({ taxComponents: [VAT] });
+    chooseSupplier();
+    chooseProduct('Rice 5kg');
+    type(quantityBox(), '10');
+    expect(figure('VAT')).toBe('15.00');
+
+    type(quantityBox(), '1.2.3');
+    expect(figure('VAT')).toBe('—');
+    expect(figure('Total')).toBe('—');
+  });
+
+  it('says why the total is missing outside the list of figures', () => {
+    // A <p> inside a <dl> is invalid, and screen readers miscount the pairs.
+    renderForm({ taxComponents: [{ ...VAT, rateBp: -100 }] });
+    chooseSupplier();
+    chooseProduct('Rice 5kg');
+    type(quantityBox(), '10');
+
+    expect(screen.getByText(/VAT rate cannot be negative/i).closest('dl')).toBeNull();
+  });
+
+  it('ties the reason Save is not offered to the button itself', () => {
+    renderForm();
+    expect(reasonFor(saveButton())).toBe('Choose a supplier.');
   });
 });
