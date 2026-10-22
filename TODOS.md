@@ -64,7 +64,7 @@
 
 ### Tie the "Line total" caption to its figure for screen readers
 
-**What:** Give each purchase line's total a programmatic label, e.g. `<output aria-label="Line total">` or a `dl`/`dt`/`dd` pair, instead of two sibling spans. While there: announce field messages as they appear (render each `FieldError` all the time with `aria-live="polite"`), and say what a "—" means ("not worked out"), since elsewhere in the app a dash in a money column means nil.
+**What:** Give each purchase line's total a programmatic label, e.g. `<output aria-label="Line total">` or a `dl`/`dt`/`dd` pair, instead of two sibling spans. While there: announce field messages as they appear (render each `FieldError` all the time with `aria-live="polite"`), say what a "—" means ("not worked out"), since elsewhere in the app a dash in a money column means nil, and announce the reason Save is not offered. That last one was tried as a polite live region and taken out again: it spoke mid-typing (12. is not yet an amount), so it wants a short debounce, or announcing only on blur.
 
 **Why:** A screen reader reads the caption and the amount as unrelated text, hears nothing when a box turns invalid until it lands on that box, and reads a missing total as either nothing or "em dash".
 

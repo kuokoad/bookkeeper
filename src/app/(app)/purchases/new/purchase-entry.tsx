@@ -16,7 +16,13 @@ import { formatDate } from '@/lib/format';
 import { addDays } from '@/domain/business-date';
 import { toDecimalString, toInputString, type Minor } from '@/domain/money';
 import type { TaxComponent } from '@/domain/tax/components';
-import { readPurchase, type LineEntry, type LineProduct } from './read-purchase';
+import {
+  purchaseBasket,
+  readPurchase,
+  type LineEntry,
+  type LineProduct,
+  type PurchaseReading,
+} from './read-purchase';
 
 export interface EntryProduct extends LineProduct {
   name: string;
@@ -93,6 +99,20 @@ function blankRow(key: number): Row {
 function catalogCost(product: EntryProduct | undefined, alt: boolean): string {
   const cost = product ? (alt ? product.altCostPrice : product.costPrice) : null;
   return cost !== null && cost > 0 ? toInputString(cost as Minor) : '';
+}
+
+/** Whether any one box, rather than the purchase as a whole, is refused. */
+function fieldRefused(reading: PurchaseReading): boolean {
+  return (
+    reading.lines.some((line) => Object.keys(line.errors).length > 0) ||
+    [
+      reading.dateError,
+      reading.invoiceNoError,
+      reading.invoiceDiscountError,
+      reading.paidError,
+      reading.referenceError,
+    ].some((error) => error !== undefined)
+  );
 }
 
 /** Why a field is red, where `aria-describedby` on that field points. */
@@ -216,36 +236,24 @@ export function PurchaseEntry({
       : reading.filled === 0
         ? 'Add what arrived.'
         : !reading.acceptable
-          ? // A refusal of the whole purchase, such as 0.00, is no one entry's.
-            (reading.totalError ?? 'Correct the entries that have a message under them.')
+          ? // A refusal of the whole purchase, such as 0.00, is no one entry's,
+            // so it is named here unless an entry also has something to fix.
+            (fieldRefused(reading) ? undefined : reading.totalError) ??
+            'Correct the entries that have a message under them.'
           : null;
   const canSubmit = blocker === null && !pending;
-  const sentRows = rows.filter((_, index) => !reading.lines[index]?.blank);
 
-  const basket = JSON.stringify({
-    supplierId: supplierId === '' ? 0 : Number(supplierId),
+  const basket = purchaseBasket({
+    supplierId,
     businessDate,
-    invoiceNo: invoiceNo.trim() || undefined,
-    note: note.trim() || undefined,
-    invoiceDiscount: invoiceDiscount.trim() || undefined,
-    items: sentRows.map((row) => ({
-      productId: Number(row.productId),
-      qty: row.qty.trim(),
-      unitCost: row.unitCost.trim(),
-      discount: row.discount.trim() || undefined,
-      ...(row.alt ? { alt: true } : {}),
-      expiryDate: row.expiryDate.trim() || undefined,
-    })),
-    tenders:
-      payAmount.trim() && payAccountId
-        ? [
-            {
-              paymentAccountId: Number(payAccountId),
-              amount: payAmount.trim(),
-              reference: reference.trim() || undefined,
-            },
-          ]
-        : [],
+    invoiceNo,
+    note,
+    invoiceDiscount,
+    rows,
+    lines: reading.lines,
+    payAccountId,
+    payAmount,
+    reference,
   });
 
   return (
@@ -373,7 +381,9 @@ export function PurchaseEntry({
                               costFor: event.target.value,
                               costAlt: false,
                             }
-                          : {}),
+                          : // A cost typed before any product was chosen
+                            // belongs to the first one chosen.
+                            { costFor: row.costFor || row.productId || event.target.value }),
                       });
                     }}
                     aria-invalid={errors.product ? true : undefined}

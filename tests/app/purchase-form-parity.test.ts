@@ -8,7 +8,7 @@ import type { Db } from '@/db/types';
 import { parsePositiveQty } from '@/domain/quantity';
 import { parseMoney } from '@/domain/money';
 import { loadEntryProducts } from '@/app/(app)/purchases/new/entry-products';
-import { readPurchase } from '@/app/(app)/purchases/new/read-purchase';
+import { purchaseBasket, readPurchase } from '@/app/(app)/purchases/new/read-purchase';
 import { createProduct } from '@/services/catalog.service';
 import { createSupplier } from '@/services/supplier.service';
 import { getTaxProfile } from '@/services/tax.service';
@@ -26,7 +26,8 @@ import { createUnit } from '@/services/units.service';
  *
  * So each entry below goes through both: the form's reading, with products
  * loaded exactly as the page loads them, and the real `createPurchaseAction`
- * on a throwaway database, given the basket the form would send. They must
+ * on a throwaway database, given the basket the form's own `purchaseBasket`
+ * builds. They must
  * agree on whether it saves, and when it does, on the subtotal, the total and
  * what is still owed.
  *
@@ -125,13 +126,7 @@ const productOf = (line: Entry) => String(productIds[line.product ?? 'soap']);
 /** What the form would show and allow, from the data the page gives it. */
 function screenReads(c: Case) {
   return readPurchase({
-    rows: c.lines.map((line) => ({
-      productId: productOf(line),
-      qty: line.qty,
-      alt: line.alt ?? false,
-      unitCost: line.cost,
-      discount: line.discount ?? '',
-    })),
+    rows: rowsFor(c),
     products: loadEntryProducts(context.db),
     invoiceDiscount: c.invoiceDiscount ?? '',
     payAmount: c.pay ?? '',
@@ -144,31 +139,36 @@ function screenReads(c: Case) {
   });
 }
 
-/** The basket the form posts, built the way `purchase-entry.tsx` builds it. */
-function basketFor(c: Case): string {
-  const pay = c.pay ?? '';
-  return JSON.stringify({
-    supplierId,
-    businessDate: c.date ?? TODAY,
-    invoiceNo: (c.invoiceNo ?? '').trim() || undefined,
-    invoiceDiscount: (c.invoiceDiscount ?? '').trim() || undefined,
-    items: c.lines.map((line) => ({
-      productId: Number(productOf(line)),
-      qty: line.qty.trim(),
-      unitCost: line.cost.trim(),
-      discount: (line.discount ?? '').trim() || undefined,
-      ...(line.alt ? { alt: true } : {}),
-    })),
-    tenders: pay.trim()
-      ? [{ paymentAccountId: cash, amount: pay.trim(), reference: (c.reference ?? '').trim() || undefined }]
-      : [],
-  });
+/** The rows as the form holds them. */
+function rowsFor(c: Case) {
+  return c.lines.map((line) => ({
+    productId: productOf(line),
+    qty: line.qty,
+    alt: line.alt ?? false,
+    unitCost: line.cost,
+    discount: line.discount ?? '',
+    expiryDate: '',
+  }));
 }
 
 /** What Save stored, through the real action. Null when it refused. */
 async function saveStores(c: Case) {
   const formData = new FormData();
-  formData.set('basket', basketFor(c));
+  formData.set(
+    'basket',
+    purchaseBasket({
+      supplierId: String(supplierId),
+      businessDate: c.date ?? TODAY,
+      invoiceNo: c.invoiceNo ?? '',
+      note: '',
+      invoiceDiscount: c.invoiceDiscount ?? '',
+      rows: rowsFor(c),
+      lines: screenReads(c).lines,
+      payAccountId: String(cash),
+      payAmount: c.pay ?? '',
+      reference: c.reference ?? '',
+    }),
+  );
   const result = await createPurchaseAction({}, formData);
   if (result.purchaseId === undefined) return null;
 

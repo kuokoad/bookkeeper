@@ -192,6 +192,54 @@ function readLength(text: string, max: number): string | undefined {
   return text.trim().length > max ? `Keep this to ${max} characters.` : undefined;
 }
 
+/**
+ * The basket Save posts: what `createPurchaseAction` parses, built from what
+ * was typed, leaving out the lines the reading found blank.
+ *
+ * Here rather than in the component so the parity test posts exactly what the
+ * form posts, and a change to one cannot leave the other behind.
+ */
+export function purchaseBasket(input: {
+  supplierId: string;
+  businessDate: string;
+  invoiceNo: string;
+  note: string;
+  invoiceDiscount: string;
+  rows: readonly (LineEntry & { expiryDate: string })[];
+  lines: readonly LineReading[];
+  payAccountId: string;
+  payAmount: string;
+  reference: string;
+}): string {
+  return JSON.stringify({
+    supplierId: input.supplierId === '' ? 0 : Number(input.supplierId),
+    businessDate: input.businessDate,
+    invoiceNo: input.invoiceNo.trim() || undefined,
+    note: input.note.trim() || undefined,
+    invoiceDiscount: input.invoiceDiscount.trim() || undefined,
+    items: input.rows
+      .filter((_, index) => !input.lines[index]?.blank)
+      .map((row) => ({
+        productId: Number(row.productId),
+        qty: row.qty.trim(),
+        unitCost: row.unitCost.trim(),
+        discount: row.discount.trim() || undefined,
+        ...(row.alt ? { alt: true } : {}),
+        expiryDate: row.expiryDate.trim() || undefined,
+      })),
+    tenders:
+      input.payAmount.trim() && input.payAccountId
+        ? [
+            {
+              paymentAccountId: Number(input.payAccountId),
+              amount: input.payAmount.trim(),
+              reference: input.reference.trim() || undefined,
+            },
+          ]
+        : [],
+  });
+}
+
 /** The delivery date as `postJournalEntry` will judge it. */
 function readDate(businessDate: string, lockedBefore: string | null): string | undefined {
   if (!isValidBusinessDate(businessDate)) return 'Enter the delivery date.';
@@ -281,9 +329,12 @@ export function readPurchase(input: {
   const paid = paidError === undefined ? (payment.amount ?? null) : null;
   const dateError = readDate(input.businessDate, input.lockedBefore);
   const invoiceNoError = readLength(input.invoiceNo, INVOICE_NO_MAX);
-  // An empty amount sends no payment, and with it no reference to refuse.
+  // No amount, or no account to pay from, sends no payment, and with it no
+  // reference for the server to refuse.
   const referenceError =
-    input.payAmount.trim() === '' ? undefined : readLength(input.reference, PAYMENT_REFERENCE_MAX);
+    input.payAmount.trim() === '' || !input.canPay
+      ? undefined
+      : readLength(input.reference, PAYMENT_REFERENCE_MAX);
 
   return {
     lines,

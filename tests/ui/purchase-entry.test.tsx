@@ -350,6 +350,10 @@ describe('a cost of zero', () => {
     expect(saveButton().disabled).toBe(true);
     // Save names the real reason, not the free-goods note on the line.
     expect(reasonFor(saveButton())).toMatch(/comes to 0\.00/);
+
+    // Unless an entry needs fixing too, which it then points to first.
+    type(screen.getByLabelText(/their invoice no/i), 'N'.repeat(61));
+    expect(reasonFor(saveButton())).toMatch(/entries that have a message/i);
   });
 
   it('a discount of the whole line is free goods too, and is named as such', () => {
@@ -624,11 +628,15 @@ describe('which cost the box holds', () => {
     expect(costBox().getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('a cost typed before the product is chosen is kept when it is chosen', () => {
+  it('a cost typed before the product is chosen is kept, and belongs to the first one chosen', () => {
     renderForm();
     type(costBox(), '25.00');
     chooseProduct('Evaporated Milk');
     expect(costBox().value).toBe('25.00');
+    expect(costBox().getAttribute('aria-describedby')).toBeNull();
+
+    chooseProduct('Rice 5kg');
+    expect(reasonFor(costBox())).toMatch(/typed for Evaporated Milk/);
   });
 
   it('a cleared cost box is filled again by a change of unit', () => {
@@ -768,6 +776,12 @@ describe('the rest of what the server refuses', () => {
 
     expect(reasonFor(paid)).toMatch(/add a payment account/i);
     expect(saveButton().disabled).toBe(true);
+
+    // With nothing paid, no payment goes to the server, and its reference is
+    // not the server's to refuse.
+    type(paid, '0');
+    type(screen.getByLabelText(/^reference$/i), 'R'.repeat(81));
+    expect(saveButton().disabled).toBe(false);
   });
 
   it('a delivery dated inside the books lock is refused before Save, with the server’s reason', () => {
