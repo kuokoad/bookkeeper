@@ -11,6 +11,7 @@ import {
 } from '@/domain/quantity';
 import { taxOnNet, type TaxComponent, type TaxLine } from '@/domain/tax/components';
 import { isValidBusinessDate } from '@/lib/format';
+import { INVOICE_NO_MAX, PAYMENT_REFERENCE_MAX } from '@/lib/purchase-limits';
 
 /**
  * What the new-purchase form would save, read the way the server reads it.
@@ -74,7 +75,14 @@ export interface PurchaseReading {
   filled: number;
   /** Why the delivery date would be refused: missing, or inside the books lock. */
   dateError: string | undefined;
-  /** Null while any line cannot be saved: the readable lines alone are not this purchase. */
+  /** The free-text boxes the action limits in length. */
+  invoiceNoError: string | undefined;
+  referenceError: string | undefined;
+  /**
+   * Null while any line cannot be saved, since the readable lines alone are not
+   * this purchase, and while there are no lines at all: an empty form is not a
+   * purchase of 0.00.
+   */
   subtotal: Minor | null;
   invoiceDiscountError: string | undefined;
   taxLines: TaxLine[];
@@ -173,6 +181,17 @@ export function readLine(entry: LineEntry, product: LineProduct | undefined): Li
   };
 }
 
+/**
+ * A free-text box the action refuses past `max` characters, trimmed as it trims.
+ *
+ * Said rather than enforced with `maxLength`, which cuts a pasted invoice
+ * number short without a word and stores something that no longer matches
+ * the paper.
+ */
+function readLength(text: string, max: number): string | undefined {
+  return text.trim().length > max ? `Keep this to ${max} characters.` : undefined;
+}
+
 /** The delivery date as `postJournalEntry` will judge it. */
 function readDate(businessDate: string, lockedBefore: string | null): string | undefined {
   if (!isValidBusinessDate(businessDate)) return 'Enter the delivery date.';
@@ -195,6 +214,8 @@ export function readPurchase(input: {
   businessDate: string;
   /** The books lock: nothing dated on or before it can be posted. */
   lockedBefore: string | null;
+  invoiceNo: string;
+  reference: string;
 }): PurchaseReading {
   // One lookup table per reading, not a scan of the catalogue for every line.
   const byId = new Map(input.products.map((product) => [String(product.id), product]));
@@ -205,7 +226,7 @@ export function readPurchase(input: {
   let totalError: string | undefined;
 
   let subtotal: Minor | null = null;
-  if (sent.every((line) => line.total !== null)) {
+  if (sent.length > 0 && sent.every((line) => line.total !== null)) {
     try {
       subtotal = sum(sent.map((line) => line.total as Minor));
     } catch (error) {
@@ -243,11 +264,11 @@ export function readPurchase(input: {
    * on a purchase that is worth something; until the server can record a
    * delivery of nothing but free goods, the screen says so before Save does.
    */
-  if (total === 0 && sent.length > 0) {
+  if (total === 0) {
     total = null;
     taxLines = [];
     totalError =
-      'A purchase that comes to 0.00 cannot be saved. Put free goods on the same purchase as something paid for.';
+      'A purchase that comes to 0.00 cannot be saved: free goods can only come in on a purchase that is worth something.';
   }
 
   const payment = readAmount(input.payAmount, 'A payment cannot be negative.');
@@ -259,11 +280,17 @@ export function readPurchase(input: {
   }
   const paid = paidError === undefined ? (payment.amount ?? null) : null;
   const dateError = readDate(input.businessDate, input.lockedBefore);
+  const invoiceNoError = readLength(input.invoiceNo, INVOICE_NO_MAX);
+  // An empty amount sends no payment, and with it no reference to refuse.
+  const referenceError =
+    input.payAmount.trim() === '' ? undefined : readLength(input.reference, PAYMENT_REFERENCE_MAX);
 
   return {
     lines,
     filled: sent.length,
     dateError,
+    invoiceNoError,
+    referenceError,
     subtotal,
     invoiceDiscountError,
     taxLines,
@@ -272,6 +299,11 @@ export function readPurchase(input: {
     paid,
     paidError,
     outstanding: total !== null && paid !== null ? subtract(total, paid) : null,
-    acceptable: total !== null && paidError === undefined && dateError === undefined,
+    acceptable:
+      total !== null &&
+      paidError === undefined &&
+      dateError === undefined &&
+      invoiceNoError === undefined &&
+      referenceError === undefined,
   };
 }

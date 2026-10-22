@@ -3,16 +3,15 @@ import Link from 'next/link';
 import { eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { businessSettings, paymentAccounts, units } from '@/db/schema';
+import { businessSettings, paymentAccounts } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { defaultFeatures, featuresFromRow } from '@/lib/business-type';
-import { listProducts } from '@/services/catalog.service';
 import { listSuppliers } from '@/services/supplier.service';
 import { getTaxProfile } from '@/services/tax.service';
-import { QTY_DECIMALS } from '@/domain/quantity';
 import { toBusinessDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/ui/page';
+import { loadEntryProducts } from './entry-products';
 import { PurchaseEntry } from './purchase-entry';
 
 export const metadata: Metadata = { title: 'New purchase' };
@@ -28,30 +27,7 @@ export default async function NewPurchasePage() {
     balanceMinor: supplier.balance as number,
   }));
 
-  // Each product's unit is a foreign key to units.symbol, so the exact symbol
-  // finds it. The screen refuses 1.5 Pcs before Save rather than after.
-  const decimals = new Map(
-    db
-      .select({ symbol: units.symbol, decimalPlaces: units.decimalPlaces })
-      .from(units)
-      .all()
-      .map((unit) => [unit.symbol, unit.decimalPlaces]),
-  );
-  const decimalsOf = (symbol: string) => decimals.get(symbol) ?? QTY_DECIMALS;
-
-  const products = listProducts(db, { limit: 500 }).map((product) => ({
-    id: product.id,
-    name: product.name,
-    unit: product.unit,
-    altUnit: product.altUnit,
-    altFactorMilli: product.altFactor as number | null,
-    costPrice: product.costPrice as number,
-    altCostPrice: product.altCostPrice as number | null,
-    qtyOnHandMilli: product.qtyOnHand as number,
-    unitDecimals: decimalsOf(product.unit),
-    altUnitDecimals: product.altUnit === null ? null : decimalsOf(product.altUnit),
-    trackInventory: product.trackInventory,
-  }));
+  const products = loadEntryProducts(db);
 
   const accounts = db
     .select()

@@ -12,7 +12,8 @@ import { AmountInput, TextInput } from '@/components/ui/field';
 import { DateField } from '@/components/ui/date-field';
 import { unitLabel, UnitPicker } from '@/components/shared/unit-picker';
 import { cn } from '@/lib/cn';
-import { INVOICE_NO_MAX, PAYMENT_REFERENCE_MAX } from '@/lib/purchase-limits';
+import { formatDate } from '@/lib/format';
+import { addDays } from '@/domain/business-date';
 import { toDecimalString, toInputString, type Minor } from '@/domain/money';
 import type { TaxComponent } from '@/domain/tax/components';
 import { readPurchase, type LineEntry, type LineProduct } from './read-purchase';
@@ -48,10 +49,12 @@ interface Row extends LineEntry {
    */
   costFilled: boolean;
   /**
-   * The unit the figure in the cost box is for: true for the alternate unit.
-   * A typed cost is kept when the unit changes, so when this and `alt` differ
-   * the line says so instead of quietly reading 3.20 a tin as 3.20 a Carton.
+   * The product and unit the figure in the cost box is for ('' when it was
+   * typed before a product was chosen). A typed cost is kept when either
+   * changes, so when they differ from the line's the line says so, instead of
+   * quietly reading 3.20 a tin as 3.20 a Carton, or Milk's price as Rice's.
    */
+  costFor: string;
   costAlt: boolean;
   /**
    * When these goods run out, 'YYYY-MM-DD', or '' for goods that do not.
@@ -73,6 +76,7 @@ function blankRow(key: number): Row {
     alt: false,
     unitCost: '',
     costFilled: false,
+    costFor: '',
     costAlt: false,
     discount: '',
     expiryDate: '',
@@ -188,8 +192,21 @@ export function PurchaseEntry({
         taxComponents,
         businessDate,
         lockedBefore,
+        invoiceNo,
+        reference,
       }),
-    [rows, products, invoiceDiscount, payAmount, payAccountId, taxComponents, businessDate, lockedBefore],
+    [
+      rows,
+      products,
+      invoiceDiscount,
+      payAmount,
+      payAccountId,
+      taxComponents,
+      businessDate,
+      lockedBefore,
+      invoiceNo,
+      reference,
+    ],
   );
 
   /** Why Save is not offered yet, said beside it rather than left to be guessed. */
@@ -199,7 +216,8 @@ export function PurchaseEntry({
       : reading.filled === 0
         ? 'Add what arrived.'
         : !reading.acceptable
-          ? 'Correct the entries that have a message under them.'
+          ? // A refusal of the whole purchase, such as 0.00, is no one entry's.
+            (reading.totalError ?? 'Correct the entries that have a message under them.')
           : null;
   const canSubmit = blocker === null && !pending;
   const sentRows = rows.filter((_, index) => !reading.lines[index]?.blank);
@@ -278,6 +296,12 @@ export function PurchaseEntry({
               value={businessDate}
               onChange={setBusinessDate}
               today={today}
+              invalid={reading.dateError !== undefined}
+              describedBy={reading.dateError ? 'date-error' : undefined}
+              min={lockedBefore ? addDays(lockedBefore, 1) : undefined}
+              minReason={
+                lockedBefore ? `The books are closed up to ${formatDate(lockedBefore)}.` : undefined
+              }
             />
             <FieldError id="date" message={reading.dateError} />
           </div>
@@ -291,8 +315,9 @@ export function PurchaseEntry({
               value={invoiceNo}
               onChange={(event) => setInvoiceNo(event.target.value)}
               placeholder="Optional"
-              maxLength={INVOICE_NO_MAX}
+              invalid={reading.invoiceNoError !== undefined}
             />
+            <FieldError id="invoiceNo" message={reading.invoiceNoError} />
           </div>
         </div>
       </div>
@@ -305,13 +330,21 @@ export function PurchaseEntry({
             const product = productsById.get(row.productId);
             const line = reading.lines[index];
             const errors = line?.errors ?? {};
-            // A typed cost kept across a change of unit is for the other unit.
+            // A typed cost kept across a change of product or unit is for the
+            // other one, until somebody looks at it.
+            const typedCost = !row.costFilled && row.unitCost.trim() !== '';
+            const costProduct =
+              typedCost && row.costFor !== '' && row.costFor !== row.productId
+                ? productsById.get(row.costFor)
+                : undefined;
             const costUnitChanged =
+              typedCost &&
+              costProduct === undefined &&
               product !== undefined &&
-              row.unitCost.trim() !== '' &&
               unitLabel(row.costAlt, product) !== unitLabel(row.alt, product);
             const costNotes = [
               line?.free ? `c-${row.key}-free` : null,
+              costProduct ? `c-${row.key}-product` : null,
               costUnitChanged ? `c-${row.key}-unit` : null,
             ].filter((id) => id !== null);
 
@@ -334,7 +367,12 @@ export function PurchaseEntry({
                         alt: false,
                         // Pre-fill with the expected cost to save typing.
                         ...(row.costFilled || row.unitCost.trim() === ''
-                          ? { unitCost: catalogCost(chosen, false), costFilled: true, costAlt: false }
+                          ? {
+                              unitCost: catalogCost(chosen, false),
+                              costFilled: true,
+                              costFor: event.target.value,
+                              costAlt: false,
+                            }
                           : {}),
                       });
                     }}
@@ -381,7 +419,12 @@ export function PurchaseEntry({
                           updateRow(row.key, {
                             alt,
                             ...(row.costFilled || row.unitCost.trim() === ''
-                              ? { unitCost: catalogCost(product, alt), costFilled: true, costAlt: alt }
+                              ? {
+                                  unitCost: catalogCost(product, alt),
+                                  costFilled: true,
+                                  costFor: row.productId,
+                                  costAlt: alt,
+                                }
                               : {}),
                           })
                         }
@@ -401,7 +444,12 @@ export function PurchaseEntry({
                     id={`c-${row.key}`}
                     value={row.unitCost}
                     onChange={(event) =>
-                      updateRow(row.key, { unitCost: event.target.value, costFilled: false, costAlt: row.alt })
+                      updateRow(row.key, {
+                        unitCost: event.target.value,
+                        costFilled: false,
+                        costFor: row.productId,
+                        costAlt: row.alt,
+                      })
                     }
                     invalid={errors.cost !== undefined}
                     {...(errors.cost === undefined && costNotes.length > 0
@@ -420,6 +468,11 @@ export function PurchaseEntry({
                       {product?.trackInventory === false
                         ? 'Free: nothing is charged for this line.'
                         : 'Free goods. These bring the average cost down.'}
+                    </p>
+                  )}
+                  {costProduct && (
+                    <p id={`c-${row.key}-product`} className="mt-1 text-xs font-medium text-warning">
+                      Check this cost: it was typed for {costProduct.name}.
                     </p>
                   )}
                   {costUnitChanged && product && (
@@ -591,7 +644,9 @@ export function PurchaseEntry({
             </div>
           </dl>
           {reading.totalError && (
-            <p className="mt-1.5 text-right text-xs font-medium text-danger">{reading.totalError}</p>
+            <p id="total-error" className="mt-1.5 text-right text-xs font-medium text-danger">
+              {reading.totalError}
+            </p>
           )}
         </div>
 
@@ -649,8 +704,9 @@ export function PurchaseEntry({
                 onChange={(event) => setReference(event.target.value)}
                 placeholder="Optional"
                 className="h-10"
-                maxLength={PAYMENT_REFERENCE_MAX}
+                invalid={reading.referenceError !== undefined}
               />
+              <FieldError id="ref" message={reading.referenceError} />
             </div>
           </div>
 
@@ -689,10 +745,11 @@ export function PurchaseEntry({
             Cancel
           </Button>
         </Link>
-        {/* Always present, so a reason that appears or changes is announced. */}
-        <p id="save-reason" aria-live="polite" className="text-sm text-content-muted">
-          {blocker && !pending ? blocker : ''}
-        </p>
+        {blocker && !pending && (
+          <p id="save-reason" className="text-sm text-content-muted">
+            {blocker}
+          </p>
+        )}
       </div>
     </form>
   );

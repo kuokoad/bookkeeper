@@ -346,8 +346,10 @@ describe('a cost of zero', () => {
     type(costBox(), '0');
 
     expect(figure('Total')).toBe('—');
-    expect(screen.getByText(/comes to 0\.00 cannot be saved/i)).toBeDefined();
+    expect(document.getElementById('total-error')?.textContent).toMatch(/comes to 0\.00 cannot be saved/i);
     expect(saveButton().disabled).toBe(true);
+    // Save names the real reason, not the free-goods note on the line.
+    expect(reasonFor(saveButton())).toMatch(/comes to 0\.00/);
   });
 
   it('a discount of the whole line is free goods too, and is named as such', () => {
@@ -565,7 +567,7 @@ describe('the tax the server adds', () => {
     type(quantityBox(), '10');
 
     expect(figure('Total')).toBe('—');
-    expect(screen.getByText(/VAT rate cannot be negative/i)).toBeDefined();
+    expect(document.getElementById('total-error')?.textContent).toMatch(/VAT rate cannot be negative/i);
     expect(saveButton().disabled).toBe(true);
   });
 });
@@ -608,12 +610,18 @@ describe('which cost the box holds', () => {
     expect(costBox().value).toBe('10.00');
   });
 
-  it('a cost somebody typed survives a change of product', () => {
+  it('a cost somebody typed survives a change of product, and the line asks for it to be checked', () => {
+    // Kept without a word, Milk's 70.00 a carton became Rice's 70.00 a bag.
     renderForm();
     chooseProduct('Evaporated Milk');
     type(costBox(), '3.20');
     chooseProduct('Rice 5kg');
     expect(costBox().value).toBe('3.20');
+    expect(reasonFor(costBox())).toMatch(/typed for Evaporated Milk/);
+
+    // Retyped for this product, it is the person's figure for it.
+    type(costBox(), '9.80');
+    expect(costBox().getAttribute('aria-describedby')).toBeNull();
   });
 
   it('a cost typed before the product is chosen is kept when it is chosen', () => {
@@ -707,6 +715,9 @@ describe('what Save sends', () => {
     const saving = screen.getByRole('button', { name: /saving/i }) as HTMLButtonElement;
     expect(saving.disabled).toBe(true);
     await act(async () => {
+      fireEvent.click(saving);
+    });
+    await act(async () => {
       finish({ purchaseNo: 'PUR-00043', purchaseId: 43 });
     });
     expect(calls).toBe(1);
@@ -766,6 +777,7 @@ describe('the rest of what the server refuses', () => {
     type(quantityBox(), '2');
 
     expect(screen.getByText(/books are closed up to/i)).toBeDefined();
+    expect(reasonFor(screen.getByLabelText('Delivery date day'))).toMatch(/books are closed up to/i);
     expect(saveButton().disabled).toBe(true);
 
     fillDate('Delivery date', '2026-09-01');
@@ -773,10 +785,21 @@ describe('the rest of what the server refuses', () => {
     expect(saveButton().disabled).toBe(false);
   });
 
-  it('stops the invoice number and reference where the server would refuse them', () => {
-    renderForm();
-    expect(screen.getByLabelText(/their invoice no/i).getAttribute('maxlength')).toBe('60');
-    expect(screen.getByLabelText(/^reference$/i).getAttribute('maxlength')).toBe('80');
+  it('flags an invoice number or reference longer than the server keeps, rather than cutting it', () => {
+    // Cut short by the box, a pasted invoice number would be saved without a
+    // word and no longer match the paper; refused by the server, it said why.
+    readyToSave();
+    const invoiceNo = screen.getByLabelText(/their invoice no/i);
+    type(invoiceNo, 'N'.repeat(61));
+    expect(reasonFor(invoiceNo)).toMatch(/keep this to 60 characters/i);
+    expect(saveButton().disabled).toBe(true);
+
+    type(invoiceNo, 'N'.repeat(60));
+    type(screen.getByLabelText(/amount paid now/i), '1.00');
+    const reference = screen.getByLabelText(/^reference$/i);
+    type(reference, 'R'.repeat(81));
+    expect(reasonFor(reference)).toMatch(/keep this to 80 characters/i);
+    expect(saveButton().disabled).toBe(true);
   });
 });
 
@@ -802,7 +825,16 @@ describe('what the totals show while they cannot be worked out', () => {
     chooseProduct('Rice 5kg');
     type(quantityBox(), '10');
 
-    expect(screen.getByText(/VAT rate cannot be negative/i).closest('dl')).toBeNull();
+    const reason = document.getElementById('total-error');
+    expect(reason?.textContent).toMatch(/VAT rate cannot be negative/i);
+    expect(reason?.closest('dl')).toBeNull();
+  });
+
+  it('shows no total for an empty form, since there is no purchase yet to save', () => {
+    renderForm();
+    expect(figure('Subtotal')).toBe('—');
+    expect(figure('Total')).toBe('—');
+    expect(saveButton().textContent).toBe('Save purchase');
   });
 
   it('ties the reason Save is not offered to the button itself', () => {

@@ -26,13 +26,13 @@
 **Priority:** P2
 **Depends on:** None
 
-### The purchase total can change between page load and Save
+### The purchase total and books lock can change between page load and Save
 
 **What:** Send the total the screen showed in the basket and have the server refuse a purchase whose own total differs, or show the stored total in the success message.
 
 **Why:** The form prices tax with the components read when the page loaded; `createPurchase` reads them again at Save. If the owner changes a rate while a clerk has the form open, the button shows one total and the books store another, and an "All" payment leaves the difference owed to the supplier unseen.
 
-**Context:** `src/app/(app)/purchases/new/page.tsx` passes `getTaxProfile(db).components`; `src/services/purchase.service.ts` calls `getTaxProfile(tx)`. The POS (`src/app/(app)/sales/new/pos.tsx`) has the same gap, so fix both the same way.
+**Context:** `src/app/(app)/purchases/new/page.tsx` passes `getTaxProfile(db).components`; `src/services/purchase.service.ts` calls `getTaxProfile(tx)`. The POS (`src/app/(app)/sales/new/pos.tsx`) has the same gap, so fix both the same way. The books-lock date is read once at page load too: moved back while the form is open, the screen refuses dates the server would accept until a reload (the other way round, the server refuses and says so).
 
 **Effort:** S
 **Priority:** P3
