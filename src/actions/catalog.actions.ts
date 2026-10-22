@@ -15,6 +15,14 @@ import {
   updateProduct,
 } from '@/services/catalog.service';
 import { createUnit, deleteUnit, updateUnit } from '@/services/units.service';
+import {
+  guessColumns,
+  importProducts,
+  MAX_IMPORT_ROWS,
+  previewProductImport,
+} from '@/services/product-import.service';
+import { IMPORT_FIELDS, type ColumnMap, type ProductImportState } from '@/lib/product-import-fields';
+import { readSpreadsheet } from '@/lib/spreadsheet';
 import { parseMoney } from '@/domain/money';
 import { parsePositiveQty, parseQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
@@ -250,6 +258,120 @@ export async function setProductActiveAction(productId: number, isActive: boolea
   const actor = await requirePermission('products', 'edit');
   setProductActive(db, productId, isActive, { id: actor.id, username: actor.username });
   revalidatePath('/products');
+}
+
+// --- product import -------------------------------------------------------
+
+/** Same limits on upload and on every later step, so a sheet that previews can always be imported. */
+const MAX_CELL_LENGTH = 1_000;
+const MAX_COLUMNS = 200;
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const cellsSchema = z
+  .array(z.array(z.string().max(MAX_CELL_LENGTH)).max(MAX_COLUMNS))
+  .min(1)
+  .max(MAX_IMPORT_ROWS + 1);
+
+/** Why these cells cannot be imported, in words, or null when they can. */
+function cellsProblem(cells: string[][]): string | null {
+  if (cells.length > MAX_IMPORT_ROWS + 1) {
+    return `That sheet has more than ${MAX_IMPORT_ROWS} rows. Split it into smaller files.`;
+  }
+  if (cells.some((row) => row.length > MAX_COLUMNS)) {
+    return `That sheet uses more than ${MAX_COLUMNS} columns. Delete the unused columns and try again.`;
+  }
+  const long = cells.findIndex((row) => row.some((cell) => cell.length > MAX_CELL_LENGTH));
+  if (long >= 0) return `Row ${long + 1} has a cell longer than ${MAX_CELL_LENGTH} characters.`;
+  return null;
+}
+
+/** Column choices posted under `prefix`; anything not a real column index means "not imported". */
+function readColumnMap(formData: FormData, prefix: string, columns: number): ColumnMap {
+  const map: ColumnMap = {};
+  for (const { key } of IMPORT_FIELDS) {
+    const text = formData.get(`${prefix}${key}`);
+    const index = Number(text);
+    if (typeof text === 'string' && text !== '' && Number.isInteger(index) && index >= 0 && index < columns) {
+      map[key] = index;
+    }
+  }
+  return map;
+}
+
+const sameChoices = (a: ColumnMap, b: ColumnMap) => IMPORT_FIELDS.every(({ key }) => a[key] === b[key]);
+
+/**
+ * One action for the three steps of the import page, chosen by the button
+ * pressed: `upload` reads the file and guesses the columns, `preview` re-runs
+ * with the owner's column choices, `import` creates the products. Only
+ * `import` writes, and it re-checks every row on the server first.
+ */
+export async function productImportAction(
+  previous: ProductImportState,
+  formData: FormData,
+): Promise<ProductImportState> {
+  const actor = await requirePermission('products', 'create');
+  const intent = formData.get('intent');
+
+  let imported: number;
+  try {
+    if (intent === 'upload') {
+      const file = formData.get('file');
+      if (!(file instanceof File) || file.size === 0) return { error: 'Choose a file to import.' };
+      if (file.size > MAX_FILE_BYTES) return { error: 'That file is over 2 MB. Split it into smaller files.' };
+      const cells = readSpreadsheet(file.name, new Uint8Array(await file.arrayBuffer()));
+      if (cells.length < 2) return { error: 'That sheet has no rows under the headings.' };
+      const problem = cellsProblem(cells);
+      if (problem) return { error: problem };
+      const map = guessColumns(cells[0] ?? []);
+      const packUnit = 'pack';
+      if (map.name === undefined) {
+        return { fileName: file.name, cells, map, packUnit, error: 'Choose the column that holds the product name.' };
+      }
+      return { fileName: file.name, cells, map, packUnit, preview: previewProductImport(db, cells, map, packUnit) };
+    }
+
+    let raw: unknown;
+    try {
+      raw = JSON.parse(String(formData.get('cells') ?? ''));
+    } catch {
+      raw = null;
+    }
+    const parsed = cellsSchema.safeParse(raw);
+    if (!parsed.success) return { error: 'The uploaded sheet was lost. Choose the file again.' };
+    const cells = parsed.data;
+    const fileName = String(formData.get('fileName') ?? '').slice(0, 200);
+    const columns = Math.max(...cells.map((row) => row.length));
+    const map = readColumnMap(formData, 'column_', columns);
+    const packUnit = String(formData.get('packUnit') ?? '').trim().slice(0, 20);
+
+    // Import only what was on screen. A column or pack unit changed after the
+    // last preview would save figures the owner never saw, so show them first.
+    const previewed = readColumnMap(formData, 'previewed_', columns);
+    const unchanged = sameChoices(map, previewed) && packUnit === String(formData.get('previewedPackUnit') ?? '');
+    if (intent !== 'import' || !unchanged) {
+      return {
+        fileName,
+        cells,
+        map,
+        packUnit,
+        preview: previewProductImport(db, cells, map, packUnit),
+        ...(intent === 'import'
+          ? { error: 'The columns changed since the preview. Check the preview below, then import.' }
+          : {}),
+      };
+    }
+    imported = importProducts(db, cells, map, packUnit, { id: actor.id, username: actor.username });
+  } catch (error) {
+    if (!isDomainError(error)) throw error;
+    // A failed upload must not leave the last file's columns on screen under the new error.
+    if (intent === 'upload') return { error: error.userMessage };
+    return { ...previous, preview: undefined, error: error.userMessage };
+  }
+
+  revalidatePath('/products');
+  revalidatePath('/products/units');
+  revalidatePath('/inventory');
+  redirect(`/products?imported=${imported}`);
 }
 
 // --- categories -----------------------------------------------------------

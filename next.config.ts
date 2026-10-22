@@ -58,6 +58,13 @@ const nextConfig: NextConfig = {
     ];
   },
 
+  // Server actions refuse bodies over 1 MB by default. The product import
+  // takes a price list of up to 2 MB, then posts the sheet's cells back as JSON
+  // on each preview, which runs larger than the zipped .xlsx.
+  experimental: {
+    serverActions: { bodySizeLimit: '4mb' },
+  },
+
   typescript: {
     // Never ship a build that does not typecheck. This is a financial system.
     ignoreBuildErrors: false,

@@ -45,6 +45,7 @@ for someone who typed an address.
 |---|---|
 | `/products` | `products` view |
 | `/products/new` | `products` create |
+| `/products/import` | `products` create |
 | `/products/[id]/edit` | `products` edit |
 | `/products/categories` | `products` view |
 | `/inventory` | `inventory` view — the stock ledger |

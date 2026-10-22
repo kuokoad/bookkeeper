@@ -138,7 +138,7 @@ const DEFAULT_PRESETS: DatePreset[] = [
 ];
 
 /** Keys that describe a one-off event, never a filter. Dropped on any change. */
-const FLASH_KEYS = ['created', 'updated', 'voided', 'deleted', 'restored', 'error'];
+const FLASH_KEYS = ['created', 'updated', 'voided', 'deleted', 'restored', 'imported', 'error'];
 
 /**
  * What can hold focus inside the drawer, in tab order.
