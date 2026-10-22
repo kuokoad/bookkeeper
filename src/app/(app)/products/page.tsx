@@ -37,6 +37,8 @@ export default async function ProductsPage({
 }) {
   const user = await requirePageAccess('products', 'view');
   const params = await searchParams;
+  // A one-shot count from the import page; junk reads as nothing imported.
+  const importedCount = /^\d{1,5}$/.test(String(params.imported ?? '')) ? Number(params.imported) : 0;
 
   const { filters, page: requestedPage, pageSize, carried } = parseProductFilters(params);
 
@@ -144,6 +146,11 @@ export default async function ProductsPage({
                     Units
                   </Button>
                 </Link>
+                <Link href="/products/import">
+                  <Button variant="secondary" size="sm">
+                    Import
+                  </Button>
+                </Link>
                 <Link href="/products/new">
                   <Button size="sm">Add product</Button>
                 </Link>
@@ -152,6 +159,13 @@ export default async function ProductsPage({
           </>
         }
       />
+
+      {importedCount > 0 && (
+        <Alert tone="success" className="mb-4">
+          Imported {importedCount} product{importedCount === 1 ? '' : 's'}. They start with no stock —
+          record a stock adjustment to enter opening stock.
+        </Alert>
+      )}
 
       {params.created === '1' && (
         <Alert tone="success" className="mb-4">
