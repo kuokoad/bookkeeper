@@ -22,13 +22,15 @@ const nextConfig: NextConfig = {
   // is ever needed, delete `.env`, `data/` and `backups/` from the output
   // before shipping it anywhere.
 
-  // THE SEVEN BUILD WARNINGS ARE EXPECTED. Leave them.
+  // THE EIGHT BUILD WARNINGS ARE EXPECTED. Leave them.
   //
   // `next build` reports "Dynamic filesystem access causes tracing of the whole
-  // project" seven times, all from `src/db/backup.ts` by way of the backup
-  // download route. They are TRUE: the backup directory and the database path
-  // are configurable, so the paths really are computed at runtime and tracing
-  // really cannot follow them.
+  // project" eight times: five from `src/db/backup.ts` by way of the backup
+  // download route, and one each from `src/db/preflight.ts`, `src/db/startup.ts`
+  // and `src/services/update.service.ts`, which all resolve the database path.
+  // They are TRUE: the backup directory and the database path are configurable,
+  // so the paths really are computed at runtime and tracing really cannot
+  // follow them.
   //
   // They cost nothing here, because that trace is only used to assemble a
   // standalone folder and this app does not build one — see the note above. So
