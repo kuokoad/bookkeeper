@@ -55,6 +55,8 @@ export interface DateFieldProps {
   required?: boolean;
   disabled?: boolean;
   invalid?: boolean;
+  /** Id of the message that says why the date is refused, for the screen reader. */
+  describedBy?: string | undefined;
   className?: string;
   /** Today, so the shortcut and the highlight agree with the shop's clock. */
   today?: string;
@@ -85,6 +87,7 @@ export function DateField({
   required,
   disabled,
   invalid,
+  describedBy,
   className,
   today,
   label,
@@ -398,6 +401,8 @@ export function DateField({
             width="w-7"
             value={day}
             disabled={disabled}
+            aria-invalid={invalid || undefined}
+            aria-describedby={describedBy}
             required={required}
             onKeyDown={(event) => segmentKeyDown(event, 'day')}
             onChange={(next) => {
@@ -416,6 +421,8 @@ export function DateField({
             width="w-8"
             value={month}
             disabled={disabled}
+            aria-invalid={invalid || undefined}
+            aria-describedby={describedBy}
             onKeyDown={(event) => segmentKeyDown(event, 'month')}
             onChange={(next) => {
               setMonth(next);
@@ -434,6 +441,8 @@ export function DateField({
             maxLength={4}
             value={year}
             disabled={disabled}
+            aria-invalid={invalid || undefined}
+            aria-describedby={describedBy}
             onKeyDown={(event) => segmentKeyDown(event, 'year')}
             onChange={(next) => {
               setYear(next);
@@ -661,6 +670,8 @@ function Segment({
   maxLength?: number;
   onChange: (value: string) => void;
   'aria-label': string;
+  'aria-invalid'?: boolean | undefined;
+  'aria-describedby'?: string | undefined;
   placeholder: string;
   disabled?: boolean | undefined;
   required?: boolean | undefined;

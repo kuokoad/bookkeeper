@@ -6,11 +6,12 @@ import { db } from '@/db/client';
 import { businessSettings, paymentAccounts } from '@/db/schema';
 import { requirePageAccess } from '@/lib/auth/current-user';
 import { defaultFeatures, featuresFromRow } from '@/lib/business-type';
-import { listProducts } from '@/services/catalog.service';
 import { listSuppliers } from '@/services/supplier.service';
+import { getTaxProfile } from '@/services/tax.service';
 import { toBusinessDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/ui/page';
+import { loadEntryProducts } from './entry-products';
 import { PurchaseEntry } from './purchase-entry';
 
 export const metadata: Metadata = { title: 'New purchase' };
@@ -26,16 +27,7 @@ export default async function NewPurchasePage() {
     balanceMinor: supplier.balance as number,
   }));
 
-  const products = listProducts(db, { limit: 500 }).map((product) => ({
-    id: product.id,
-    name: product.name,
-    unit: product.unit,
-    altUnit: product.altUnit,
-    altFactorMilli: product.altFactor as number | null,
-    costPrice: product.costPrice as number,
-    altCostPrice: product.altCostPrice as number | null,
-    qtyOnHandMilli: product.qtyOnHand as number,
-  }));
+  const products = loadEntryProducts(db);
 
   const accounts = db
     .select()
@@ -98,6 +90,8 @@ export default async function NewPurchasePage() {
         accounts={accounts}
         today={toBusinessDate()}
         currencyCode={settings?.currencyCode ?? 'GHS'}
+        taxComponents={getTaxProfile(db).components}
+        lockedBefore={settings?.booksLockedBefore ?? null}
         offerExpiry={
           settings ? featuresFromRow(settings).expiry_batches : defaultFeatures('general_retail').expiry_batches
         }

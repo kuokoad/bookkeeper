@@ -26,6 +26,7 @@ import { parseMoney, ZERO, type Minor } from '@/domain/money';
 import { parsePositiveQty } from '@/domain/quantity';
 import { isDomainError } from '@/domain/errors';
 import { isValidBusinessDate } from '@/lib/format';
+import { INVOICE_NO_MAX, PAYMENT_REFERENCE_MAX, PURCHASE_NOTE_MAX } from '@/lib/purchase-limits';
 import type { FormState } from './auth.actions';
 
 /**
@@ -126,8 +127,8 @@ export interface PurchaseFormState extends FormState {
 const purchaseSchema = z.object({
   supplierId: z.number().int().positive(),
   businessDate: z.string().refine(isValidBusinessDate, 'Enter a valid date.'),
-  invoiceNo: z.string().trim().max(60).optional(),
-  note: z.string().trim().max(300).optional(),
+  invoiceNo: z.string().trim().max(INVOICE_NO_MAX).optional(),
+  note: z.string().trim().max(PURCHASE_NOTE_MAX).optional(),
   invoiceDiscount: z.string().trim().optional(),
   items: z
     .array(
@@ -153,7 +154,7 @@ const purchaseSchema = z.object({
       z.object({
         paymentAccountId: z.number().int().positive(),
         amount: z.string().trim().min(1),
-        reference: z.string().trim().max(80).optional(),
+        reference: z.string().trim().max(PAYMENT_REFERENCE_MAX).optional(),
       }),
     )
     .default([]),

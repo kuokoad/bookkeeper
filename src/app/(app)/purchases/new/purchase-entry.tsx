@@ -11,17 +11,27 @@ import { Alert } from '@/components/ui/alert';
 import { AmountInput, TextInput } from '@/components/ui/field';
 import { DateField } from '@/components/ui/date-field';
 import { unitLabel, UnitPicker } from '@/components/shared/unit-picker';
+import { cn } from '@/lib/cn';
+import { formatDate } from '@/lib/format';
+import { addDays } from '@/domain/business-date';
+import { toDecimalString, toInputString, type Minor } from '@/domain/money';
+import type { TaxComponent } from '@/domain/tax/components';
+import {
+  purchaseBasket,
+  readPurchase,
+  type LineEntry,
+  type LineProduct,
+  type PurchaseReading,
+} from './read-purchase';
 
-export interface EntryProduct {
-  id: number;
+export interface EntryProduct extends LineProduct {
   name: string;
-  unit: string;
-  altUnit: string | null;
-  altFactorMilli: number | null;
   costPrice: number;
   /** Per alternate unit. Null when there is no alternate. */
   altCostPrice: number | null;
   qtyOnHandMilli: number;
+  /** False for a service like cartage: free goods do nothing to an average cost there. */
+  trackInventory: boolean;
 }
 
 export interface EntrySupplier {
@@ -36,14 +46,22 @@ export interface EntryAccount {
   isDefault: boolean;
 }
 
-interface Row {
+interface Row extends LineEntry {
   key: number;
-  productId: string;
-  qty: string;
-  /** True when qty and cost are in the product's alternate unit. */
-  alt: boolean;
-  unitCost: string;
-  discount: string;
+  /**
+   * True while the cost is the one the form filled in from the catalog, so it
+   * may follow a change of product or unit. A cost somebody typed is theirs and
+   * stays.
+   */
+  costFilled: boolean;
+  /**
+   * The product and unit the figure in the cost box is for ('' when it was
+   * typed before a product was chosen). A typed cost is kept when either
+   * changes, so when they differ from the line's the line says so, instead of
+   * quietly reading 3.20 a tin as 3.20 a Carton, or Milk's price as Rice's.
+   */
+  costFor: string;
+  costAlt: boolean;
   /**
    * When these goods run out, 'YYYY-MM-DD', or '' for goods that do not.
    *
@@ -56,26 +74,55 @@ interface Row {
   showExpiry: boolean;
 }
 
-function toMinor(text: string): number {
-  const trimmed = text.trim().replace(/,/g, '');
-  if (trimmed === '') return 0;
-  if (!/^\d*\.?\d{0,2}$/.test(trimmed)) return Number.NaN;
-  const [whole = '0', fraction = ''] = trimmed.split('.');
-  return Number(whole || '0') * 100 + Number(fraction.padEnd(2, '0') || '0');
+function blankRow(key: number): Row {
+  return {
+    key,
+    productId: '',
+    qty: '',
+    alt: false,
+    unitCost: '',
+    costFilled: false,
+    costFor: '',
+    costAlt: false,
+    discount: '',
+    expiryDate: '',
+    showExpiry: false,
+  };
 }
 
-function toMilli(text: string): number {
-  const trimmed = text.trim().replace(/,/g, '');
-  if (trimmed === '') return 0;
-  if (!/^\d*\.?\d{0,3}$/.test(trimmed)) return Number.NaN;
-  const [whole = '0', fraction = ''] = trimmed.split('.');
-  return Number(whole || '0') * 1000 + Number(fraction.padEnd(3, '0') || '0');
+/**
+ * The catalog cost to pre-fill, or nothing.
+ *
+ * Never a 0.00: a product or carton with no cost on file used to fill the box
+ * with one, which looked typed and saved the stock at no cost.
+ */
+function catalogCost(product: EntryProduct | undefined, alt: boolean): string {
+  const cost = product ? (alt ? product.altCostPrice : product.costPrice) : null;
+  return cost !== null && cost > 0 ? toInputString(cost as Minor) : '';
 }
 
-function fmt(minorValue: number): string {
-  const digits = Math.abs(Math.round(minorValue)).toString().padStart(3, '0');
-  const whole = digits.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${minorValue < 0 ? '-' : ''}${whole}.${digits.slice(-2)}`;
+/** Whether any one box, rather than the purchase as a whole, is refused. */
+function fieldRefused(reading: PurchaseReading): boolean {
+  return (
+    reading.lines.some((line) => Object.keys(line.errors).length > 0) ||
+    [
+      reading.dateError,
+      reading.invoiceNoError,
+      reading.invoiceDiscountError,
+      reading.paidError,
+      reading.referenceError,
+    ].some((error) => error !== undefined)
+  );
+}
+
+/** Why a field is red, where `aria-describedby` on that field points. */
+function FieldError({ id, message }: { id: string; message: string | undefined }) {
+  if (!message) return null;
+  return (
+    <p id={`${id}-error`} className="mt-1 text-xs font-medium text-danger">
+      {message}
+    </p>
+  );
 }
 
 /**
@@ -92,12 +139,18 @@ export function PurchaseEntry({
   today,
   currencyCode,
   offerExpiry,
+  taxComponents,
+  lockedBefore,
 }: {
   products: EntryProduct[];
   suppliers: EntrySupplier[];
   accounts: EntryAccount[];
   today: string;
   currencyCode: string;
+  /** The shop's taxes, which the server adds on top of every purchase. */
+  taxComponents: TaxComponent[];
+  /** The books lock: a delivery dated on or before it is refused. */
+  lockedBefore: string | null;
   /**
    * Whether to OFFER a date on a delivery. A shop selling pipes has no use for
    * one. It only hides the button below: a row that already carries a date
@@ -115,9 +168,7 @@ export function PurchaseEntry({
   const [invoiceNo, setInvoiceNo] = useState('');
   const [note, setNote] = useState('');
   const [invoiceDiscount, setInvoiceDiscount] = useState('');
-  const [rows, setRows] = useState<Row[]>([
-    { key: 1, productId: '', qty: '', alt: false, unitCost: '', discount: '', expiryDate: '', showExpiry: false },
-  ]);
+  const [rows, setRows] = useState<Row[]>([blankRow(1)]);
   const [payAccountId, setPayAccountId] = useState(
     String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? ''),
   );
@@ -129,9 +180,7 @@ export function PurchaseEntry({
   const [handled, setHandled] = useState<string | undefined>(undefined);
   if (state.purchaseNo && state.purchaseNo !== handled) {
     setHandled(state.purchaseNo);
-    setRows([
-      { key: 1, productId: '', qty: '', alt: false, unitCost: '', discount: '', expiryDate: '', showExpiry: false },
-    ]);
+    setRows([blankRow(1)]);
     setInvoiceNo('');
     setNote('');
     setInvoiceDiscount('');
@@ -144,80 +193,67 @@ export function PurchaseEntry({
   }
 
   function addRow() {
-    setRows((current) => [
-      ...current,
-      {
-        key: Math.max(0, ...current.map((row) => row.key)) + 1,
-        productId: '',
-        qty: '',
-        alt: false,
-        unitCost: '',
-        discount: '',
-        expiryDate: '',
-        showExpiry: false,
-      },
-    ]);
+    setRows((current) => [...current, blankRow(Math.max(0, ...current.map((row) => row.key)) + 1)]);
   }
 
-  const totals = useMemo(() => {
-    let subtotal = 0;
-    let invalid = false;
+  const productsById = useMemo(
+    () => new Map(products.map((product) => [String(product.id), product])),
+    [products],
+  );
 
-    for (const row of rows) {
-      if (row.productId === '' || row.qty.trim() === '') continue;
-      const qty = toMilli(row.qty);
-      const cost = toMinor(row.unitCost);
-      const discount = row.discount ? toMinor(row.discount) : 0;
-      if (Number.isNaN(qty) || Number.isNaN(cost) || Number.isNaN(discount)) {
-        invalid = true;
-        continue;
-      }
-      subtotal += Math.round((cost * qty) / 1000) - discount;
-    }
+  const reading = useMemo(
+    () =>
+      readPurchase({
+        rows,
+        products,
+        invoiceDiscount,
+        payAmount,
+        canPay: payAccountId !== '',
+        taxComponents,
+        businessDate,
+        lockedBefore,
+        invoiceNo,
+        reference,
+      }),
+    [
+      rows,
+      products,
+      invoiceDiscount,
+      payAmount,
+      payAccountId,
+      taxComponents,
+      businessDate,
+      lockedBefore,
+      invoiceNo,
+      reference,
+    ],
+  );
 
-    const discount = invoiceDiscount ? toMinor(invoiceDiscount) : 0;
-    const total = Math.max(0, subtotal - (Number.isNaN(discount) ? 0 : discount));
-    const paid = Number.isNaN(toMinor(payAmount)) ? 0 : toMinor(payAmount);
+  /** Why Save is not offered yet, said beside it rather than left to be guessed. */
+  const blocker =
+    supplierId === ''
+      ? 'Choose a supplier.'
+      : reading.filled === 0
+        ? 'Add what arrived.'
+        : !reading.acceptable
+          ? // A refusal of the whole purchase, such as 0.00, is no one entry's,
+            // so it is named here unless an entry also has something to fix.
+            (fieldRefused(reading) ? undefined : reading.totalError) ??
+            'Correct the entries that have a message under them.'
+          : null;
+  const canSubmit = blocker === null && !pending;
 
-    return {
-      subtotal,
-      discount: Number.isNaN(discount) ? 0 : discount,
-      total,
-      paid,
-      outstanding: Math.max(0, total - paid),
-      overpaid: paid > total,
-      invalid,
-    };
-  }, [rows, invoiceDiscount, payAmount]);
-
-  const filledRows = rows.filter((row) => row.productId !== '' && row.qty.trim() !== '');
-  const canSubmit =
-    supplierId !== '' && filledRows.length > 0 && !totals.invalid && !totals.overpaid && !pending;
-
-  const basket = JSON.stringify({
-    supplierId: supplierId === '' ? 0 : Number(supplierId),
+  const basket = purchaseBasket({
+    supplierId,
     businessDate,
-    invoiceNo: invoiceNo.trim() || undefined,
-    note: note.trim() || undefined,
-    invoiceDiscount: invoiceDiscount.trim() || undefined,
-    items: filledRows.map((row) => ({
-      productId: Number(row.productId),
-      qty: row.qty.trim(),
-      unitCost: row.unitCost.trim() || '0',
-      discount: row.discount.trim() || undefined,
-      ...(row.alt ? { alt: true } : {}),
-      expiryDate: row.expiryDate.trim() || undefined,
-    })),
-    tenders:
-      payAmount.trim() && payAccountId
-        ? [
-            {
-              paymentAccountId: Number(payAccountId),
-              amount: payAmount.trim(),
-              reference: reference.trim() || undefined,
-            },
-          ]
-        : [],
+    invoiceNo,
+    note,
+    invoiceDiscount,
+    rows,
+    lines: reading.lines,
+    payAccountId,
+    payAmount,
+    reference,
   });
 
   return (
@@ -250,7 +286,9 @@ export function PurchaseEntry({
               {suppliers.map((supplier) => (
                 <option key={supplier.id} value={String(supplier.id)}>
                   {supplier.name}
-                  {supplier.balanceMinor > 0 ? ` — owed ${fmt(supplier.balanceMinor)}` : ''}
+                  {supplier.balanceMinor > 0
+                    ? ` — owed ${toDecimalString(supplier.balanceMinor as Minor)}`
+                    : ''}
                 </option>
               ))}
             </Select>
@@ -266,7 +304,14 @@ export function PurchaseEntry({
               value={businessDate}
               onChange={setBusinessDate}
               today={today}
+              invalid={reading.dateError !== undefined}
+              describedBy={reading.dateError ? 'date-error' : undefined}
+              min={lockedBefore ? addDays(lockedBefore, 1) : undefined}
+              minReason={
+                lockedBefore ? `The books are closed up to ${formatDate(lockedBefore)}.` : undefined
+              }
             />
+            <FieldError id="date" message={reading.dateError} />
           </div>
 
           <div>
@@ -278,7 +323,9 @@ export function PurchaseEntry({
               value={invoiceNo}
               onChange={(event) => setInvoiceNo(event.target.value)}
               placeholder="Optional"
+              invalid={reading.invoiceNoError !== undefined}
             />
+            <FieldError id="invoiceNo" message={reading.invoiceNoError} />
           </div>
         </div>
       </div>
@@ -288,16 +335,26 @@ export function PurchaseEntry({
 
         <div className="space-y-3">
           {rows.map((row, index) => {
-            const product = products.find((item) => String(item.id) === row.productId);
-            const qty = toMilli(row.qty);
-            const cost = toMinor(row.unitCost);
-            const discount = row.discount ? toMinor(row.discount) : 0;
-            // An unreadable entry shows a dash, never a plausible 0.00 under the caption.
-            const lineUnreadable = Number.isNaN(qty) || Number.isNaN(cost) || Number.isNaN(discount);
-            const lineGross = lineUnreadable ? 0 : Math.round((cost * qty) / 1000);
-            const lineTotal = lineGross - (lineUnreadable ? 0 : discount);
-            // The server refuses a discount larger than the line, so say so before Save.
-            const discountTooBig = !lineUnreadable && discount > lineGross;
+            const product = productsById.get(row.productId);
+            const line = reading.lines[index];
+            const errors = line?.errors ?? {};
+            // A typed cost kept across a change of product or unit is for the
+            // other one, until somebody looks at it.
+            const typedCost = !row.costFilled && row.unitCost.trim() !== '';
+            const costProduct =
+              typedCost && row.costFor !== '' && row.costFor !== row.productId
+                ? productsById.get(row.costFor)
+                : undefined;
+            const costUnitChanged =
+              typedCost &&
+              costProduct === undefined &&
+              product !== undefined &&
+              unitLabel(row.costAlt, product) !== unitLabel(row.alt, product);
+            const costNotes = [
+              line?.free ? `c-${row.key}-free` : null,
+              costProduct ? `c-${row.key}-product` : null,
+              costUnitChanged ? `c-${row.key}-unit` : null,
+            ].filter((id) => id !== null);
 
             return (
               <div key={row.key} className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-12">
@@ -312,15 +369,29 @@ export function PurchaseEntry({
                     id={`p-${row.key}`}
                     value={row.productId}
                     onChange={(event) => {
-                      const chosen = products.find((p) => String(p.id) === event.target.value);
+                      const chosen = productsById.get(event.target.value);
                       updateRow(row.key, {
                         productId: event.target.value,
                         alt: false,
                         // Pre-fill with the expected cost to save typing.
-                        unitCost: row.unitCost || (chosen ? fmt(chosen.costPrice) : ''),
+                        ...(row.costFilled || row.unitCost.trim() === ''
+                          ? {
+                              unitCost: catalogCost(chosen, false),
+                              costFilled: true,
+                              costFor: event.target.value,
+                              costAlt: false,
+                            }
+                          : // A cost typed before any product was chosen
+                            // belongs to the first one chosen.
+                            { costFor: row.costFor || row.productId || event.target.value }),
                       });
                     }}
-                    className="h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content"
+                    aria-invalid={errors.product ? true : undefined}
+                    aria-describedby={errors.product ? `p-${row.key}-error` : undefined}
+                    className={cn(
+                      'h-11 w-full rounded-lg border border-line-strong bg-surface-raised px-3 text-content',
+                      errors.product && 'border-danger',
+                    )}
                   >
                     <option value="">Choose…</option>
                     {products.map((item) => (
@@ -329,6 +400,7 @@ export function PurchaseEntry({
                       </option>
                     ))}
                   </Select>
+                  <FieldError id={`p-${row.key}`} message={errors.product} />
                 </div>
 
                 <div className="sm:col-span-2">
@@ -342,8 +414,9 @@ export function PurchaseEntry({
                     id={`q-${row.key}`}
                     value={row.qty}
                     onChange={(event) => updateRow(row.key, { qty: event.target.value })}
-                    invalid={Number.isNaN(qty)}
+                    invalid={errors.qty !== undefined}
                   />
+                  <FieldError id={`q-${row.key}`} message={errors.qty} />
                   {product?.altUnit && (
                     <div className="mt-1">
                       <UnitPicker
@@ -351,10 +424,18 @@ export function PurchaseEntry({
                         alt={row.alt}
                         units={product}
                         onChange={(alt) =>
-                          // The expected cost follows the unit: a carton costs a carton's worth.
+                          // The expected cost follows the unit: a carton costs a
+                          // carton's worth. A typed cost stays, and is flagged below.
                           updateRow(row.key, {
                             alt,
-                            unitCost: fmt(alt ? (product.altCostPrice ?? 0) : product.costPrice),
+                            ...(row.costFilled || row.unitCost.trim() === ''
+                              ? {
+                                  unitCost: catalogCost(product, alt),
+                                  costFilled: true,
+                                  costFor: row.productId,
+                                  costAlt: alt,
+                                }
+                              : {}),
                           })
                         }
                       />
@@ -367,14 +448,49 @@ export function PurchaseEntry({
                     htmlFor={`c-${row.key}`}
                     className="mb-1 block text-xs font-medium text-content-muted"
                   >
-                    Cost each
+                    {product ? `Cost per ${unitLabel(row.alt, product)}` : 'Cost each'}
                   </label>
                   <AmountInput
                     id={`c-${row.key}`}
                     value={row.unitCost}
-                    onChange={(event) => updateRow(row.key, { unitCost: event.target.value })}
-                    invalid={Number.isNaN(cost)}
+                    onChange={(event) =>
+                      updateRow(row.key, {
+                        unitCost: event.target.value,
+                        costFilled: false,
+                        costFor: row.productId,
+                        costAlt: row.alt,
+                      })
+                    }
+                    invalid={errors.cost !== undefined}
+                    {...(errors.cost === undefined && costNotes.length > 0
+                      ? { 'aria-describedby': costNotes.join(' ') }
+                      : {})}
                   />
+                  <FieldError id={`c-${row.key}`} message={errors.cost} />
+                  {line?.free && (
+                    /**
+                     * A line that comes to 0.00 is free goods: a sample, the
+                     * thirteenth tin of a baker's dozen. Allowed, but said
+                     * out loud, because it pulls the product's average cost
+                     * down and every later sale's profit up.
+                     */
+                    <p id={`c-${row.key}-free`} className="mt-1 text-xs font-medium text-warning">
+                      {product?.trackInventory === false
+                        ? 'Free: nothing is charged for this line.'
+                        : 'Free goods. These bring the average cost down.'}
+                    </p>
+                  )}
+                  {costProduct && (
+                    <p id={`c-${row.key}-product`} className="mt-1 text-xs font-medium text-warning">
+                      Check this cost: it was typed for {costProduct.name}.
+                    </p>
+                  )}
+                  {costUnitChanged && product && (
+                    <p id={`c-${row.key}-unit`} className="mt-1 text-xs font-medium text-warning">
+                      Check this cost: it was typed per {unitLabel(row.costAlt, product)}, and the line
+                      is now per {unitLabel(row.alt, product)}.
+                    </p>
+                  )}
                 </div>
 
                 <div className="sm:col-span-2">
@@ -389,8 +505,9 @@ export function PurchaseEntry({
                     value={row.discount}
                     onChange={(event) => updateRow(row.key, { discount: event.target.value })}
                     placeholder="0.00"
-                    invalid={Number.isNaN(discount) || discountTooBig}
+                    invalid={errors.discount !== undefined}
                   />
+                  <FieldError id={`d-${row.key}`} message={errors.discount} />
                 </div>
 
                 <div className="flex items-start justify-between gap-2 sm:col-span-2">
@@ -399,7 +516,7 @@ export function PurchaseEntry({
                       Line total
                     </span>
                     <span className="tabular flex h-11 items-center text-sm font-semibold text-content">
-                      {lineUnreadable ? '—' : fmt(lineTotal)}
+                      {line === undefined || line.total === null ? '—' : toDecimalString(line.total)}
                     </span>
                   </div>
                   <Button
@@ -490,27 +607,57 @@ export function PurchaseEntry({
           <dl className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <dt className="text-content-muted">Subtotal</dt>
-              <dd className="tabular text-content">{fmt(totals.subtotal)}</dd>
+              <dd className="tabular text-content">
+                {reading.subtotal === null ? '—' : toDecimalString(reading.subtotal)}
+              </dd>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-content-muted">Discount on the whole invoice</dt>
-              <dd className="w-32">
+            <div className="flex items-start justify-between gap-3">
+              <dt className="pt-2 text-content-muted">Discount on the whole invoice</dt>
+              <dd className="w-40 text-right">
                 <AmountInput
+                  id="invoiceDiscount"
                   value={invoiceDiscount}
                   onChange={(event) => setInvoiceDiscount(event.target.value)}
                   placeholder="0.00"
                   aria-label="Invoice discount"
                   className="h-9"
+                  invalid={reading.invoiceDiscountError !== undefined}
                 />
+                <FieldError id="invoiceDiscount" message={reading.invoiceDiscountError} />
               </dd>
             </div>
+            {reading.total === null
+              ? // The taxes still apply while the total cannot be worked out, so
+                // their rows stay, with a dash, rather than vanish and come back.
+                taxComponents
+                  .filter((tax) => tax.rateBp > 0)
+                  .map((tax) => (
+                    <div key={tax.code} className="flex justify-between">
+                      <dt className="text-content-muted">{tax.name}</dt>
+                      <dd className="tabular text-content">—</dd>
+                    </div>
+                  ))
+              : reading.taxLines.map(
+                  (tax) =>
+                    tax.amount !== 0 && (
+                      <div key={tax.code} className="flex justify-between">
+                        <dt className="text-content-muted">{tax.name}</dt>
+                        <dd className="tabular text-content">{toDecimalString(tax.amount)}</dd>
+                      </div>
+                    ),
+                )}
             <div className="flex justify-between border-t border-line pt-2 text-lg font-semibold">
               <dt className="text-content">Total</dt>
               <dd className="tabular text-content">
-                {currencyCode} {fmt(totals.total)}
+                {reading.total === null ? '—' : `${currencyCode} ${toDecimalString(reading.total)}`}
               </dd>
             </div>
           </dl>
+          {reading.totalError && (
+            <p id="total-error" className="mt-1.5 text-right text-xs font-medium text-danger">
+              {reading.totalError}
+            </p>
+          )}
         </div>
 
         <div className="rounded-xl border border-line bg-surface-raised p-4">
@@ -544,17 +691,18 @@ export function PurchaseEntry({
                   value={payAmount}
                   onChange={(event) => setPayAmount(event.target.value)}
                   placeholder="0.00"
-                  invalid={totals.overpaid}
+                  invalid={reading.paidError !== undefined}
                 />
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => setPayAmount(fmt(totals.total))}
-                  disabled={totals.total === 0}
+                  onClick={() => reading.total !== null && setPayAmount(toInputString(reading.total))}
+                  disabled={reading.total === null || reading.total === 0}
                 >
                   All
                 </Button>
               </div>
+              <FieldError id="payAmount" message={reading.paidError} />
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="ref" className="mb-1 block text-xs text-content-muted">
@@ -566,40 +714,52 @@ export function PurchaseEntry({
                 onChange={(event) => setReference(event.target.value)}
                 placeholder="Optional"
                 className="h-10"
+                invalid={reading.referenceError !== undefined}
               />
+              <FieldError id="ref" message={reading.referenceError} />
             </div>
           </div>
 
           <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
             <div className="flex justify-between">
               <dt className="text-content-muted">Paid</dt>
-              <dd className="tabular text-content">{fmt(totals.paid)}</dd>
+              <dd className="tabular text-content">
+                {reading.paid === null ? '—' : toDecimalString(reading.paid)}
+              </dd>
             </div>
-            {totals.outstanding > 0 && (
+            {reading.outstanding !== null && reading.outstanding > 0 && (
               <div className="flex justify-between text-base font-semibold">
                 <dt className="text-warning">Still owed to supplier</dt>
-                <dd className="tabular text-warning">{fmt(totals.outstanding)}</dd>
+                <dd className="tabular text-warning">{toDecimalString(reading.outstanding)}</dd>
               </div>
             )}
           </dl>
-
-          {totals.overpaid && (
-            <Alert tone="danger" className="mt-3">
-              You cannot pay more than the purchase total.
-            </Alert>
-          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" size="lg" disabled={!canSubmit}>
-          {pending ? 'Saving…' : `Save purchase — ${currencyCode} ${fmt(totals.total)}`}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="submit"
+          size="lg"
+          disabled={!canSubmit}
+          aria-describedby={blocker && !pending ? 'save-reason' : undefined}
+        >
+          {pending
+            ? 'Saving…'
+            : reading.total === null
+              ? 'Save purchase'
+              : `Save purchase — ${currencyCode} ${toDecimalString(reading.total)}`}
         </Button>
         <Link href="/purchases">
           <Button type="button" variant="ghost">
             Cancel
           </Button>
         </Link>
+        {blocker && !pending && (
+          <p id="save-reason" className="text-sm text-content-muted">
+            {blocker}
+          </p>
+        )}
       </div>
     </form>
   );
