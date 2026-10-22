@@ -100,7 +100,12 @@ if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyCon
 
 # --- 2-4. Dependencies and .env ----------------------------------------------
 
-Invoke-Step "Installing dependencies" @("ci")
+Write-Host ""
+Write-Host "The next steps take several minutes. If they seem to stop, look at this window's title bar:" -ForegroundColor Yellow
+Write-Host "if it starts with 'Select', a click paused it. Press Esc and it carries on." -ForegroundColor Yellow
+
+# http logging prints a line per package; plain npm ci goes silent for minutes and looks hung.
+Invoke-Step "Installing dependencies" @("ci", "--loglevel=http")
 Invoke-Step "Creating .env" @("run", "env:init")
 
 $envPath = Join-Path $root ".env"
