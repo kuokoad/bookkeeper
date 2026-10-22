@@ -76,9 +76,12 @@ Open PowerShell with **Run as Administrator** and paste:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kuokoad/bookkeeper/main/scripts/install.ps1))) -Firewall -AutoStart
 ```
 
-This installs Node.js and Git with `winget` if they are missing, downloads the
-app into `C:\NunaBooks`, and then runs the one-command version below. `winget`
-may ask you to accept its terms and each installer's licence; answer it. If it
+This installs Node.js and Git if they are missing, downloads the app into
+`C:\NunaBooks`, and then runs the one-command version below. It uses `winget`
+when the PC has it. Without `winget` it downloads the official installers from
+nodejs.org and GitHub, checks each against its published SHA-256, and opens
+it. Click through each installer with the default options; accepting the
+licences is yours to do. If it
 says a program was installed but cannot be found, close PowerShell, open a
 new one as Administrator, and paste the line again. It picks up where it
 stopped.
