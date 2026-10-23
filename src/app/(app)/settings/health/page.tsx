@@ -76,11 +76,10 @@ export default async function HealthPage() {
         </p>
 
         {/*
-          Uses `Alert` rather than a hand-rolled bordered box. The app's semantic
-          colour reaches the eye through the BACKGROUND — `border-warning` and
-          friends resolve to the same neutral as every other border — so a panel
-          that carried its state in a border alone looked identical whether the
-          shop was up to date or a month behind.
+          Uses `Alert` rather than a hand-rolled bordered box. A border alone is
+          too thin to carry the state: a panel that showed it only there looked
+          much the same whether the shop was up to date or a month behind, so
+          the background carries it too.
         */}
         <div className="mt-4">
           <Alert
