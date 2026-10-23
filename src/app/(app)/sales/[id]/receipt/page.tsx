@@ -13,6 +13,7 @@ import { saleDocumentTotals } from '@/domain/sales/present';
 import { isDomainError } from '@/domain/errors';
 import { Button } from '@/components/ui/button';
 import { PrintButton } from './print-button';
+import { ReceiptPrinter } from './receipt-printer';
 
 export const metadata: Metadata = { title: 'Receipt' };
 export const dynamic = 'force-dynamic';
@@ -82,18 +83,20 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   );
 
   return (
-    <div className="mx-auto max-w-md">
+    <ReceiptPrinter
+      actions={
+        <div className="no-print mb-4 flex items-center justify-between gap-2">
+          <Link href={`/sales/${saleId}`}>
+            <Button variant="secondary" size="sm">
+              Back
+            </Button>
+          </Link>
+          <PrintButton />
+        </div>
+      }
+    >
       <style>{RECEIPT_PAGE_CSS}</style>
-      <div className="no-print mb-4 flex items-center justify-between gap-2">
-        <Link href={`/sales/${saleId}`}>
-          <Button variant="secondary" size="sm">
-            Back
-          </Button>
-        </Link>
-        <PrintButton />
-      </div>
-
-      <article className="rounded-xl border border-line bg-surface-raised p-6 text-sm">
+      <article className="receipt-paper mx-3 rounded-xl rounded-t-none border border-line bg-surface-raised p-6 text-sm print:mx-0">
         <header className="mb-4 text-center">
           {settings?.logoData && (
             // A plain <img>: the source is a route reading a blob from the
@@ -268,6 +271,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           {sale.note && <p className="mt-1 italic">{sale.note}</p>}
         </footer>
       </article>
-    </div>
+    </ReceiptPrinter>
   );
 }
