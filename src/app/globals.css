@@ -638,7 +638,14 @@ textarea:focus-visible {
   --card-radius: 0.125rem;
   --card-shadow: 0 1px 2px rgb(0 0 0 / 3%);
 }
-.stitch-sidebar {
+/* The three palette rules below are Stitch's colours, so they belong to the
+   Standard look alone — the one look that sets no `data-look`. Every other look
+   paints its own tokens on `:root`, and these would cover them inside the shell:
+   Ledger in light came out Stitch blue-grey until they were scoped. Classic
+   needs no rules at all, since the `:root` tokens up top ARE the green-on-cool-
+   grey the app wore before Stitch. Layout, type and the square corners stay
+   shared by every look. */
+:root:not([data-look]) .stitch-sidebar {
   --sidebar: #141d23;
   --sidebar-raised: rgb(219 228 237 / 15%);
   --sidebar-text: #ffffff;
@@ -646,7 +653,7 @@ textarea:focus-visible {
   --sidebar-subtle: rgb(189 202 192 / 70%);
   --sidebar-border: rgb(189 202 192 / 20%);
 }
-:root[data-theme='light'] .app-shell {
+:root[data-theme='light']:not([data-look]) .app-shell {
   --attention-negative-bg: rgb(255 218 214 / 20%);
   --attention-negative-border: #ffdad6;
   --attention-negative-text: #ba1a1a;
@@ -661,7 +668,7 @@ textarea:focus-visible {
   --accent-text: #ffffff;
 }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']) .app-shell {
+  :root:not([data-theme='dark']):not([data-look]) .app-shell {
     --attention-negative-bg: rgb(255 218 214 / 20%);
     --attention-negative-border: #ffdad6;
     --attention-negative-text: #ba1a1a;

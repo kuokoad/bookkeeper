@@ -183,6 +183,13 @@
       "when": 1792439581881,
       "tag": "0025_units_of_measure",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1792778236186,
+      "tag": "0026_classic_look",
+      "breakpoints": true
     }
   ]
 }

@@ -47,6 +47,13 @@ export interface SettingsFormValues {
   financialYearStartMonth: number;
 }
 
+// Ground, card, chrome, accent for each look.
+const LOOK_SWATCHES: Record<Look, string[]> = {
+  default: ['#f6faff', '#ffffff', '#141d23', '#006947'],
+  ledger: ['#e8dcc8', '#fdfaf3', '#453729', '#7c9a6d'],
+  classic: ['#f7f8fa', '#ffffff', '#2b3038', '#2f9e77'],
+};
+
 const MONTHS = [
   'January',
   'February',
@@ -361,10 +368,7 @@ export function SettingsForm({
                     than only after. Hard-coded rather than token-driven: it has
                     to show the look you are NOT currently wearing. */}
                 <span className="mt-2 flex gap-1" aria-hidden="true">
-                  {(option === 'ledger'
-                    ? ['#e8dcc8', '#fdfaf3', '#453729', '#7c9a6d']
-                    : ['#f7f8fa', '#ffffff', '#2b3038', '#2f9e77']
-                  ).map((swatch) => (
+                  {LOOK_SWATCHES[option].map((swatch) => (
                     <span
                       key={swatch}
                       className="h-4 w-6 rounded border border-line"

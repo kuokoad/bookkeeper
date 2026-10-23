@@ -49,8 +49,8 @@ function currentAsInput(): SettingsInput {
 }
 
 describe('choosing a look', () => {
-  it('offers exactly two', () => {
-    expect([...LOOKS]).toEqual(['default', 'ledger']);
+  it('offers exactly three', () => {
+    expect([...LOOKS]).toEqual(['default', 'ledger', 'classic']);
   });
 
   it('puts nothing on the page for the default look', () => {
@@ -148,6 +148,24 @@ describe('the CSS behind it', () => {
     // one, a third of the combinations would be wrong.
     const occurrences = [...CSS.matchAll(/--surface-raised: oklch\(0\.25 0\.018 64\)/g)].length;
     expect(occurrences).toBe(2);
+  });
+
+  it('keeps the Stitch colours off every look but Standard', () => {
+    // The shell overrides sit on a descendant of <html>, so without a guard
+    // they beat whatever a look paints on :root. That is how light Ledger came
+    // out Stitch blue-grey and green instead of sand and sage, and how Classic
+    // would have shown nothing of its own.
+    const overrides = [...CSS.matchAll(/^\s*([^\n{]*\.(?:app-shell|stitch-sidebar))\s*\{[^}]*--(?:surface|accent|sidebar):/gm)];
+    expect(overrides.length).toBe(3);
+    for (const [, selector] of overrides) {
+      expect(selector, selector).toContain(':not([data-look])');
+    }
+  });
+
+  it('keeps Classic once chosen and marks the page with it', () => {
+    updateSettings(context.db, { ...currentAsInput(), look: 'classic' }, ACTOR);
+    expect(getSettings(context.db).look).toBe('classic');
+    expect(lookAttribute('classic')).toEqual({ 'data-look': 'classic' });
   });
 
   it('leaves the default look on the values it already had', () => {
