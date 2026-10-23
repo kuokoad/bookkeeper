@@ -56,9 +56,17 @@ const RECEIPT_PAGE_CSS = `
  * The `no-print` class (see globals.css) hides the navigation and buttons when
  * the page is actually printed.
  */
-export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ReceiptPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ print?: string | string[] }>;
+}) {
   await requirePageAccess('sales', 'view');
   const { id } = await params;
+  // `?print=1` comes from "Print receipt" at the till.
+  const autoPrint = (await searchParams).print === '1';
 
   const saleId = Number(id);
   if (!Number.isInteger(saleId) || saleId <= 0) notFound();
@@ -84,6 +92,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
 
   return (
     <ReceiptPrinter
+      autoPrint={autoPrint}
       actions={
         <div className="no-print mb-4 flex items-center justify-between gap-2">
           <Link href={`/sales/${saleId}`}>

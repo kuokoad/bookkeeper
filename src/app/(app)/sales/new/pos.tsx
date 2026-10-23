@@ -483,9 +483,12 @@ export function Pos({
             ) : (
               <p>Payment received in full.</p>
             )}
-            <p className="mt-2">
+            <p className="mt-2 flex items-center gap-3">
+              <Link href={`/sales/${state.saleId}/receipt?print=1`}>
+                <Button size="sm">Print receipt</Button>
+              </Link>
               <Link href={`/sales/${state.saleId}`} className="text-accent hover:underline">
-                View receipt
+                View sale
               </Link>
             </p>
           </Alert>

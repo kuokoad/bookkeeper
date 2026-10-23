@@ -50,10 +50,31 @@ const STATUS: Record<Stage, string> = {
  * `no-print`, and the paper prints as it always has. The receipt inside
  * `children` opts in with the `receipt-paper` class.
  */
-export function ReceiptPrinter({ actions, children }: { actions: ReactNode; children: ReactNode }) {
+export function ReceiptPrinter({
+  actions,
+  autoPrint = false,
+  children,
+}: {
+  actions: ReactNode;
+  autoPrint?: boolean;
+  children: ReactNode;
+}) {
   const root = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<Stage>('processing');
   const [run, setRun] = useState(0);
+  const printed = useRef(false);
+
+  /**
+   * Open the print dialog once the paper has fed out, once per visit. The
+   * `?print=1` is dropped from the address first, so a refresh or Back does
+   * not print the receipt a second time.
+   */
+  useEffect(() => {
+    if (!autoPrint || stage !== 'complete' || printed.current) return;
+    printed.current = true;
+    window.history.replaceState(null, '', window.location.pathname);
+    window.print();
+  }, [autoPrint, stage]);
 
   useEffect(() => {
     // Reduced motion: the paper is already out (see PAPER_CSS), so say so at once.
