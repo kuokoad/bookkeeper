@@ -168,6 +168,37 @@ describe('the CSS behind it', () => {
     expect(lookAttribute('classic')).toEqual({ 'data-look': 'classic' });
   });
 
+  it('leaves Ledger its paper: rounded cards with a shadow', () => {
+    // Stitch flattens cards and squares every corner, from rules that beat
+    // the tokens Ledger sets on :root. Each must step aside for Ledger, or it
+    // comes out as flat square panels in warm colours.
+    const NOT_LEDGER = ":root:not([data-look='ledger'])";
+    // Every rule's full selector, paired with its body.
+    const plain = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = [...plain.matchAll(/(?<=^|})\s*([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+      selectors: selector!.split(',').map((part) => part.trim()),
+      body: body!,
+    }));
+
+    const cardTokens = rules.filter(
+      (rule) => /--card-(radius|shadow)/.test(rule.body) && rule.selectors.some((s) => s.includes('.app-shell')),
+    );
+    const squared = rules.filter(
+      (rule) =>
+        /border-radius: 0(\.125rem)? ?(!important)?;/.test(rule.body) &&
+        // The print sheet is paper whatever the look; it flattens cards on purpose.
+        !rule.selectors.some((s) => s === 'article' || s.startsWith('.app-main')),
+    );
+
+    expect(cardTokens).toHaveLength(1);
+    expect(squared).toHaveLength(2);
+    for (const rule of [...cardTokens, ...squared]) {
+      for (const selector of rule.selectors) {
+        expect(selector, selector).toContain(NOT_LEDGER);
+      }
+    }
+  });
+
   it('leaves the default look on the values it already had', () => {
     // The card tokens exist so a look can change how a card sits on the page.
     // The default's values must be what the app rendered before they existed,

@@ -635,6 +635,11 @@ textarea:focus-visible {
   font-family: 'Nuna Inter', ui-sans-serif, system-ui, sans-serif;
   background: var(--surface);
   color: var(--text);
+}
+/* Stitch's card shape: flat and square. Ledger is paper on a desk, so it keeps
+   the rounder card and the shadow it sets on :root; these would cover them,
+   being set on a descendant of <html>. */
+:root:not([data-look='ledger']) .app-shell {
   --card-radius: 0.125rem;
   --card-shadow: 0 1px 2px rgb(0 0 0 / 3%);
 }
@@ -752,16 +757,19 @@ textarea:focus-visible {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-.stitch-dashboard section, .stitch-dashboard li, .stitch-dashboard a {
+:root:not([data-look='ledger']) .stitch-dashboard section,
+:root:not([data-look='ledger']) .stitch-dashboard li,
+:root:not([data-look='ledger']) .stitch-dashboard a {
   border-radius: 0.125rem;
 }
 
-/* Square corners throughout the application, including portal menus. */
-*,
-*::before,
-*::after,
-*::-webkit-scrollbar-track,
-*::-webkit-scrollbar-thumb {
+/* Square corners throughout the application, including portal menus, for
+   every look but Ledger, whose rounded cards are part of the paper. */
+:root:not([data-look='ledger']) *,
+:root:not([data-look='ledger']) *::before,
+:root:not([data-look='ledger']) *::after,
+:root:not([data-look='ledger']) *::-webkit-scrollbar-track,
+:root:not([data-look='ledger']) *::-webkit-scrollbar-thumb {
   border-radius: 0 !important;
 }
 
