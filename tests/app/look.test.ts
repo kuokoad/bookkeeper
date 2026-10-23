@@ -168,6 +168,27 @@ describe('the CSS behind it', () => {
     expect(lookAttribute('classic')).toEqual({ 'data-look': 'classic' });
   });
 
+  it('gives Classic a dark of its own, through both routes into dark', () => {
+    // Stitch never repainted dark, so without these Classic after sunset is
+    // Standard after sunset, and a shop that chose it sees no choice at all.
+    // Once under the device query (guarded against an explicit Light), once
+    // under the explicit attribute, both telling the browser it is dark.
+    expect(CSS).toMatch(
+      /@media \(prefers-color-scheme: dark\)\s*\{\s*:root\[data-look='classic'\]:not\(\[data-theme='light'\]\)\s*\{\s*color-scheme: dark/,
+    );
+    expect(CSS).toMatch(/:root\[data-look='classic'\]\[data-theme='dark'\]\s*\{\s*color-scheme: dark/);
+    expect([...CSS.matchAll(/--surface-raised: oklch\(0\.31 0\.022 250\)/g)]).toHaveLength(2);
+
+    // Visibly not Standard's dark: a different ground and a different accent.
+    const standardDark = CSS.match(/:root\[data-theme='dark'\]\s*\{([^}]*)\}/)![1]!;
+    const classicDark = CSS.match(/:root\[data-look='classic'\]\[data-theme='dark'\]\s*\{([^}]*)\}/)![1]!;
+    for (const token of ['--surface', '--surface-raised', '--accent', '--sidebar']) {
+      const value = (body: string) => body.match(new RegExp(`${token}: ([^;]+);`))?.[1];
+      expect(value(classicDark), token).toBeDefined();
+      expect(value(classicDark), token).not.toBe(value(standardDark));
+    }
+  });
+
   it('leaves Ledger its paper: rounded cards with a shadow', () => {
     // Stitch flattens cards and squares every corner, from rules that beat
     // the tokens Ledger sets on :root. Each must step aside for Ledger, or it
