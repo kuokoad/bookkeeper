@@ -76,18 +76,6 @@
 
 ## Forms
 
-### Invalid fields never turn red, anywhere in the app
-
-**What:** Move the unlayered `* { border-color: var(--border); }` in `src/app/globals.css` into `@layer base`, then check every screen, since border colour classes that never applied will start to.
-
-**Why:** Unlayered CSS beats Tailwind's utilities, so `border-danger` on an invalid input never shows. The message under the field does, but the red box that should catch the eye is missing on every form.
-
-**Context:** Found in the browser check of the purchase-form validation PR on 2026-10-21 (computed border grey despite the class). `TextInput` in `src/components/ui/field.tsx` adds `border-danger` when `invalid`. `border-line-strong` inputs will get darker borders once utilities win.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### A half-typed date keeps the old one without saying so
 
 **What:** Make `DateField` show that the date in its boxes is not the date that will be saved, while a date is part-typed or impossible (31/09).
@@ -150,3 +138,16 @@ Prefer reusing the server's parsers (`src/domain/` `parseMoney`, `parseQty`) on 
 **Priority:** P2
 **Depends on:** None
 **Completed:** 2026-10-23, branch free-goods-delivery. `createPurchase` skips the journal entry when there is nothing to post and checks the books lock itself; `voidPurchase` already reversed only an entry that exists. The form's 0.00 refusal is gone, the purchase page explains a delivery with no entry, and the parity test pins that the four 0.00 rows and a free service now save, and that a free service inside the books lock is still refused.
+
+### Invalid fields never turn red, anywhere in the app
+
+**What:** Move the unlayered `* { border-color: var(--border); }` in `src/app/globals.css` into `@layer base`, then check every screen, since border colour classes that never applied will start to.
+
+**Why:** Unlayered CSS beats Tailwind's utilities, so `border-danger` on an invalid input never shows. The message under the field does, but the red box that should catch the eye is missing on every form.
+
+**Context:** Found in the browser check of the purchase-form validation PR on 2026-10-21 (computed border grey despite the class). `TextInput` in `src/components/ui/field.tsx` adds `border-danger` when `invalid`. `border-line-strong` inputs will get darker borders once utilities win.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+**Completed:** 2026-10-23, branch invalid-fields-turn-red. The rule now sits in `@layer base`, so every border colour class applies: invalid fields are red once left (a focused field keeps the accent focus border), the 62 `border-line-strong` controls get the darker border they always named, and alerts and badges get their tinted borders. The date field's frame moved to `border-line-strong` to match the inputs beside it. `tests/app/theme.test.ts` fails if the rule is unlayered again.

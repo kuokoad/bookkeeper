@@ -388,7 +388,7 @@ export function DateField({
         ref={fieldRef}
         className={cn(
           'date-input-frame flex h-10 items-center rounded-lg border bg-surface-raised px-2',
-          invalid ? 'border-danger' : 'border-line',
+          invalid ? 'border-danger' : 'border-line-strong',
           disabled && 'cursor-not-allowed opacity-60',
         )}
       >
