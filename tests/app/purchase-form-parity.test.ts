@@ -22,7 +22,8 @@ import { createUnit } from '@/services/units.service';
  * refuse before Save whatever Save would refuse. That promise lasts only as
  * long as the two stay in step, and the rendered tests cannot see the server:
  * they mock the action. A purchase that came to 0.00 slipped through exactly
- * that gap, passing the form and failing in the journal.
+ * that gap, passing the form and failing in the journal. (It saves on both
+ * sides now; the rows marked `saves` hold that, rather than mere agreement.)
  *
  * So each entry below goes through both: the form's reading, with products
  * loaded exactly as the page loads them, and the real `createPurchaseAction`
@@ -73,6 +74,8 @@ interface Case {
   date?: string;
   lockedBefore?: string;
   ghanaTaxes?: boolean;
+  /** Pinned, where agreeing is not enough: both sides refusing would also agree. */
+  saves?: boolean;
 }
 
 let context: TestDatabase;
@@ -188,8 +191,9 @@ const CASES: Case[] = [
   { name: 'a line discount', lines: [{ qty: '2', cost: '3.00', discount: '1.50' }] },
   { name: 'a line discount larger than the line', lines: [{ qty: '2', cost: '3.00', discount: '7.00' }] },
   { name: 'a negative line discount', lines: [{ qty: '2', cost: '3.00', discount: '-1.00' }] },
-  { name: 'a discount of the whole line, alone', lines: [{ qty: '2', cost: '3.00', discount: '6.00' }] },
-  { name: 'free goods alone', lines: [{ qty: '2', cost: '0' }] },
+  { name: 'a discount of the whole line, alone', lines: [{ qty: '2', cost: '3.00', discount: '6.00' }], saves: true },
+  { name: 'free goods alone', lines: [{ qty: '2', cost: '0' }], saves: true },
+  { name: 'a free service alone', lines: [{ product: 'cartage', qty: '1', cost: '0' }], saves: true },
   { name: 'free goods beside paid ones', lines: [{ qty: '2', cost: '0' }, { qty: '1', cost: '3.00' }] },
   { name: 'an empty cost box', lines: [{ qty: '2', cost: '' }] },
   { name: 'a zero quantity', lines: [{ qty: '0', cost: '3.00' }] },
@@ -203,13 +207,14 @@ const CASES: Case[] = [
   { name: 'a free service beside paid goods', lines: [{ product: 'cartage', qty: '1', cost: '0' }, { qty: '2', cost: '3.00' }] },
   { name: 'an invoice discount', lines: [{ qty: '2', cost: '3.00' }], invoiceDiscount: '1.00' },
   { name: 'an invoice discount larger than the lines', lines: [{ qty: '2', cost: '3.00' }], invoiceDiscount: '6.01' },
-  { name: 'an invoice discount of the whole purchase', lines: [{ qty: '2', cost: '3.00' }], invoiceDiscount: '6.00' },
+  { name: 'an invoice discount of the whole purchase', lines: [{ qty: '2', cost: '3.00' }], invoiceDiscount: '6.00', saves: true },
   { name: 'part paid', lines: [{ qty: '2', cost: '3.00' }], pay: '2.00' },
   { name: 'paying all of it', lines: [{ qty: '2', cost: '3.00' }], pay: '6.00' },
   { name: 'paying more than the total', lines: [{ qty: '2', cost: '3.00' }], pay: '6.01' },
   { name: 'the Ghana taxes', lines: [{ qty: '10', cost: '86.00' }], ghanaTaxes: true },
   { name: 'paying all of it with tax on top', lines: [{ qty: '10', cost: '86.00' }], pay: '1032.00', ghanaTaxes: true },
-  { name: 'taxed, then discounted to nothing', lines: [{ qty: '2', cost: '3.00' }], invoiceDiscount: '6.00', ghanaTaxes: true },
+  { name: 'taxed, then discounted to nothing', lines: [{ qty: '2', cost: '3.00' }], invoiceDiscount: '6.00', ghanaTaxes: true, saves: true },
+  { name: 'a free service inside the books lock', lines: [{ product: 'cartage', qty: '1', cost: '0' }], lockedBefore: '2026-08-31', saves: false },
   { name: 'a date that does not exist', lines: [{ qty: '2', cost: '3.00' }], date: '2026-02-30' },
   { name: 'a date inside the books lock', lines: [{ qty: '2', cost: '3.00' }], lockedBefore: '2026-08-31' },
   { name: 'the lock date itself', lines: [{ qty: '2', cost: '3.00' }], date: '2026-08-31', lockedBefore: '2026-08-31' },
@@ -238,6 +243,7 @@ describe('the new-purchase form and Save agree', () => {
     const stored = await saveStores(c);
 
     expect(reading.acceptable).toBe(stored !== null);
+    if (c.saves !== undefined) expect(stored !== null).toBe(c.saves);
     if (stored !== null) {
       expect(reading.subtotal).toBe(stored.subtotal);
       expect(reading.total).toBe(stored.total);
