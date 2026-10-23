@@ -18,6 +18,7 @@ import {
   suppliers,
 } from '@/db/schema';
 import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
+import { assertPeriodOpen } from '@/domain/accounting/period-lock';
 import { credit, debit, type DraftLine } from '@/domain/accounting/journal';
 import {
   add,
@@ -33,7 +34,7 @@ import {
 import { extendPrice, qty as makeQty, type Qty } from '@/domain/quantity';
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors';
 import { writeAudit } from './audit.service';
-import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
+import { postJournalEntry, readLockDate, reverseJournalEntry, type Actor } from './journal.service';
 import { readBatchSplits, recordStockMovement } from './inventory.service';
 import { resolveLineUnit } from './units.service';
 import type { Allocation } from '@/domain/inventory/batches';
@@ -101,7 +102,8 @@ export interface CreatedPurchase {
   total: Minor;
   paid: Minor;
   outstanding: Minor;
-  journalEntryId: number;
+  /** Null for a delivery that came to 0.00: there was nothing to post. */
+  journalEntryId: number | null;
 }
 
 function accountIdByCode(tx: Tx, code: string): number {
@@ -390,24 +392,38 @@ export function createPurchase(
       );
     }
 
-    const posted = postJournalEntry(
-      tx,
-      {
-        entryDate: input.businessDate,
-        sourceType: 'PURCHASE',
-        sourceId: purchase.id,
-        memo: `${purchaseNo} — purchase from ${supplier.name}`,
-        lines: journalLines,
-        occurredAt,
-        isDemo: input.isDemo ?? false,
-      },
-      actor,
-    );
+    /**
+     * A delivery worth nothing posts nothing.
+     *
+     * Free goods alone, or a purchase discounted to 0.00, bring stock in at no
+     * cost and leave nothing paid or owed, so there is no line to post and an
+     * empty entry would be refused. The purchase is still a document, and the
+     * books lock still applies: with no entry, and for a free service no stock
+     * movement either, nothing else would check it.
+     */
+    let posted: { entryId: number; entryNo: string } | null = null;
+    if (journalLines.length === 0) {
+      assertPeriodOpen(input.businessDate, readLockDate(tx));
+    } else {
+      posted = postJournalEntry(
+        tx,
+        {
+          entryDate: input.businessDate,
+          sourceType: 'PURCHASE',
+          sourceId: purchase.id,
+          memo: `${purchaseNo} — purchase from ${supplier.name}`,
+          lines: journalLines,
+          occurredAt,
+          isDemo: input.isDemo ?? false,
+        },
+        actor,
+      );
 
-    tx.update(purchases)
-      .set({ journalEntryId: posted.entryId, updatedAt: occurredAt })
-      .where(eq(purchases.id, purchase.id))
-      .run();
+      tx.update(purchases)
+        .set({ journalEntryId: posted.entryId, updatedAt: occurredAt })
+        .where(eq(purchases.id, purchase.id))
+        .run();
+    }
 
     writeAudit(tx, {
       action: 'CREATE',
@@ -421,7 +437,7 @@ export function createPurchase(
         paidMinor: tendered,
         outstandingMinor: outstanding,
         supplierId: input.supplierId,
-        entryNo: posted.entryNo,
+        entryNo: posted?.entryNo ?? null,
       },
       at: occurredAt,
     });
@@ -432,7 +448,7 @@ export function createPurchase(
       total,
       paid: tendered,
       outstanding,
-      journalEntryId: posted.entryId,
+      journalEntryId: posted?.entryId ?? null,
     };
   });
 }

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
 import {
+  businessSettings,
+  journalEntries,
   paymentAccounts,
   products,
   purchaseItems,
@@ -487,6 +489,82 @@ describe('voiding a purchase', () => {
     expect(getSupplierBalance(context.db, supplierId)).toBe(5_000);
     expect(getAccountBalanceByCode(context.db, '1001')).toBe(0);
     assertBooksHealthy('void supplier payment');
+  });
+});
+
+describe('a delivery that came free', () => {
+  /**
+   * Free samples, or the thirteenth tin, with nothing else on the purchase.
+   *
+   * A delivery worth 0.00 posts no journal lines, and an empty entry is
+   * refused, so this could not be recorded at all: the form had to turn it
+   * away. Now it is a purchase with stock and no entry.
+   */
+  function freeDelivery(productId: number, businessDate = TODAY) {
+    const supplierId = createSupplier(context.db, { name: 'Depot' }, ACTOR);
+    return createPurchase(
+      context.db,
+      { supplierId, businessDate, items: [{ productId, qty: u(10), unitCost: m(0) }], tenders: [] },
+      ACTOR,
+    );
+  }
+
+  const entriesFor = (purchaseId: number) =>
+    context.db
+      .select()
+      .from(journalEntries)
+      .where(and(eq(journalEntries.sourceType, 'PURCHASE'), eq(journalEntries.sourceId, purchaseId)))
+      .all();
+
+  it('brings the stock in at no cost, posts nothing, and pulls the average cost down', () => {
+    const id = makeProduct('Milo 400g');
+    const supplierId = createSupplier(context.db, { name: 'Kasapreko Depot' }, ACTOR);
+    createPurchase(
+      context.db,
+      { supplierId, businessDate: TODAY, items: [{ productId: id, qty: u(10), unitCost: m(500) }], tenders: [] },
+      ACTOR,
+    );
+
+    const free = freeDelivery(id);
+
+    expect(free.total).toBe(0);
+    expect(free.journalEntryId).toBeNull();
+    expect(entriesFor(free.purchaseId)).toHaveLength(0);
+    // 20 tins now worth what the 10 paid ones cost: 2.50 each, not 5.00.
+    expect(getProduct(context.db, id).qtyOnHand).toBe(20_000);
+    expect(getProduct(context.db, id).stockValue).toBe(5_000);
+    assertBooksHealthy('free delivery');
+  });
+
+  it('can be voided: the stock goes back out, and there is still nothing to post', () => {
+    const id = makeProduct('Milo 400g');
+    const free = freeDelivery(id);
+
+    const voided = voidPurchase(context.db, free.purchaseId, 'Samples went to the wrong shop', ACTOR);
+
+    expect(getProduct(context.db, id).qtyOnHand).toBe(0);
+    expect(getProduct(context.db, id).stockValue).toBe(0);
+    expect(entriesFor(voided.reversalPurchaseId)).toHaveLength(0);
+    expect(
+      context.db.select().from(purchases).where(eq(purchases.id, free.purchaseId)).get()?.status,
+    ).toBe('VOIDED');
+    assertBooksHealthy('free delivery voided');
+  });
+
+  it('still keeps to the books lock, though no entry is posted to check it', () => {
+    // A free service moves no stock either, so nothing else would refuse it.
+    const cartage = createProduct(
+      context.db,
+      { name: 'Cartage to site', costPrice: m(5_000), sellingPrice: m(0), unit: 'pcs', trackInventory: false },
+      ACTOR,
+    );
+    context.db
+      .update(businessSettings)
+      .set({ booksLockedBefore: '2026-08-31' })
+      .where(eq(businessSettings.id, 1))
+      .run();
+
+    expect(() => freeDelivery(cartage, TODAY)).toThrow(/period locked/i);
   });
 });
 

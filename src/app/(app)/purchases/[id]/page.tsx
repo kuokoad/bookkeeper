@@ -223,7 +223,11 @@ export default async function PurchaseDetailPage({
       <h2 className="mb-3 text-sm font-semibold text-content">Accounting entry</h2>
       {lines.length === 0 ? (
         <Card>
-          <p className="text-sm text-content-muted">No accounting entry is linked to this purchase.</p>
+          <p className="text-sm text-content-muted">
+            {purchase.totalMinor === 0
+              ? 'Nothing to post: this delivery came to 0.00, so no money was paid or owed.'
+              : 'No accounting entry is linked to this purchase.'}
+          </p>
         </Card>
       ) : (
         <>
