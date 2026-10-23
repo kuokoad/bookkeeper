@@ -47,6 +47,24 @@ export interface SettingsFormValues {
   financialYearStartMonth: number;
 }
 
+// Ground, card, chrome, accent for each look, in light and dark: the
+// --surface, --surface-raised, --sidebar and --accent tokens in globals.css,
+// converted from oklch. Change a token there and its swatch here goes stale.
+const LOOK_SWATCHES: Record<Look, Record<'light' | 'dark', string[]>> = {
+  default: {
+    light: ['#f6faff', '#ffffff', '#141d23', '#006947'],
+    dark: ['#111417', '#1a1d21', '#141d23', '#3fbe90'],
+  },
+  ledger: {
+    light: ['#eae0d1', '#faf6ee', '#36281d', '#4d744e'],
+    dark: ['#1b140f', '#282019', '#36281d', '#81b482'],
+  },
+  classic: {
+    light: ['#fbfcfd', '#ffffff', '#1b2025', '#00885e'],
+    dark: ['#1f2730', '#28313b', '#0f171f', '#65cead'],
+  },
+};
+
 const MONTHS = [
   'January',
   'February',
@@ -357,19 +375,27 @@ export function SettingsForm({
                 <span className="mt-0.5 block text-xs text-content-muted">
                   {LOOK_LABELS[option].blurb}
                 </span>
-                {/* A swatch, so the difference is visible before saving rather
-                    than only after. Hard-coded rather than token-driven: it has
-                    to show the look you are NOT currently wearing. */}
-                <span className="mt-2 flex gap-1" aria-hidden="true">
-                  {(option === 'ledger'
-                    ? ['#e8dcc8', '#fdfaf3', '#453729', '#7c9a6d']
-                    : ['#f7f8fa', '#ffffff', '#2b3038', '#2f9e77']
-                  ).map((swatch) => (
-                    <span
-                      key={swatch}
-                      className="h-4 w-6 rounded border border-line"
-                      style={{ backgroundColor: swatch }}
-                    />
+                {/* Swatches, so the difference is visible before saving rather
+                    than only after, in both brightnesses: a look is chosen for
+                    the whole shop, and the owner's phone may be dark while the
+                    till is light. Hard-coded rather than token-driven: they
+                    have to show the look you are NOT currently wearing. */}
+                <span className="mt-2 grid w-max grid-cols-[auto_auto] items-center gap-x-2 gap-y-1" aria-hidden="true">
+                  {(['light', 'dark'] as const).map((brightness) => (
+                    <span key={brightness} className="contents">
+                      <span className="text-xs text-content-muted">
+                        {brightness === 'light' ? 'Light' : 'Dark'}
+                      </span>
+                      <span className="flex gap-1">
+                        {LOOK_SWATCHES[option][brightness].map((swatch, index) => (
+                          <span
+                            key={index}
+                            className="h-4 w-6 rounded border border-line"
+                            style={{ backgroundColor: swatch }}
+                          />
+                        ))}
+                      </span>
+                    </span>
                   ))}
                 </span>
               </span>
