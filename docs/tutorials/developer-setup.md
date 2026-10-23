@@ -68,7 +68,7 @@ That is the working result. Everything below is orientation.
 npm run verify
 ```
 
-Typecheck, lint, a migration check, then 1,797 tests. Takes a couple of minutes and
+Typecheck, lint, a migration check, then 1,798 tests. Takes a couple of minutes and
 should be entirely green.
 
 ```bash
