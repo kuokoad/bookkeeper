@@ -23,9 +23,10 @@ import {
 } from '@/services/product-import.service';
 import { IMPORT_FIELDS, type ColumnMap, type ProductImportState } from '@/lib/product-import-fields';
 import { readSpreadsheet } from '@/lib/spreadsheet';
+import { toBusinessDate } from '@/lib/format';
 import { parseMoney } from '@/domain/money';
 import { parsePositiveQty, parseQty } from '@/domain/quantity';
-import { isDomainError } from '@/domain/errors';
+import { ForbiddenError, isDomainError } from '@/domain/errors';
 import type { FormState } from './auth.actions';
 
 /**
@@ -313,6 +314,7 @@ export async function productImportAction(
   const intent = formData.get('intent');
 
   let imported: number;
+  let withStock: boolean;
   try {
     if (intent === 'upload') {
       const file = formData.get('file');
@@ -360,7 +362,19 @@ export async function productImportAction(
           : {}),
       };
     }
-    imported = importProducts(db, cells, map, packUnit, { id: actor.id, username: actor.username });
+    // Opening stock is a stock adjustment, so it needs the right to record one.
+    if (map.openingQty !== undefined) {
+      await requirePermission('inventory', 'create').catch((error: unknown) => {
+        if (!isDomainError(error) || error.code !== 'FORBIDDEN') throw error;
+        throw new ForbiddenError(
+          'import opening stock',
+          'You can add products but not record stock. Set Opening quantity to "Not imported" to import the products alone.',
+        );
+      });
+    }
+    const result = importProducts(db, cells, map, packUnit, toBusinessDate(), { id: actor.id, username: actor.username });
+    imported = result.created;
+    withStock = result.adjustmentNo !== null;
   } catch (error) {
     if (!isDomainError(error)) throw error;
     // A failed upload must not leave the last file's columns on screen under the new error.
@@ -371,7 +385,8 @@ export async function productImportAction(
   revalidatePath('/products');
   revalidatePath('/products/units');
   revalidatePath('/inventory');
-  redirect(`/products?imported=${imported}`);
+  revalidatePath('/accounting');
+  redirect(`/products?imported=${imported}${withStock ? '&openingStock=1' : ''}`);
 }
 
 // --- categories -----------------------------------------------------------

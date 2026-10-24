@@ -18,9 +18,17 @@ vi.mock('@/db/client', () => ({
     return database.current;
   },
 }));
-vi.mock('@/lib/auth/current-user', () => ({
-  requirePermission: async () => ({ id: 1, username: 'kwame' }),
-}));
+// Modules the signed-in user may NOT act on; empty means everything is allowed.
+const denied = vi.hoisted(() => new Set<string>());
+vi.mock('@/lib/auth/current-user', async () => {
+  const { ForbiddenError } = await import('@/domain/errors');
+  return {
+    requirePermission: async (module: string, action: string) => {
+      if (denied.has(module)) throw new ForbiddenError(`${action} on ${module}`);
+      return { id: 1, username: 'kwame' };
+    },
+  };
+});
 vi.mock('next/cache', () => ({ revalidatePath: () => undefined }));
 vi.mock('next/navigation', () => ({
   redirect: (url: string) => {
@@ -38,6 +46,7 @@ beforeEach(() => {
     .prepare('INSERT INTO users (id, username, display_name, role, password_hash) VALUES (?,?,?,?,?)')
     .run(1, 'kwame', 'Kwame', 'OWNER', 'scrypt$1$2$3$a$b');
   database.current = context.db;
+  denied.clear();
 });
 afterEach(() => context.cleanup());
 
@@ -73,5 +82,28 @@ describe('product import action', () => {
   it('imports when the columns are the ones previewed', async () => {
     await expect(post('import', '1', '1')).rejects.toThrow('REDIRECT /products?imported=1');
     expect(context.db.select().from(products).all().map((p) => p.sellingPriceMinor)).toEqual([240]);
+  });
+
+  it('will not post opening stock for someone who may not record stock adjustments', async () => {
+    const form = new FormData();
+    form.set('intent', 'import');
+    form.set('cells', JSON.stringify([['name', 'price', 'cost', 'stock'], ['Bowl', '2.40', '1.50', '10']]));
+    for (const prefix of ['column_', 'previewed_']) {
+      form.set(`${prefix}name`, '0');
+      form.set(`${prefix}sellingPrice`, '1');
+      form.set(`${prefix}costPrice`, '2');
+      form.set(`${prefix}openingQty`, '3');
+    }
+    form.set('packUnit', 'pack');
+    form.set('previewedPackUnit', 'pack');
+    denied.add('inventory');
+
+    const state = await productImportAction({}, form);
+    expect(state.error).toMatch(/not record stock/);
+    expect(context.db.select().from(products).all()).toHaveLength(0);
+
+    denied.clear();
+    await expect(productImportAction({}, form)).rejects.toThrow('REDIRECT /products?imported=1&openingStock=1');
+    expect(context.db.select().from(products).all().map((p) => p.qtyOnHandMilli)).toEqual([10_000]);
   });
 });

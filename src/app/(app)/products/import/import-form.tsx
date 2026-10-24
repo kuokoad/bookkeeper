@@ -76,6 +76,13 @@ export function ImportForm() {
           </div>
           <SubmitButton intent="upload" label="Read file" busy="Reading…" variant="secondary" />
         </div>
+        <p className="mt-3 text-sm text-content-muted">
+          Starting from scratch?{' '}
+          <a href="/products/import/template" className="font-medium text-accent underline">
+            Download the template
+          </a>
+          , fill it in, and read it back here.
+        </p>
       </form>
 
       {state.cells && (
@@ -103,8 +110,8 @@ export function ImportForm() {
           <section className="rounded-xl border border-line bg-surface-raised p-4">
             <h2 className="mb-1 font-semibold text-content">Columns in {state.fileName}</h2>
             <p className="mb-4 text-sm text-content-muted">
-              Check each field is read from the right column. Stock quantities are not imported —
-              record opening stock as a stock adjustment afterwards.
+              Check each field is read from the right column. Opening quantities go in as one
+              opening stock adjustment, valued at the opening value or, where none is given, at cost.
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {IMPORT_FIELDS.map(({ key, label }) => (
@@ -159,6 +166,12 @@ export function ImportForm() {
                     </>
                   )}
                   .
+                  {preview.openingValue > 0 && (
+                    <>
+                      {' '}
+                      Opening stock worth <strong>{money(preview.openingValue)}</strong> goes to Inventory.
+                    </>
+                  )}
                 </p>
                 <div className="flex gap-2">
                   <Link href="/products">
@@ -187,6 +200,9 @@ export function ImportForm() {
                   <TH>Pack</TH>
                   <TH numeric>Pack cost</TH>
                   <TH numeric>Pack price</TH>
+                  <TH>Category</TH>
+                  <TH numeric>Opening qty</TH>
+                  <TH numeric>Opening value</TH>
                   <TH>Notes</TH>
                 </THead>
                 <tbody>
@@ -212,6 +228,15 @@ export function ImportForm() {
                       </TD>
                       <TD numeric>{money(row.altCostPrice)}</TD>
                       <TD numeric>{money(row.altSellingPrice)}</TD>
+                      <TD>{row.categoryName ?? ''}</TD>
+                      <TD numeric>
+                        {row.openingQty !== null
+                          ? `${formatQty(row.openingQty)} ${row.unit}`
+                          : row.trackInventory
+                            ? ''
+                            : 'Not tracked'}
+                      </TD>
+                      <TD numeric>{money(row.openingValue)}</TD>
                       <TD className="max-w-md whitespace-normal text-xs">
                         {row.problems.map((problem) => (
                           <p key={problem} className="font-medium text-danger">

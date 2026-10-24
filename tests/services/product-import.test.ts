@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
-import { products, stockLedger, units } from '@/db/schema';
+import { journalEntries, products, stockAdjustments, stockLedger, units } from '@/db/schema';
+import { ACCOUNT_CODES } from '@/domain/accounting/chart-of-accounts';
 import { minor } from '@/domain/money';
 import { ValidationError } from '@/domain/errors';
-import { createProduct } from '@/services/catalog.service';
-import { guessColumns, importProducts, previewProductImport } from '@/services/product-import.service';
+import { createCategory, createProduct } from '@/services/catalog.service';
+import { verifyProductStock } from '@/services/inventory.service';
+import {
+  guessColumns,
+  importProducts,
+  previewProductImport,
+  TEMPLATE_HEADINGS,
+} from '@/services/product-import.service';
+import { getAccountBalanceByCode } from '@/services/reporting/balances.service';
+import { checkBooksIntegrity } from '@/services/reporting/ledger.service';
+import { IMPORT_FIELDS } from '@/lib/product-import-fields';
 
 /**
  * Importing a supplier price list, shaped like the shop's own JCG sheet: two
@@ -15,6 +25,7 @@ import { guessColumns, importProducts, previewProductImport } from '@/services/p
 
 let context: TestDatabase;
 const ACTOR = { id: 1, username: 'kwame' };
+const TODAY = '2026-10-24';
 
 const SHEET: string[][] = [
   ['PRODUCT', 'PRODUCT CODE', 'cost price', '', 'COST PRICE  ', 'PIECES PER PACK', 'COST PER PACK', 'SELLING PRICE PER PACK'],
@@ -87,7 +98,7 @@ describe('product import preview', () => {
 
 describe('importing products', () => {
   it('creates the ready rows with their pack unit and no stock, and skips the rest', () => {
-    expect(importProducts(context.db, SHEET, map(), 'pack', ACTOR)).toBe(2);
+    expect(importProducts(context.db, SHEET, map(), 'pack', TODAY, ACTOR)).toEqual({ created: 2, adjustmentNo: null });
 
     const created = context.db.select().from(products).all();
     expect(created.map((p) => [p.name, p.sku, p.unit, p.altUnit, p.altFactorMilli, p.costPriceMinor, p.sellingPriceMinor])).toEqual([
@@ -99,9 +110,9 @@ describe('importing products', () => {
   });
 
   it('re-checks on import, so a code taken since the preview cannot slip in twice', () => {
-    importProducts(context.db, SHEET, map(), 'pack', ACTOR);
+    importProducts(context.db, SHEET, map(), 'pack', TODAY, ACTOR);
     // Same file again: every code is now taken, so nothing is ready.
-    expect(() => importProducts(context.db, SHEET, map(), 'pack', ACTOR)).toThrow(ValidationError);
+    expect(() => importProducts(context.db, SHEET, map(), 'pack', TODAY, ACTOR)).toThrow(ValidationError);
     expect(context.db.select().from(products).all()).toHaveLength(2);
   });
 
@@ -111,7 +122,98 @@ describe('importing products', () => {
       "CREATE TRIGGER refuse_bag BEFORE INSERT ON products WHEN NEW.name = 'Bag' BEGIN SELECT RAISE(ABORT, 'disk full'); END",
     );
     const sheet = [['name', 'selling price'], ['Tin', '5'], ['Bag', '6']];
-    expect(() => importProducts(context.db, sheet, guessColumns(sheet[0]!), 'pack', ACTOR)).toThrow('disk full');
+    expect(() => importProducts(context.db, sheet, guessColumns(sheet[0]!), 'pack', TODAY, ACTOR)).toThrow('disk full');
     expect(context.db.select().from(products).all()).toHaveLength(0);
+  });
+});
+
+describe('importing opening stock', () => {
+  const HEAD = ['Product name', 'Unit', 'Cost price', 'Selling price', 'Category', 'Track stock', 'Opening quantity', 'Opening value'];
+  const sheet = (...rows: string[][]) => [HEAD, ...rows];
+  const run = (rows: string[][]) => importProducts(context.db, rows, guessColumns(rows[0]!), 'pack', TODAY, ACTOR);
+
+  it('the template headings are all recognised, one field each', () => {
+    const guessed = guessColumns(TEMPLATE_HEADINGS);
+    expect(Object.keys(guessed).sort()).toEqual(IMPORT_FIELDS.map(({ key }) => key).sort());
+  });
+
+  it('puts opening stock through one opening adjustment, with the books balanced', () => {
+    const result = run(
+      sheet(
+        ['Milo 400g', '', '35.00', '45.00', '', '', '48', '1680.00'],
+        // No value given: quantity times cost price, 2.5 kg x 12.50 = 31.25.
+        ['Rice', 'kg', '12.50', '15.00', '', '', '2.5', ''],
+        ['Sugar', '', '8.00', '10.00', '', '', '', ''],
+      ),
+    );
+
+    expect(result.created).toBe(3);
+    expect(result.adjustmentNo).not.toBeNull();
+    const adjustments = context.db.select().from(stockAdjustments).all();
+    expect(adjustments.map((a) => [a.reason, a.businessDate])).toEqual([['OPENING_STOCK', TODAY]]);
+    expect(context.db.select().from(journalEntries).all()).toHaveLength(1);
+    expect(context.db.select().from(stockLedger).all()).toHaveLength(2);
+
+    const byName = new Map(context.db.select().from(products).all().map((p) => [p.name, p]));
+    expect(byName.get('Milo 400g')).toMatchObject({ qtyOnHandMilli: 48_000, stockValueMinor: 168_000 });
+    expect(byName.get('Rice')).toMatchObject({ qtyOnHandMilli: 2_500, stockValueMinor: 3_125 });
+    expect(byName.get('Sugar')).toMatchObject({ qtyOnHandMilli: 0, stockValueMinor: 0 });
+    for (const product of byName.values()) expect(verifyProductStock(context.db, product.id).ok).toBe(true);
+
+    expect(getAccountBalanceByCode(context.db, ACCOUNT_CODES.INVENTORY)).toBe(171_125);
+    expect(checkBooksIntegrity(context.db).trialBalanced).toBe(true);
+  });
+
+  it('shows the opening stock and its total in the preview before anything is written', () => {
+    const rows = sheet(['Rice', 'kg', '12.50', '15.00', '', '', '2.5', ''], ['Milo', '', '35', '45', '', '', '2', '70']);
+    const preview = previewProductImport(context.db, rows, guessColumns(rows[0]!), 'pack');
+    expect(preview.rows[0]).toMatchObject({ openingQty: 2_500, openingValue: 3_125 });
+    expect(preview.rows[0]!.notes).toContain('Opening stock valued at cost: 31.25');
+    expect(preview.openingValue).toBe(10_125);
+    expect(context.db.select().from(stockLedger).all()).toHaveLength(0);
+  });
+
+  it('skips opening stock it cannot value or count honestly, with the reason', () => {
+    const rows = sheet(
+      ['Soap', 'pcs', '1.00', '2.00', '', '', '1.5', ''],
+      ['Bread', '', '5.00', '6.00', '', 'no', '10', ''],
+      ['Tin', '', '', '6.00', '', '', '10', ''],
+      ['Ghost', '', '1.00', '2.00', '', '', '', '50.00'],
+      ['Minus', '', '1.00', '2.00', '', '', '-3', ''],
+      ['Maybe', '', '1.00', '2.00', '', 'sometimes', '', ''],
+    );
+    const preview = previewProductImport(context.db, rows, guessColumns(rows[0]!), 'pack');
+    expect(preview.rows.map((row) => row.problems)).toEqual([
+      ['Opening quantity: pcs is counted in whole numbers, and 1.5 is not one.'],
+      ['Only a product whose stock is tracked can have opening stock.'],
+      ['Opening stock needs a cost price or an opening value.'],
+      ['Opening value needs the opening quantity it is for.'],
+      ['Opening quantity cannot be negative.'],
+      ['Track stock: enter yes or no.'],
+    ]);
+    expect(preview.openingValue).toBe(0);
+  });
+
+  it('files products under an existing category and refuses one that is not on the list', () => {
+    createCategory(context.db, { name: 'Drinks' }, ACTOR);
+    const rows = sheet(['Milo', '', '35', '45', 'drinks', '', '', ''], ['Bread', '', '5', '6', 'Bakery', 'No', '', '']);
+    const preview = previewProductImport(context.db, rows, guessColumns(rows[0]!), 'pack');
+    expect(preview.rows[0]).toMatchObject({ categoryName: 'Drinks', problems: [] });
+    expect(preview.rows[1]!.problems).toEqual(['Category Bakery is not on your Categories list.']);
+
+    run(rows);
+    const [milo] = context.db.select().from(products).all();
+    expect(milo).toMatchObject({ name: 'Milo', trackInventory: true });
+    expect(milo!.categoryId).not.toBeNull();
+  });
+
+  it('a product that fails takes the opening stock of the whole file with it', () => {
+    context.connection.exec(
+      "CREATE TRIGGER refuse_bag BEFORE INSERT ON products WHEN NEW.name = 'Bag' BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    );
+    expect(() => run(sheet(['Tin', '', '1', '5', '', '', '10', ''], ['Bag', '', '1', '6', '', '', '', '']))).toThrow('disk full');
+    expect(context.db.select().from(stockAdjustments).all()).toHaveLength(0);
+    expect(context.db.select().from(journalEntries).all()).toHaveLength(0);
+    expect(getAccountBalanceByCode(context.db, ACCOUNT_CODES.INVENTORY)).toBe(0);
   });
 });
