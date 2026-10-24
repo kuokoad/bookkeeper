@@ -46,6 +46,10 @@ Set-Location $root
 Remove-Item Env:NODE_ENV -ErrorAction SilentlyContinue
 # A git that wants a password must fail, not wait for a keyboard nobody is at.
 $env:GIT_TERMINAL_PROMPT = "0"
+# Run by hand, git may refuse a folder an Administrator cloned ("dubious ownership"). The app sets this too.
+$env:GIT_CONFIG_COUNT = "1"
+$env:GIT_CONFIG_KEY_0 = "safe.directory"
+$env:GIT_CONFIG_VALUE_0 = $root -replace '\\', '/'
 
 $startedAt = (Get-Date).ToUniversalTime().ToString("o")
 $from = (& git rev-parse HEAD).Trim()

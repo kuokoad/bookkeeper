@@ -25,8 +25,23 @@ const run = promisify(execFile);
 export const UPDATE_DATA_DIR = dirname(resolve(process.cwd(), env.DATABASE_PATH));
 export const UPDATE_STATUS_PATH = join(UPDATE_DATA_DIR, 'update-status.json');
 
-/** A git that wants a password fails at once instead of waiting for a keyboard. */
-const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+/**
+ * The environment every git call here runs in. A git that wants a password
+ * fails at once instead of waiting for a keyboard. And the folder is marked
+ * safe: the shop PC is cloned from an Administrator PowerShell, so Windows
+ * makes the Administrators group its owner, and git refuses a folder owned by
+ * anyone but the user running it ("dubious ownership"), which the app is.
+ * Environment config counts as command-line scope, which git trusts for this.
+ */
+export function gitEnv(cwd: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'safe.directory',
+    GIT_CONFIG_VALUE_0: cwd.replace(/\\/g, '/'),
+  };
+}
 
 export interface PendingChange {
   hash: string;
@@ -74,7 +89,7 @@ export function updateUnsupportedReason(
 }
 
 async function git(cwd: string, args: string[], timeout = 15_000): Promise<string> {
-  const { stdout } = await run('git', args, { cwd, env: GIT_ENV, timeout, windowsHide: true });
+  const { stdout } = await run('git', args, { cwd, env: gitEnv(cwd), timeout, windowsHide: true });
   return stdout.trim();
 }
 
@@ -173,7 +188,7 @@ export function startUpdate(options: { cwd: string; port: number; dataDir: strin
         '-StatusPath',
         statusPath,
       ],
-      { cwd: options.cwd, detached: true, stdio: ['ignore', log, log], windowsHide: true },
+      { cwd: options.cwd, env: gitEnv(options.cwd), detached: true, stdio: ['ignore', log, log], windowsHide: true },
     );
     child.unref();
   } finally {

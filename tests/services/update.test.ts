@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   UPDATE_STALE_AFTER_MS,
   checkForUpdates,
+  gitEnv,
   readUpdateStatus,
   updateUnsupportedReason,
   type UpdateStatus,
@@ -88,6 +89,20 @@ describe('checking for updates', { timeout: GIT_TIMEOUT }, () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/git clone/);
+  });
+});
+
+describe('a copy cloned from an Administrator PowerShell', () => {
+  // Windows makes the Administrators group the owner, and git refuses a folder
+  // owned by anyone but its user unless safe.directory names it, and only in a
+  // scope git trusts for that: not the repository's own config.
+  it('marks the app folder safe at the command-line scope git trusts', () => {
+    const scoped = execFileSync('git', ['config', '--show-scope', '--get-all', 'safe.directory'], {
+      cwd: dir,
+      env: gitEnv(dir),
+      encoding: 'utf8',
+    });
+    expect(scoped.trim().split(/\r?\n/)).toContain(`command\t${dir.replace(/\\/g, '/')}`);
   });
 });
 
