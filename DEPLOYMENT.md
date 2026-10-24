@@ -364,6 +364,10 @@ while this happens. Only the owner sees the buttons. If the install fails, the
 app is put back on the version it was running, and the details go to
 `data/update.log`.
 
+You can tell an update worked when the panel says **Last update installed**,
+the version number under **Update the app** has changed, and **Check for
+updates** then says this is the newest version.
+
 This only works when the shop PC was set up with `git clone` and can reach
 the repository. If the repository is private, sign in to git once from a
 terminal on that PC so the credentials are saved. The app never asks for a
