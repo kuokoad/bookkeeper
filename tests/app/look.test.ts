@@ -49,8 +49,8 @@ function currentAsInput(): SettingsInput {
 }
 
 describe('choosing a look', () => {
-  it('offers exactly two', () => {
-    expect([...LOOKS]).toEqual(['default', 'ledger']);
+  it('offers exactly three', () => {
+    expect([...LOOKS]).toEqual(['default', 'ledger', 'classic']);
   });
 
   it('puts nothing on the page for the default look', () => {
@@ -148,6 +148,76 @@ describe('the CSS behind it', () => {
     // one, a third of the combinations would be wrong.
     const occurrences = [...CSS.matchAll(/--surface-raised: oklch\(0\.25 0\.018 64\)/g)].length;
     expect(occurrences).toBe(2);
+  });
+
+  it('keeps the Stitch colours off every look but Standard', () => {
+    // The shell overrides sit on a descendant of <html>, so without a guard
+    // they beat whatever a look paints on :root. That is how light Ledger came
+    // out Stitch blue-grey and green instead of sand and sage, and how Classic
+    // would have shown nothing of its own.
+    const overrides = [...CSS.matchAll(/^\s*([^\n{]*\.(?:app-shell|stitch-sidebar))\s*\{[^}]*--(?:surface|accent|sidebar):/gm)];
+    expect(overrides.length).toBe(3);
+    for (const [, selector] of overrides) {
+      expect(selector, selector).toContain(':not([data-look])');
+    }
+  });
+
+  it('keeps Classic once chosen and marks the page with it', () => {
+    updateSettings(context.db, { ...currentAsInput(), look: 'classic' }, ACTOR);
+    expect(getSettings(context.db).look).toBe('classic');
+    expect(lookAttribute('classic')).toEqual({ 'data-look': 'classic' });
+  });
+
+  it('gives Classic a dark of its own, through both routes into dark', () => {
+    // Stitch never repainted dark, so without these Classic after sunset is
+    // Standard after sunset, and a shop that chose it sees no choice at all.
+    // Once under the device query (guarded against an explicit Light), once
+    // under the explicit attribute, both telling the browser it is dark.
+    expect(CSS).toMatch(
+      /@media \(prefers-color-scheme: dark\)\s*\{\s*:root\[data-look='classic'\]:not\(\[data-theme='light'\]\)\s*\{\s*color-scheme: dark/,
+    );
+    expect(CSS).toMatch(/:root\[data-look='classic'\]\[data-theme='dark'\]\s*\{\s*color-scheme: dark/);
+    expect([...CSS.matchAll(/--surface-raised: oklch\(0\.31 0\.022 250\)/g)]).toHaveLength(2);
+
+    // Visibly not Standard's dark: a different ground and a different accent.
+    const standardDark = CSS.match(/:root\[data-theme='dark'\]\s*\{([^}]*)\}/)![1]!;
+    const classicDark = CSS.match(/:root\[data-look='classic'\]\[data-theme='dark'\]\s*\{([^}]*)\}/)![1]!;
+    for (const token of ['--surface', '--surface-raised', '--accent', '--sidebar']) {
+      const value = (body: string) => body.match(new RegExp(`${token}: ([^;]+);`))?.[1];
+      expect(value(classicDark), token).toBeDefined();
+      expect(value(classicDark), token).not.toBe(value(standardDark));
+    }
+  });
+
+  it('leaves Ledger its paper: rounded cards with a shadow', () => {
+    // Stitch flattens cards and squares every corner, from rules that beat
+    // the tokens Ledger sets on :root. Each must step aside for Ledger, or it
+    // comes out as flat square panels in warm colours.
+    const NOT_LEDGER = ":root:not([data-look='ledger'])";
+    // Every rule's full selector, paired with its body.
+    const plain = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = [...plain.matchAll(/(?<=^|})\s*([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+      selectors: selector!.split(',').map((part) => part.trim()),
+      body: body!,
+    }));
+
+    const cardTokens = rules.filter(
+      (rule) => /--card-(radius|shadow)/.test(rule.body) && rule.selectors.some((s) => s.includes('.app-shell')),
+    );
+    const squared = rules.filter(
+      (rule) =>
+        /border-radius: 0(\.125rem)? ?(!important)?;/.test(rule.body) &&
+        // The print sheet is paper whatever the look; it flattens cards on purpose.
+        !rule.selectors.some((s) => s === 'article' || s.startsWith('.app-main')),
+    );
+
+    expect(cardTokens).toHaveLength(1);
+    expect(squared).toHaveLength(2);
+    for (const rule of [...cardTokens, ...squared]) {
+      for (const selector of rule.selectors) {
+        expect(selector, selector).toContain(NOT_LEDGER);
+      }
+    }
   });
 
   it('leaves the default look on the values it already had', () => {

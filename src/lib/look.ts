@@ -30,7 +30,7 @@ export function isLook(value: unknown): value is Look {
  * did, and the Ledger rules in globals.css are all keyed on the attribute being
  * present — so the default look cannot be affected by them even by accident.
  */
-export function lookAttribute(look: Look): { 'data-look'?: 'ledger' } {
+export function lookAttribute(look: Look): { 'data-look'?: Exclude<Look, 'default'> } {
   return look === 'default' ? {} : { 'data-look': look };
 }
 
@@ -43,5 +43,9 @@ export const LOOK_LABELS: Record<Look, { name: string; blurb: string }> = {
   ledger: {
     name: 'Ledger',
     blurb: 'Warm and paper-like, the feel of the book this replaced.',
+  },
+  classic: {
+    name: 'Classic',
+    blurb: 'Calm green on cool grey, as NunaBooks looked before the redesign.',
   },
 };

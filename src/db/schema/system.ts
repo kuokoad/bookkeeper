@@ -4,15 +4,16 @@ import { boolean, businessDate, createdAt, timestampMs, updatedAt } from './_sha
 import { oneOf } from './_check';
 
 /**
- * The two looks the shop's screens can wear.
+ * The looks the shop's screens can wear.
  *
  * `default` is the app as it has always been. `ledger` is a warm, paper-like
- * treatment: sand ground, cream cards, ink brown chrome. It is PAINT ONLY —
- * both looks render the same components from the same figures, so there is no
- * second dashboard to keep in step and no way for the two to disagree about
- * the shop's money.
+ * treatment: sand ground, cream cards, ink brown chrome. `classic` is the calm
+ * green on cool grey the app wore before the October redesign. All are PAINT
+ * ONLY — every look renders the same components from the same figures, so
+ * there is no second dashboard to keep in step and no way for them to disagree
+ * about the shop's money.
  */
-export const LOOKS = ['default', 'ledger'] as const;
+export const LOOKS = ['default', 'ledger', 'classic'] as const;
 export type Look = (typeof LOOKS)[number];
 
 /**
