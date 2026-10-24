@@ -2,11 +2,12 @@ import { sql } from 'drizzle-orm';
 
 import { writeTransaction } from '@/db/transaction';
 import type { Db } from '@/db/types';
-import { products, units } from '@/db/schema';
+import { categories, products, units } from '@/db/schema';
 import { divRoundHalf, minor, parseMoney, toDecimalString, type Minor } from '@/domain/money';
-import { parsePositiveQty, parseQty, type Qty } from '@/domain/quantity';
+import { assertUnitDecimals, extendPrice, parsePositiveQty, parseQty, QTY_DECIMALS, type Qty } from '@/domain/quantity';
 import { isDomainError, ValidationError } from '@/domain/errors';
 import { createProduct, type ProductInput } from './catalog.service';
+import { createStockAdjustment } from './stock-adjustment.service';
 import type { Actor } from './journal.service';
 import {
   IMPORT_FIELDS,
@@ -26,8 +27,9 @@ import {
  * through `createProduct`, in one transaction, so the import lands whole or not
  * at all.
  *
- * Products only. Stock is never imported: opening stock goes in through a
- * stock adjustment, so its value traces to the ledger like every other unit.
+ * Opening stock never goes into the quantity columns: it is ONE
+ * `OPENING_STOCK` stock adjustment for the whole file, Dr Inventory / Cr
+ * Opening Balance Equity, so every cedi of it traces to the ledger.
  */
 
 /** Headings each field is recognised by, after lower-casing and squeezing spaces. */
@@ -42,7 +44,32 @@ const HEADINGS: Record<ImportField, readonly string[]> = {
   altCostPrice: ['cost per pack', 'pack cost', 'cost price per pack'],
   altSellingPrice: ['selling price per pack', 'pack price', 'price per pack'],
   minStock: ['reorder level', 'min stock', 'minimum stock', 'reorder'],
+  category: ['category', 'product category'],
+  trackInventory: ['track stock', 'track inventory'],
+  openingQty: ['opening quantity', 'opening qty', 'opening stock', 'stock', 'in stock', 'qty on hand', 'quantity on hand'],
+  openingValue: ['opening value', 'opening stock value', 'stock value'],
 };
+
+/** The template's heading row: one heading per field, each one `guessColumns` recognises. */
+export const TEMPLATE_HEADINGS: readonly string[] = [
+  'Product name',
+  'SKU',
+  'Barcode',
+  'Unit',
+  'Cost price',
+  'Selling price',
+  'Units per pack',
+  'Cost per pack',
+  'Selling price per pack',
+  'Reorder level',
+  'Category',
+  'Track stock',
+  'Opening quantity',
+  'Opening value',
+];
+
+const YES = new Set(['yes', 'y', 'true', '1']);
+const NO = new Set(['no', 'n', 'false', '0']);
 
 /** At most this many rows in one import; past it the shop should split the file. */
 export const MAX_IMPORT_ROWS = 5_000;
@@ -131,8 +158,17 @@ export function previewProductImport(
     else warnings.push(`Columns ${columnLetter(first)} and ${columnLetter(i)} are both headed "${cell.trim()}". Check the right one is chosen below.`);
   });
 
-  const listed = new Map(
-    db.select({ symbol: units.symbol }).from(units).all().map((unit) => [unit.symbol.toLowerCase(), unit.symbol]),
+  const unitRows = db.select({ symbol: units.symbol, decimalPlaces: units.decimalPlaces }).from(units).all();
+  const listed = new Map(unitRows.map((unit) => [unit.symbol.toLowerCase(), unit.symbol]));
+  // A unit the import creates gets three decimals, like any unit named in text.
+  const decimals = new Map(unitRows.map((unit) => [unit.symbol.toLowerCase(), unit.decimalPlaces]));
+  const categoryByName = new Map(
+    db
+      .select({ id: categories.id, name: categories.name })
+      .from(categories)
+      .where(sql`${categories.isActive} = 1`)
+      .all()
+      .map((category) => [category.name.toLowerCase(), category]),
   );
   const defaultUnit = listed.get('pcs') ?? 'pcs';
   const packUnit = packUnitText.trim();
@@ -261,6 +297,42 @@ export function previewProductImport(
       }
     }
 
+    const categoryText = cell('category').replace(/\s+/g, ' ');
+    const category = categoryText ? categoryByName.get(categoryText.toLowerCase()) : undefined;
+    if (categoryText && !category) problems.push(`Category ${categoryText} is not on your Categories list.`);
+
+    const trackText = cell('trackInventory').toLowerCase();
+    if (trackText && !YES.has(trackText) && !NO.has(trackText)) problems.push('Track stock: enter yes or no.');
+    const trackInventory = !NO.has(trackText);
+
+    let openingQty: Qty | null = null;
+    if (cell('openingQty')) {
+      try {
+        openingQty = parseQty(cell('openingQty'));
+        if (openingQty < 0) problems.push('Opening quantity cannot be negative.');
+        else if (openingQty !== 0 && !trackInventory) problems.push('Only a product whose stock is tracked can have opening stock.');
+        else assertUnitDecimals(openingQty, decimals.get(unit.toLowerCase()) ?? QTY_DECIMALS, unit);
+      } catch (error) {
+        problems.push(`Opening quantity: ${message(error)}`);
+      }
+      if (openingQty === 0) openingQty = null;
+    }
+    let openingValue = amount('openingValue', 'Opening value');
+    if (openingQty === null) {
+      if (openingValue !== null && openingValue > 0 && !problems.some((p) => p.startsWith('Opening quantity'))) {
+        problems.push('Opening value needs the opening quantity it is for.');
+      }
+      openingValue = null;
+    } else if (openingValue === null && !problems.some((p) => p.startsWith('Opening value'))) {
+      // No value given: the stock is worth what the same row says it cost.
+      if (costPrice === null) {
+        problems.push('Opening stock needs a cost price or an opening value.');
+      } else {
+        openingValue = extendPrice(costPrice, openingQty);
+        notes.push(`Opening stock valued at cost: ${toDecimalString(openingValue, false)}`);
+      }
+    }
+
     result.push({
       line,
       name,
@@ -272,6 +344,11 @@ export function previewProductImport(
       altFactor,
       altCostPrice: altUnit ? altCostPrice : null,
       altSellingPrice: altUnit ? altSellingPrice : null,
+      categoryId: category?.id ?? null,
+      categoryName: category?.name ?? null,
+      trackInventory,
+      openingQty,
+      openingValue,
       problems,
       notes,
     });
@@ -280,7 +357,8 @@ export function previewProductImport(
   if (unnamed > 0) {
     warnings.push(`${unnamed} row${unnamed === 1 ? ' has' : 's have'} figures but no name or code, and will be left out.`);
   }
-  const ready = result.filter((row) => row.problems.length === 0).length;
+  const readyRows = result.filter((row) => row.problems.length === 0);
+  const ready = readyRows.length;
   // A unit only counts as new if a row that will actually be imported uses it.
   const usedUnits = new Set(
     result.filter((row) => row.problems.length === 0).flatMap((row) => [row.unit, row.altUnit ?? '']),
@@ -291,26 +369,35 @@ export function previewProductImport(
     warnings,
     ready,
     skipped: result.length - ready,
+    openingValue: minor(readyRows.reduce((sum, row) => sum + (row.openingValue ?? 0), 0)),
   };
 }
 
+export interface ImportResult {
+  created: number;
+  /** The `OPENING_STOCK` adjustment, when any row brought stock in. */
+  adjustmentNo: string | null;
+}
+
 /**
- * Create every row the preview of these same cells marks ready, in one
- * transaction. Returns how many products were created. Rows with problems are
- * skipped — the owner saw them listed, with the reason, before pressing import.
+ * Create every row the preview of these same cells marks ready, and their
+ * opening stock, in one transaction. Rows with problems are skipped — the
+ * owner saw them listed, with the reason, before pressing import.
  */
 export function importProducts(
   db: Db,
   rows: readonly (readonly string[])[],
   map: ColumnMap,
   packUnit: string,
+  businessDate: string,
   actor: Actor,
-): number {
+): ImportResult {
   const preview = previewProductImport(db, rows, map, packUnit);
   const ready = preview.rows.filter((row) => row.problems.length === 0);
   if (ready.length === 0) throw new ValidationError('There are no rows ready to import.');
 
   return writeTransaction(db, (tx) => {
+    const opening: { productId: number; qty: Qty; totalCost: Minor }[] = [];
     for (const row of ready) {
       const cells = rows[row.line - 1] ?? [];
       const barcode = map.barcode === undefined ? '' : (cells[map.barcode] ?? '').trim();
@@ -327,9 +414,14 @@ export function importProducts(
         costPrice: row.costPrice,
         sellingPrice: row.sellingPrice,
         minStock: minStock ? parseQty(minStock) : null,
+        categoryId: row.categoryId,
+        trackInventory: row.trackInventory,
       };
       try {
-        createProduct(tx, input, actor);
+        const productId = createProduct(tx, input, actor);
+        if (row.openingQty !== null && row.openingValue !== null) {
+          opening.push({ productId, qty: row.openingQty, totalCost: row.openingValue });
+        }
       } catch (error) {
         if (isDomainError(error)) {
           throw new ValidationError(`Row ${row.line} (${row.name}): ${error.userMessage} Nothing was imported.`);
@@ -337,7 +429,21 @@ export function importProducts(
         throw error;
       }
     }
-    return ready.length;
+
+    const adjustmentNo =
+      opening.length === 0
+        ? null
+        : createStockAdjustment(
+            tx,
+            {
+              businessDate,
+              reason: 'OPENING_STOCK',
+              note: 'Imported with products',
+              items: opening.map((item) => ({ ...item, direction: 'IN' as const })),
+            },
+            actor,
+          ).adjustmentNo;
+    return { created: ready.length, adjustmentNo };
   });
 }
 

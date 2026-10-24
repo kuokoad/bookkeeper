@@ -162,8 +162,10 @@ export default async function ProductsPage({
 
       {importedCount > 0 && (
         <Alert tone="success" className="mb-4">
-          Imported {importedCount} product{importedCount === 1 ? '' : 's'}. They start with no stock —
-          record a stock adjustment to enter opening stock.
+          Imported {importedCount} product{importedCount === 1 ? '' : 's'}.{' '}
+          {params.openingStock === '1'
+            ? 'Their opening stock is recorded as one stock adjustment, under Inventory.'
+            : 'They start with no stock — record a stock adjustment to enter opening stock.'}
         </Alert>
       )}
 
