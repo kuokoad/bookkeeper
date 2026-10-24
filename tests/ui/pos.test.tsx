@@ -253,6 +253,19 @@ describe('the block, and the one way past it', () => {
   });
 });
 
+describe('once the sale is saved', () => {
+  it('offers to print the receipt, opening it ready to print', async () => {
+    action.current = async () => ({ saleId: 42, receiptNo: 'RCP-00042' });
+    renderTill();
+    addToCart();
+    payExact();
+    fireEvent.submit(submitButton().closest('form')!);
+
+    const print = await screen.findByRole('link', { name: 'Print receipt' });
+    expect(print.getAttribute('href')).toBe('/sales/42/receipt?print=1');
+  });
+});
+
 describe('the cart', () => {
   it('adds a product and totals it', () => {
     renderTill();

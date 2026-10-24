@@ -350,8 +350,11 @@
   --color-success-soft: var(--success-soft);
 }
 
-* {
-  border-color: var(--border);
+/* In the base layer: unlayered, it beat every border colour utility, so an invalid field never turned red. */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
 }
 
 html {

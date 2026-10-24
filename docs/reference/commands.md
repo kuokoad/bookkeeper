@@ -9,7 +9,7 @@ Run them with `npm run <name>`.
 | Command | What it does |
 |---|---|
 | `dev` | Starts the development server. Add `-- -p 5177` to pick a port. |
-| `test` | Runs the whole suite once (`vitest run`). 1,791 tests. |
+| `test` | Runs the whole suite once (`vitest run`). 1,798 tests. |
 | `test:watch` | Runs the suite and re-runs on save. |
 | `typecheck` | `tsc --noEmit`. Types only, no output. |
 | `lint` | `eslint .` across the repo. |

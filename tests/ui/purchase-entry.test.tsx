@@ -339,21 +339,16 @@ describe('a cost of zero', () => {
     expect(saveButton().disabled).toBe(false);
   });
 
-  it('a purchase of nothing but free goods is refused before Save, as the server refuses it', () => {
-    // A purchase worth 0.00 posts no journal lines, and the server refuses an
-    // entry with none. The form used to offer "Save purchase — GHS 0.00".
+  it('a delivery of nothing but free goods saves at 0.00, as the server records it', () => {
+    // Refused on both sides once: a purchase worth 0.00 posts no journal lines,
+    // and the server would not post an empty entry.
     readyToSave();
     type(costBox(), '0');
 
-    expect(figure('Total')).toBe('—');
-    expect(document.getElementById('total-error')?.textContent).toMatch(/comes to 0\.00 cannot be saved/i);
-    expect(saveButton().disabled).toBe(true);
-    // Save names the real reason, not the free-goods note on the line.
-    expect(reasonFor(saveButton())).toMatch(/comes to 0\.00/);
-
-    // Unless an entry needs fixing too, which it then points to first.
-    type(screen.getByLabelText(/their invoice no/i), 'N'.repeat(61));
-    expect(reasonFor(saveButton())).toMatch(/entries that have a message/i);
+    expect(figure('Total')).toBe('GHS 0.00');
+    expect(document.getElementById('total-error')).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+    expect(saveButton().textContent).toContain('GHS 0.00');
   });
 
   it('a discount of the whole line is free goods too, and is named as such', () => {
@@ -573,6 +568,12 @@ describe('the tax the server adds', () => {
     expect(figure('Total')).toBe('—');
     expect(document.getElementById('total-error')?.textContent).toMatch(/VAT rate cannot be negative/i);
     expect(saveButton().disabled).toBe(true);
+    // Save names the real reason, not "the entries", since no entry is wrong.
+    expect(reasonFor(saveButton())).toMatch(/VAT rate cannot be negative/i);
+
+    // Unless an entry needs fixing too, which it then points to first.
+    type(screen.getByLabelText(/their invoice no/i), 'N'.repeat(61));
+    expect(reasonFor(saveButton())).toMatch(/entries that have a message/i);
   });
 });
 

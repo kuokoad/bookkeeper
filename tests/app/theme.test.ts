@@ -37,6 +37,13 @@ describe('the CSS behind it', () => {
     expect(CSS).toMatch(/@media \(prefers-color-scheme: dark\)[\s\S]{0,120}:root:not\(\[data-theme='light'\]\)/);
   });
 
+  it('sets the default border colour in the base layer, so an invalid field can turn red', () => {
+    // Unlayered, `* { border-color }` beat every Tailwind utility: `border-danger`
+    // on an invalid input never showed, and every form left it grey.
+    expect(CSS).not.toMatch(/^\*\s*\{\s*border-color/m);
+    expect(CSS).toMatch(/@layer base\s*\{\s*\*\s*\{\s*border-color: var\(--border\);/);
+  });
+
   it('has a dark block that wins regardless of the device', () => {
     expect(CSS).toMatch(/:root\[data-theme='dark'\]\s*\{/);
   });

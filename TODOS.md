@@ -2,16 +2,16 @@
 
 ## Purchases
 
-### Let the server record a delivery of nothing but free goods
+### Returning free goods to the supplier is refused
 
-**What:** Make `createPurchase` save a purchase that comes to 0.00 (free samples alone, or every line discounted to nothing): the stock comes in at no cost and no journal entry is posted, and voiding it still works.
+**What:** Let `createSupplierReturn` send back goods that came in free (a return worth 0.00), the way `createPurchase` now records a free delivery: stock goes out, nothing is posted.
 
-**Why:** The owner decided on 2026-10-21 that free goods are real. Today a delivery of only free goods cannot be recorded at all: it posts no journal lines and `postJournalEntry` refuses an entry with none. The new-purchase form now says so before Save, and free goods have to ride on a purchase that is worth something.
+**Why:** A return posts a credit to Inventory for what the goods cost. For free goods that is 0.00; `finaliseLines` drops the zero line, leaving an empty entry that `assertBalanced` refuses, so free samples that turn out damaged cannot be sent back on the system. (Read from the code, not yet reproduced.)
 
-**Context:** `src/services/purchase.service.ts` builds the journal lines (around line 340-405) and calls `postJournalEntry`; `assertBalanced` in `src/domain/accounting/journal.ts` refuses an empty entry. `voidPurchase` reverses `journalEntryId`, so a purchase with none needs a path there too. When this lands, drop the zero-total refusal in `src/app/(app)/purchases/new/read-purchase.ts` and flip the "free goods alone" and "whole purchase discounted" rows in `tests/app/purchase-form-parity.test.ts`. Found by the pre-merge review of the purchase-form validation PR.
+**Context:** `src/services/returns.service.ts`, `createSupplierReturn`, where the lines are built (around line 703) and `postJournalEntry` is called. Mirror `createPurchase`: skip the entry when every line is zero, and check the books lock explicitly, since nothing else would. Found while letting the server record free deliveries.
 
-**Effort:** M
-**Priority:** P2
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### Compute a purchase's figures in domain/ once
@@ -76,18 +76,6 @@
 
 ## Forms
 
-### Invalid fields never turn red, anywhere in the app
-
-**What:** Move the unlayered `* { border-color: var(--border); }` in `src/app/globals.css` into `@layer base`, then check every screen, since border colour classes that never applied will start to.
-
-**Why:** Unlayered CSS beats Tailwind's utilities, so `border-danger` on an invalid input never shows. The message under the field does, but the red box that should catch the eye is missing on every form.
-
-**Context:** Found in the browser check of the purchase-form validation PR on 2026-10-21 (computed border grey despite the class). `TextInput` in `src/components/ui/field.tsx` adds `border-danger` when `invalid`. `border-line-strong` inputs will get darker borders once utilities win.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### A half-typed date keeps the old one without saying so
 
 **What:** Make `DateField` show that the date in its boxes is not the date that will be saved, while a date is part-typed or impossible (31/09).
@@ -137,3 +125,29 @@ Prefer reusing the server's parsers (`src/domain/` `parseMoney`, `parseQty`) on 
 **Priority:** P1
 **Depends on:** None
 **Completed:** 2026-10-21, branch the-purchase-form-agrees-with-save. One reading of the form (`read-purchase.ts`, on the server's `parseMoney`, `parsePositiveQty`, unit checks and `taxOnNet`) now drives every line figure, the totals and Save. All eight are fixed. A cost is never pre-filled as 0.00, an empty cost box blocks Save, and a 0 typed on purpose is allowed and labelled as free goods (the owner's decision, 2026-10-21: samples and bonus goods are real). Found on the way and fixed with them: the form left out the tax the server adds on top, so its Total was short and it refused payment of the full amount; and a quantity finer than its unit allows (1.5 Pcs) was only refused after Save. The pre-merge review (2026-10-22) added: a purchase that comes to 0.00 is refused on screen as the server refuses it, the books-lock date and the invoice-number and reference lengths are checked before Save, a typed cost kept across a change of unit is flagged, and `tests/app/purchase-form-parity.test.ts` runs the same entries through the form's reading and `createPurchase`.
+
+### Let the server record a delivery of nothing but free goods
+
+**What:** Make `createPurchase` save a purchase that comes to 0.00 (free samples alone, or every line discounted to nothing): the stock comes in at no cost and no journal entry is posted, and voiding it still works.
+
+**Why:** The owner decided on 2026-10-21 that free goods are real. Today a delivery of only free goods cannot be recorded at all: it posts no journal lines and `postJournalEntry` refuses an entry with none. The new-purchase form now says so before Save, and free goods have to ride on a purchase that is worth something.
+
+**Context:** `src/services/purchase.service.ts` builds the journal lines (around line 340-405) and calls `postJournalEntry`; `assertBalanced` in `src/domain/accounting/journal.ts` refuses an empty entry. `voidPurchase` reverses `journalEntryId`, so a purchase with none needs a path there too. When this lands, drop the zero-total refusal in `src/app/(app)/purchases/new/read-purchase.ts` and flip the "free goods alone" and "whole purchase discounted" rows in `tests/app/purchase-form-parity.test.ts`. Found by the pre-merge review of the purchase-form validation PR.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+**Completed:** 2026-10-23, branch free-goods-delivery. `createPurchase` skips the journal entry when there is nothing to post and checks the books lock itself; `voidPurchase` already reversed only an entry that exists. The form's 0.00 refusal is gone, the purchase page explains a delivery with no entry, and the parity test pins that the four 0.00 rows and a free service now save, and that a free service inside the books lock is still refused.
+
+### Invalid fields never turn red, anywhere in the app
+
+**What:** Move the unlayered `* { border-color: var(--border); }` in `src/app/globals.css` into `@layer base`, then check every screen, since border colour classes that never applied will start to.
+
+**Why:** Unlayered CSS beats Tailwind's utilities, so `border-danger` on an invalid input never shows. The message under the field does, but the red box that should catch the eye is missing on every form.
+
+**Context:** Found in the browser check of the purchase-form validation PR on 2026-10-21 (computed border grey despite the class). `TextInput` in `src/components/ui/field.tsx` adds `border-danger` when `invalid`. `border-line-strong` inputs will get darker borders once utilities win.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+**Completed:** 2026-10-23, branch invalid-fields-turn-red. The rule now sits in `@layer base`, so every border colour class applies: invalid fields are red once left (a focused field keeps the accent focus border), the 62 `border-line-strong` controls get the darker border they always named, and alerts and badges get their tinted borders. The date field's frame moved to `border-line-strong` to match the inputs beside it. `tests/app/theme.test.ts` fails if the rule is unlayered again.

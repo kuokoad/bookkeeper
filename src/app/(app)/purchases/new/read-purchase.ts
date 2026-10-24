@@ -87,7 +87,7 @@ export interface PurchaseReading {
   invoiceDiscountError: string | undefined;
   taxLines: TaxLine[];
   total: Minor | null;
-  /** Why there is no total when no one box is to blame: 0.00, an overflow, an unusable rate. */
+  /** Why there is no total when no one box is to blame: an overflow, an unusable rate. */
   totalError: string | undefined;
   paid: Minor | null;
   paidError: string | undefined;
@@ -304,19 +304,6 @@ export function readPurchase(input: {
     } catch (error) {
       totalError = refusal(error, 'The tax on this purchase cannot be worked out.');
     }
-  }
-
-  /**
-   * A purchase worth nothing posts no journal lines, and `postJournalEntry`
-   * refuses an entry with none. Free goods are real, but they have to come in
-   * on a purchase that is worth something; until the server can record a
-   * delivery of nothing but free goods, the screen says so before Save does.
-   */
-  if (total === 0) {
-    total = null;
-    taxLines = [];
-    totalError =
-      'A purchase that comes to 0.00 cannot be saved: free goods can only come in on a purchase that is worth something.';
   }
 
   const payment = readAmount(input.payAmount, 'A payment cannot be negative.');
