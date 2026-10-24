@@ -13,7 +13,7 @@
     2. Creates a desktop shortcut (.url file) that opens that address in the
        default browser.
 
-    The shortcut only opens a browser — it does not start the server. The
+    The shortcut only opens a browser - it does not start the server. The
     server must already be running (see "Keeping it running" in
     DEPLOYMENT.md for the Task Scheduler auto-start setup, or start it by
     hand with `npm start -- -p <port>`).
@@ -82,7 +82,7 @@ try {
     }
 
     if ($alreadyPresent) {
-        Write-Host "Hosts file already maps `"$sanitized`" to this PC — leaving it as is."
+        Write-Host "Hosts file already maps `"$sanitized`" to this PC - leaving it as is."
     }
     else {
         Add-Content -Path $hostsPath -Value $hostsLine -ErrorAction Stop
@@ -116,4 +116,4 @@ Write-Host "Created desktop icon: $shortcutPath"
 
 Write-Host ""
 Write-Host "Done. Once the app is running, double-click `"$shortcutName`" on the desktop to open $url."
-Write-Host "This icon only opens a browser — it does not start the app. Make sure the server is running first (see 'Keeping it running' in DEPLOYMENT.md)."
+Write-Host "This icon only opens a browser - it does not start the app. Make sure the server is running first (see 'Keeping it running' in DEPLOYMENT.md)."
