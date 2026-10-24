@@ -10,8 +10,8 @@
     1. Adds an entry to the Windows hosts file mapping a name (e.g.
        "awesomeshop") to 127.0.0.1, so this PC can reach the app at
        http://<name>:<port> instead of http://localhost:<port>.
-    2. Creates a desktop shortcut (.url file) that opens that address in the
-       default browser.
+    2. Creates a desktop shortcut that opens that address in the default
+       browser (or Edge, when no default is set).
 
     The shortcut only opens a browser - it does not start the server. The
     server must already be running (see "Keeping it running" in
@@ -99,18 +99,48 @@ catch {
 
 # --- 4. Desktop shortcut ----------------------------------------------------
 
+# A shortcut straight to the browser, not a .url file: a .url opens through Windows'
+# "http" link setting, and on a PC where that is unset it fails with "Application not found".
+function Get-BrowserPath {
+    $choice = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice" -ErrorAction SilentlyContinue
+    if ($choice -and $choice.ProgId) {
+        $command = (Get-ItemProperty "Registry::HKEY_CLASSES_ROOT\$($choice.ProgId)\shell\open\command" -ErrorAction SilentlyContinue).'(default)'
+        if ($command -and ($command -match '^"([^"]+)"' -or $command -match '^(\S+)') -and (Test-Path $Matches[1])) {
+            return $Matches[1]
+        }
+    }
+    # No usable default: Edge comes with Windows, Chrome is the next most likely.
+    $candidates = @(
+        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+        "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
+    )
+    return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
 $desktop = [Environment]::GetFolderPath('Desktop')
 $shortcutName = (Get-Culture).TextInfo.ToTitleCase($sanitized) -replace '-', ' '
-$shortcutPath = Join-Path $desktop "$shortcutName.url"
+$browser = Get-BrowserPath
 
-$shortcutContent = @"
-[InternetShortcut]
-URL=$url
-"@
+# An earlier version of this script made a .url icon; replace it rather than leave two.
+Remove-Item -Path (Join-Path $desktop "$shortcutName.url") -ErrorAction SilentlyContinue
 
-Set-Content -Path $shortcutPath -Value $shortcutContent -Encoding ASCII
-
-Write-Host "Created desktop icon: $shortcutPath"
+if ($browser) {
+    $shortcutPath = Join-Path $desktop "$shortcutName.lnk"
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $browser
+    $shortcut.Arguments = $url
+    $shortcut.IconLocation = "$browser,0"
+    $shortcut.Description = "Open NunaBooks"
+    $shortcut.Save()
+    Write-Host "Created desktop icon: $shortcutPath (opens $url in $(Split-Path -Leaf $browser))"
+}
+else {
+    $shortcutPath = Join-Path $desktop "$shortcutName.url"
+    Set-Content -Path $shortcutPath -Value "[InternetShortcut]`r`nURL=$url" -Encoding ASCII
+    Write-Warning "No browser was found, so the icon is a plain web link. If it says 'Application not found', set a default browser in Windows Settings > Apps > Default apps."
+}
 
 # --- 5. Summary --------------------------------------------------------------
 

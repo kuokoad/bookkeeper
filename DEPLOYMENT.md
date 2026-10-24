@@ -41,10 +41,12 @@ Everything below in the order you do it. Each step links to its section.
 
 **On the shop PC:**
 
-3. Sign in to Windows as the account the shop will use day to day.
-   Auto-start is tied to that account's log on.
+3. Sign in to Windows as the account the shop will use day to day. The app
+   runs in the background as that account. It must be an administrator
+   account, because Windows only lets those run a task before anyone logs on.
 4. Open PowerShell as Administrator and run the line in
-   [On a bare PC](#on-a-bare-pc). It ends with the app running in that window.
+   [On a bare PC](#on-a-bare-pc). It ends with the app running in the
+   background, so you can close the window.
 5. Open <http://localhost:5177> and create the shop and its owner on the setup
    screen.
 6. Run `npm run preflight` in `C:\NunaBooks`. Every line must pass. See
@@ -202,7 +204,9 @@ It does two things, both scoped to this one PC only:
   so this machine — and only this machine — can reach the app at
   `http://awesomeshop:5177`.
 - Puts an icon on the desktop that opens that address in the default
-  browser.
+  browser, or in Edge when no default is set. It is an ordinary shortcut to
+  the browser, so it works even on a PC where Windows says "Application not
+  found" for web links.
 
 Safe to re-run: it leaves an existing hosts entry alone rather than
 duplicating it.
@@ -214,13 +218,12 @@ duplicating it.
    ```
    127.0.0.1    awesomeshop
    ```
-2. Right-click the desktop → **New → Text Document**, name it
-   `Awesomeshop.url` (Windows will ask about changing the file extension —
-   confirm), and put this inside it:
+2. Right-click the desktop → **New → Shortcut**. For the location, enter
+   your browser followed by the address, for example:
    ```
-   [InternetShortcut]
-   URL=http://awesomeshop:5177
+   "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" http://awesomeshop:5177
    ```
+   Click **Next**, name it `Awesomeshop`, and click **Finish**.
 
 **The icon only opens a browser — it does not start the app.** The server
 still needs to already be running, the same as opening `localhost:5177` by
@@ -272,20 +275,28 @@ by email or WhatsApp without a printer at all.
 ## Keeping it running
 
 Starting it by hand works, but the shop should not depend on somebody
-remembering. Use **Task Scheduler**:
+remembering. `deploy.ps1 -AutoStart` registers a **Task Scheduler** task called
+`NunaBooks` that:
 
-- Trigger: *At log on*
-- Action: start a program — `npm`, arguments `start -- -p 5177`, "Start in" set
-  to the project folder
-- Tick *Run whether user is logged on or not* if the PC is left at a lock screen
+- starts the app when the PC starts, before anyone logs on;
+- runs it in the background as your Windows account, with **no window**;
+- writes what the server prints to `data\server.log`, which is the place to
+  look when it does not come up;
+- has no time limit and keeps running on battery, because Windows' default
+  limit would stop it after three days.
+
+To stop it, open Task Scheduler, find `NunaBooks` and choose **End**, or run
+`deploy.ps1` again, which stops it before it updates. To start it again, choose
+**Run** on the same task, or restart the PC.
 
 Restarting is harmless. Migrations are versioned and skip what is already
 applied, the chart of accounts is checked rather than rewritten, and a sale that
 was committed is on disk. Nothing resets your shop.
 
 If the database cannot be prepared, the server **refuses to start** rather than
-serving pages against a half-built schema. Read the terminal output; the reason
-is printed with the path it tried.
+serving pages against a half-built schema. Read `data\server.log`, or the
+terminal if you started it by hand; the reason is printed with the path it
+tried.
 
 ---
 

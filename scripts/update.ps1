@@ -15,7 +15,8 @@
     4. If any of those fail, puts the code back to the commit it started
        from and rebuilds that, so the shop comes back on the old version.
     5. Starts the app again: through the "NunaBooks" Task Scheduler task when
-       there is one, otherwise in a minimised window.
+       there is one, otherwise in the background with no window. Either way
+       its output goes to data\server.log.
 
     Migrations are not run here; they apply when the app starts.
 
@@ -70,11 +71,15 @@ function Invoke-Native([string]$Title, [string]$Exe, [string[]]$Arguments) {
 
 function Start-App {
     if (Get-ScheduledTask -TaskName "NunaBooks" -ErrorAction SilentlyContinue) {
-        Start-ScheduledTask -TaskName "NunaBooks"
+        try {
+            Start-ScheduledTask -TaskName "NunaBooks"
+            return
+        }
+        catch {
+            Write-Host "Could not start the 'NunaBooks' task ($($_.Exception.Message)); starting the app directly."
+        }
     }
-    else {
-        Start-Process -FilePath "npm.cmd" -ArgumentList "start -- -p $Port" -WorkingDirectory $root -WindowStyle Minimized
-    }
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"npm.cmd start -- -p $Port > data\server.log 2>&1`"" -WorkingDirectory $root -WindowStyle Hidden
 }
 
 # Give the button's response time to reach the browser before the server goes.
@@ -91,8 +96,9 @@ if (-not (Invoke-Native "Taking a backup" "npm.cmd" @("run", "backup"))) {
 
 Write-Host "==> Stopping the app on port $Port"
 $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+# The server only, not its process tree: this script was started by the server and is part of that tree.
 foreach ($owner in ($listeners | Select-Object -ExpandProperty OwningProcess -Unique)) {
-    & taskkill /PID $owner /T /F | Out-Null
+    Stop-Process -Id $owner -Force -ErrorAction SilentlyContinue
 }
 for ($i = 0; $i -lt 30 -and (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue); $i++) {
     Start-Sleep -Seconds 1

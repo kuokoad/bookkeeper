@@ -18,8 +18,9 @@
        must be fixed before trading. It reports, it does not stop the script.
     8. Optional, with -Firewall and -AutoStart (both need Administrator):
        opens the port in the Windows firewall, and registers a Task Scheduler
-       task that starts the app at log on.
-    9. Starts the app in this window, unless -NoStart.
+       task that starts the app in the background when the PC starts.
+    9. Starts the app, unless -NoStart: in the background through the task
+       with -AutoStart, otherwise in this window.
 
     Safe to re-run. To update: git pull, then run it again.
 
@@ -33,7 +34,8 @@
     Add the inbound firewall rule so other devices on the shop network can reach it.
 
 .PARAMETER AutoStart
-    Register a Task Scheduler task "NunaBooks" that starts the app at log on.
+    Register a Task Scheduler task "NunaBooks" that starts the app in the background
+    when the PC starts, with no window. Its output goes to data\server.log.
 
 .PARAMETER NoStart
     Stop after the build and preflight instead of starting the server here.
@@ -93,7 +95,18 @@ if ($env:NODE_ENV -eq "production") {
 }
 
 # npm ci cannot replace the database driver while a running app holds it open.
-if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
+function Test-Listening { [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) }
+
+if ((Test-Listening) -and (Get-ScheduledTask -TaskName "NunaBooks" -ErrorAction SilentlyContinue)) {
+    Write-Host "Stopping the app running in the background (the 'NunaBooks' task) so it can be updated."
+    Stop-ScheduledTask -TaskName "NunaBooks" -ErrorAction SilentlyContinue
+    # Ending the task leaves the node process it started still running, so stop that too.
+    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique |
+        ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+    for ($i = 0; $i -lt 30 -and (Test-Listening); $i++) { Start-Sleep -Seconds 1 }
+}
+if (Test-Listening) {
     Write-Error "Something is already serving on port $Port - most likely the app itself. Stop it first (close its window, or end the 'NunaBooks' task in Task Scheduler), then run this again."
     exit 1
 }
@@ -150,10 +163,16 @@ if ($Firewall) {
 
 if ($AutoStart) {
     $npm = (Get-Command npm.cmd).Source
-    $action = New-ScheduledTaskAction -Execute $npm -Argument "start -- -p $Port" -WorkingDirectory $root
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-    Register-ScheduledTask -TaskName "NunaBooks" -Action $action -Trigger $trigger -Force | Out-Null
-    Write-Host "Task Scheduler: 'NunaBooks' starts the app at log on."
+    New-Item -ItemType Directory -Force -Path (Join-Path $root "data") | Out-Null
+    # cmd /c only to send the output somewhere: with no window, data\server.log is where it can be read.
+    $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"`"$npm`" start -- -p $Port > data\server.log 2>&1`"" -WorkingDirectory $root
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    # S4U: runs as this user with no window, before anyone logs on, and stores no password.
+    $taskUser = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
+    # The default limit would stop the app after three days; a laptop on battery would never start it.
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    Register-ScheduledTask -TaskName "NunaBooks" -Action $action -Trigger $trigger -Principal $taskUser -Settings $settings -Force | Out-Null
+    Write-Host "Task Scheduler: 'NunaBooks' starts the app in the background whenever the PC starts. No window stays open."
 }
 
 # --- 9. Start ----------------------------------------------------------------------
@@ -161,6 +180,17 @@ if ($AutoStart) {
 Write-Host ""
 if ($NoStart) {
     Write-Host "Ready. Start it with: npm start -- -p $Port"
+    exit $(if ($preflightPassed) { 0 } else { 1 })
+}
+
+if ($AutoStart) {
+    Start-ScheduledTask -TaskName "NunaBooks"
+    for ($i = 0; $i -lt 90 -and -not (Test-Listening); $i++) { Start-Sleep -Seconds 1 }
+    if (-not (Test-Listening)) {
+        Write-Error "The app did not start. What it printed is in $(Join-Path $root 'data\server.log')."
+        exit 1
+    }
+    Write-Host "Running in the background on http://localhost:$Port. You can close this window." -ForegroundColor Green
     exit $(if ($preflightPassed) { 0 } else { 1 })
 }
 
