@@ -373,15 +373,85 @@ the repository. If the repository is private, sign in to git once from a
 terminal on that PC so the credentials are saved. The app never asks for a
 password. It runs `scripts/update.ps1`, which you can also run by hand.
 
-**By hand:**
+### By hand
 
-```bash
-git pull
-npm ci
-npm run build
+The same thing the button does, one step at a time. Use **PowerShell as
+Administrator** and run each line on its own.
+
+The `-c safe.directory=C:/NunaBooks` on each git command is there because the
+folder was created from an Administrator PowerShell, so Windows made the
+Administrators group its owner, and git refuses a folder owned by someone else.
+
+**1. Note the version you are on.** Write the result down; it is how you get
+back if the update fails.
+
+```powershell
+cd C:\NunaBooks
+git -c safe.directory=C:/NunaBooks rev-parse --short HEAD
 ```
 
-Then restart it. Migrations apply themselves at startup.
+**2. Take a backup.** This works while the app is still running, and it must
+say the backup was verified. The file goes in `C:\NunaBooks\backups\`.
+
+```powershell
+npm run backup
+```
+
+**3. Download the new version.** "Already up to date" means there is nothing
+new, and you can stop here.
+
+```powershell
+git -c safe.directory=C:/NunaBooks pull --ff-only
+```
+
+**4. Install, build and restart.**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy.ps1 -Firewall -AutoStart
+```
+
+This stops the app running in the background, reinstalls the packages,
+updates the database, rebuilds, runs preflight, and starts the app again in
+the background. It takes several minutes. If the output stops and the title
+bar starts with **"Select"**, press **Esc**. It has finished when it says
+**Running in the background on http://localhost:5177**.
+
+**5. Check it worked.** In **Settings → Health & backup**, the version line
+shows the new version, and the checks below it pass.
+
+### If the update fails
+
+Until it is fixed, the app stays stopped, because step 4 stopped it at the
+start. Put the code back on the version you wrote down in step 1 (the example
+below uses `31be8f0`; use yours), and run step 4 again:
+
+```powershell
+git -c safe.directory=C:/NunaBooks reset --hard 31be8f0
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy.ps1 -Firewall -AutoStart
+```
+
+This moves only the app's code. The shop's records are in `data\`, which git
+never touches.
+
+**If the old version will not open the database** because the new version had
+already updated it, put back the backup from step 2. The app must be stopped
+for this; after a failed step 4 it already is. If it is running, this stops it:
+
+```powershell
+Get-NetTCPConnection -LocalPort 5177 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
+Then restore the backup, and run step 4 again:
+
+```powershell
+npm run db:restore -- .\backups\<the-file-from-step-2>.db --force
+```
+
+The restore checks the backup opens and its books balance before it replaces
+anything, and it keeps the database it replaced as
+`bookkeeper.db.replaced-<date>`. Anything recorded between the backup and the
+restore is lost, so do this before the shop starts trading again. See
+[Putting a backup back](#putting-a-backup-back).
 
 Your data is never touched by an update: `data/` is git-ignored, so it is not
 part of what `git pull` replaces, and it does not live inside anything that gets
