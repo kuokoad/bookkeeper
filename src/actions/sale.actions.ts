@@ -12,7 +12,9 @@ import { recordCustomerPayment, voidCustomerPayment } from '@/services/customer-
 import { parseMoney, ZERO, type Minor } from '@/domain/money';
 import { parsePositiveQty } from '@/domain/quantity';
 import { ExpiredStockError, isDomainError } from '@/domain/errors';
-import { isValidBusinessDate } from '@/lib/format';
+import { assertSaleDateAllowed } from '@/domain/sales/sale-date';
+import { getSettings } from '@/services/settings.service';
+import { isValidBusinessDate, toBusinessDate } from '@/lib/format';
 import type { FormState } from './auth.actions';
 
 /**
@@ -101,6 +103,10 @@ export async function createSaleAction(
   // over the same goods. Owners hold it automatically.
   const maySellExpired = can(actor, 'inventory', 'void');
 
+  // Recording a sale on an earlier day is the same trust as setting a price —
+  // see `assertSaleDateAllowed` for why it is gated at all.
+  const mayBackdate = can(actor, 'sales', 'edit');
+
   let payload: unknown;
   try {
     payload = JSON.parse(String(formData.get('cart') ?? '{}'));
@@ -115,6 +121,19 @@ export async function createSaleAction(
 
   const { businessDate, customerId, note, items, tenders, invoiceDiscount, clientRef } =
     parsed.data;
+
+  // "Today" is the server's, never the browser's: a till with its clock set
+  // wrong must not be able to date a sale for anybody.
+  try {
+    assertSaleDateAllowed(businessDate, {
+      today: toBusinessDate(),
+      lockedBefore: getSettings(db).booksLockedBefore,
+      mayBackdate,
+    });
+  } catch (error) {
+    if (isDomainError(error)) return { error: error.userMessage };
+    throw error;
+  }
 
   /**
    * A deliberate second attempt at a sale that was stopped on a date.
