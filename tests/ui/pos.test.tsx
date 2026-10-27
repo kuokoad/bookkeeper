@@ -64,6 +64,8 @@ function renderTill(
     expiryBlocksSales?: boolean;
     /** The whole-sale discount box is only shown to someone who may set prices. */
     mayOverridePrice?: boolean;
+    mayBackdate?: boolean;
+    lockedBefore?: string | null;
   } = {},
 ) {
   return render(
@@ -78,6 +80,8 @@ function renderTill(
       mayOverridePrice={props.mayOverridePrice ?? false}
       maySellExpired={props.maySellExpired ?? false}
       expiryBlocksSales={props.expiryBlocksSales ?? true}
+      mayBackdate={props.mayBackdate ?? false}
+      lockedBefore={props.lockedBefore ?? null}
       cartSeed="seed-abcdefgh"
     />,
   );
@@ -458,5 +462,73 @@ describe('the reference field asks for the right thing', () => {
     );
 
     expect(reference().getAttribute('placeholder')).toBe('Cheque or transfer number');
+  });
+});
+
+describe('the sale date', () => {
+  /** Submit the cart and hand back the date it was sent with. */
+  async function submittedDate(): Promise<string | undefined> {
+    let sent: FormData | undefined;
+    action.current = async (formData) => {
+      sent = formData;
+      return {};
+    };
+    addToCart();
+    payExact();
+    fireEvent.submit(submitButton().closest('form')!);
+    await vi.waitFor(() => expect(sent).toBeDefined());
+    return JSON.parse(String(sent!.get('cart'))).businessDate as string | undefined;
+  }
+
+  /** Type a date into the three boxes, the way a manager does. */
+  function chooseDate(day: string, month: string, year: string) {
+    fireEvent.change(screen.getByLabelText('Sale date day'), { target: { value: day } });
+    fireEvent.change(screen.getByLabelText('Sale date month'), { target: { value: month } });
+    fireEvent.change(screen.getByLabelText('Sale date year'), { target: { value: year } });
+  }
+
+  it('is not offered to a cashier, whose till sends no date so the server’s day is used', async () => {
+    renderTill();
+
+    expect(screen.queryByLabelText('Sale date day')).toBeNull();
+    expect(await submittedDate()).toBeUndefined();
+  });
+
+  it('starts on today for a manager, sending no date until one is picked', async () => {
+    renderTill({}, { mayBackdate: true });
+
+    expect(screen.queryByText(/not today/i)).toBeNull();
+    expect(await submittedDate()).toBeUndefined();
+  });
+
+  it('records an earlier day, and says plainly that it is not today', async () => {
+    renderTill({}, { mayBackdate: true });
+
+    chooseDate('24', '08', '2026');
+
+    expect(screen.getByText(/will be recorded on 24 Aug 2026, not today/i)).toBeDefined();
+    expect(await submittedDate()).toBe('2026-08-24');
+  });
+
+  it('goes back to today in one click', async () => {
+    renderTill({}, { mayBackdate: true });
+    chooseDate('24', '08', '2026');
+
+    fireEvent.click(screen.getByRole('button', { name: /use today/i }));
+
+    expect(screen.queryByText(/not today/i)).toBeNull();
+    expect(await submittedDate()).toBeUndefined();
+  });
+
+  it('greys out the days inside the books lock and every day after today', () => {
+    renderTill({}, { mayBackdate: true, lockedBefore: '2026-08-20' });
+
+    fireEvent.click(screen.getByLabelText('Open calendar'));
+
+    const day = (label: string) => screen.getByLabelText(label).getAttribute('aria-disabled');
+    expect(day('Thursday, 20 August 2026')).toBe('true');
+    expect(day('Friday, 21 August 2026')).not.toBe('true');
+    expect(day('Wednesday, 26 August 2026')).not.toBe('true');
+    expect(day('Thursday, 27 August 2026')).toBe('true');
   });
 });

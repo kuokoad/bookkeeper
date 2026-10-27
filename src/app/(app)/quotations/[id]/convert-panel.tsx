@@ -37,7 +37,6 @@ export function ConvertPanel({
   currencyCode,
   expired,
   validUntil,
-  today,
   canCancel,
   accounts,
   defaultTermsDays,
@@ -49,7 +48,6 @@ export function ConvertPanel({
   currencyCode: string;
   expired: boolean;
   validUntil: string;
-  today: string;
   canCancel: boolean;
   accounts: { id: number; name: string }[];
   defaultTermsDays: number;
@@ -94,7 +92,6 @@ export function ConvertPanel({
         <form action={convertAction} className="space-y-4" noValidate>
           <input type="hidden" name="quotationId" value={quotationId} />
           <input type="hidden" name="tenders" value={tenders} />
-          <input type="hidden" name="businessDate" value={today} />
 
           {expired && (
             <Field

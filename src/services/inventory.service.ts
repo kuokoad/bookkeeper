@@ -129,6 +129,12 @@ export type BatchDirective =
        * write-off of expired goods would be absurd.
        */
       expiredFirst?: boolean;
+      /**
+       * The day expiry is judged against, when it is not the movement's own.
+       * Set for a sale dated earlier than today, so stock that has expired by
+       * now still needs approving rather than passing as it stood back then.
+       */
+      expiryAsAt?: string;
     };
 
 export interface StockMovementResult {
@@ -338,6 +344,10 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
   const directive = input.batch;
   const expiredFirst = directive?.kind === 'PICK' && directive.expiredFirst === true;
   const approved = expiredFirst || (directive?.kind === 'PICK' && directive.allowExpired === true);
+  const expiryAsAt =
+    directive?.kind === 'PICK' && directive.expiryAsAt !== undefined
+      ? directive.expiryAsAt
+      : input.businessDate;
 
   if (directive?.kind === 'SOURCE') return allocateOutToSource(tx, input, directive.allocations);
 
@@ -353,7 +363,8 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
     .all();
 
   // Expiry is judged as at the SHOP'S day for this movement, not the wall
-  // clock. A sale entered late for yesterday is judged as it stood yesterday.
+  // clock — unless the caller names another day. The till does, for a sale
+  // dated earlier than today: see `expiryAsAt` on the PICK directive.
   //
   // Planned WITHOUT expired stock first, always. That first answer is what
   // decides whether anybody needs to be asked — and on the ordinary path, where
@@ -361,7 +372,7 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
   // the back of the shelf never interrupts the till.
   if (expiredFirst) {
     const written = allocateFefo(open, input.qty, {
-      today: input.businessDate,
+      today: expiryAsAt,
       allowExpired: true,
       expiredFirst: true,
     });
@@ -370,7 +381,7 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
       : written.allocations;
   }
 
-  let plan = allocateFefo(open, input.qty, { today: input.businessDate, allowExpired: false });
+  let plan = allocateFefo(open, input.qty, { today: expiryAsAt, allowExpired: false });
 
   if (plan.expiredNeeded > 0) {
     if (!approved && expiryBlocksSales(tx)) {
@@ -391,7 +402,7 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
     // again including the expired batches — otherwise the stock leaves the
     // shelf while no batch is recorded as giving it up, which is exactly the
     // hole `verifyBatchCoverage` exists to catch.
-    plan = allocateFefo(open, input.qty, { today: input.businessDate, allowExpired: true });
+    plan = allocateFefo(open, input.qty, { today: expiryAsAt, allowExpired: true });
   }
 
   if (plan.shortfall > 0) return withShortfall(tx, input, plan);

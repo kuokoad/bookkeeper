@@ -12,7 +12,8 @@ import { AmountInput, TextInput } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/format';
-import { daysBetween } from '@/domain/business-date';
+import { addDays, daysBetween } from '@/domain/business-date';
+import { DateField } from '@/components/ui/date-field';
 import { minor } from '@/domain/money';
 import {
   taxOnNet,
@@ -131,6 +132,8 @@ export function Pos({
   taxInclusive,
   mayOverridePrice,
   maySellExpired,
+  mayBackdate = false,
+  lockedBefore = null,
   expiryBlocksSales,
   cartSeed,
 }: {
@@ -155,6 +158,14 @@ export function Pos({
    * the actual decision, from the same right, and refuses either way.
    */
   maySellExpired: boolean;
+  /**
+   * Whether this person may record a sale on an earlier day. Without it the
+   * date field is not shown and every sale is today's. `createSaleAction`
+   * makes the actual decision, from the same right.
+   */
+  mayBackdate?: boolean;
+  /** The books-lock date. Nothing on or before it may be chosen. */
+  lockedBefore?: string | null;
   /** Whether this shop stops a sale on a date at all. */
   expiryBlocksSales: boolean;
   /**
@@ -174,6 +185,13 @@ export function Pos({
   const [customerId, setCustomerId] = useState<string>('');
   const [invoiceDiscount, setInvoiceDiscount] = useState('');
   const [note, setNote] = useState('');
+  // The day somebody picked, or null for "today" — which the server decides,
+  // so a till page left open overnight does not keep sending yesterday. Kept
+  // across sales on purpose, so a day's paper receipts can be entered in one
+  // sitting; the warning below says so on every one of them.
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
+  const saleDate = pickedDate ?? today;
+  const backdated = pickedDate !== null;
   const [tenderAccountId, setTenderAccountId] = useState<string>(
     String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? ''),
   );
@@ -443,7 +461,7 @@ export function Pos({
 
   const cartPayload = JSON.stringify({
     clientRef: cartRef,
-    businessDate: today,
+    ...(mayBackdate && pickedDate !== null ? { businessDate: pickedDate } : {}),
     customerId: customerId === '' ? null : Number(customerId),
     note: note.trim() || undefined,
     invoiceDiscount: invoiceDiscount.trim() || undefined,
@@ -950,6 +968,40 @@ export function Pos({
           </div>
 
           <div className="rounded-xl border border-line bg-surface-raised p-4">
+            {mayBackdate && (
+              <div className="mb-3">
+                <label htmlFor="sale-date" className="mb-1 block text-xs text-content-muted">
+                  Sale date
+                </label>
+                <DateField
+                  id="sale-date"
+                  label="Sale date"
+                  value={saleDate}
+                  onChange={(value) => setPickedDate(value === today ? null : value)}
+                  today={today}
+                  max={today}
+                  min={lockedBefore ? addDays(lockedBefore, 1) : undefined}
+                  minReason={
+                    lockedBefore
+                      ? `The books are closed up to ${formatDate(lockedBefore)}.`
+                      : undefined
+                  }
+                />
+                {backdated && (
+                  <Alert tone="warning" className="mt-2">
+                    This sale will be recorded on {formatDate(saleDate)}, not today.{' '}
+                    <button
+                      type="button"
+                      onClick={() => setPickedDate(null)}
+                      className="font-medium text-accent hover:underline"
+                    >
+                      Use today
+                    </button>
+                  </Alert>
+                )}
+              </div>
+            )}
+
             <label htmlFor="customer" className="mb-1 block text-xs text-content-muted">
               Customer {totals.outstanding > 0 && <span className="text-danger">(required)</span>}
             </label>

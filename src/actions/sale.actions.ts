@@ -12,7 +12,9 @@ import { recordCustomerPayment, voidCustomerPayment } from '@/services/customer-
 import { parseMoney, ZERO, type Minor } from '@/domain/money';
 import { parsePositiveQty } from '@/domain/quantity';
 import { ExpiredStockError, isDomainError } from '@/domain/errors';
-import { isValidBusinessDate } from '@/lib/format';
+import { assertSaleDateAllowed } from '@/domain/sales/sale-date';
+import { getSettings } from '@/services/settings.service';
+import { isValidBusinessDate, toBusinessDate } from '@/lib/format';
 import type { FormState } from './auth.actions';
 
 /**
@@ -55,7 +57,12 @@ const cartSchema = z.object({
     .trim()
     .min(8, 'This sale could not be identified. Please reload the page and try again.')
     .max(64),
-  businessDate: z.string().refine(isValidBusinessDate, 'Enter a valid date.'),
+  /**
+   * Only present when somebody picked a day on the till. An ordinary sale
+   * leaves it out and the server's day is used: a till page left open
+   * overnight would otherwise keep sending the day it was loaded.
+   */
+  businessDate: z.string().refine(isValidBusinessDate, 'Enter a valid date.').optional(),
   customerId: z.number().int().positive().nullable(),
   note: z.string().trim().max(300).optional(),
   invoiceDiscount: z.string().trim().optional(),
@@ -101,6 +108,10 @@ export async function createSaleAction(
   // over the same goods. Owners hold it automatically.
   const maySellExpired = can(actor, 'inventory', 'void');
 
+  // Recording a sale on an earlier day is the same trust as setting a price —
+  // see `assertSaleDateAllowed` for why it is gated at all.
+  const mayBackdate = can(actor, 'sales', 'edit');
+
   let payload: unknown;
   try {
     payload = JSON.parse(String(formData.get('cart') ?? '{}'));
@@ -113,8 +124,22 @@ export async function createSaleAction(
     return { error: parsed.error.issues[0]?.message ?? 'The sale is incomplete.' };
   }
 
-  const { businessDate, customerId, note, items, tenders, invoiceDiscount, clientRef } =
-    parsed.data;
+  const { customerId, note, items, tenders, invoiceDiscount, clientRef } = parsed.data;
+
+  // "Today" is the server's, never the browser's: a till with its clock set
+  // wrong, or a page loaded yesterday, must not be able to date a sale.
+  const today = toBusinessDate();
+  const businessDate = parsed.data.businessDate ?? today;
+  try {
+    assertSaleDateAllowed(businessDate, {
+      today,
+      lockedBefore: getSettings(db).booksLockedBefore,
+      mayBackdate,
+    });
+  } catch (error) {
+    if (isDomainError(error)) return { error: error.userMessage };
+    throw error;
+  }
 
   /**
    * A deliberate second attempt at a sale that was stopped on a date.
@@ -189,6 +214,10 @@ export async function createSaleAction(
         clientRef,
         allowPriceOverride: mayOverridePrice,
         allowExpiredStock: sellExpired === true && maySellExpired,
+        // A backdated sale has its stock judged as it stands now. Judged on the
+        // chosen day, a crate that expired since would pass as good, and
+        // picking an earlier date would be a way round the right above.
+        ...(businessDate !== today ? { expiryAsAt: today } : {}),
         ...(overrideReason && overrideReason.length > 0
           ? { overrideReason }
           : {}),

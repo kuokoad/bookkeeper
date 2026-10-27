@@ -104,6 +104,8 @@ export default async function NewSalePage() {
           taxInclusive={settings?.taxInclusive ?? false}
           mayOverridePrice={can(user, 'sales', 'edit')}
           maySellExpired={can(user, 'inventory', 'void')}
+          mayBackdate={can(user, 'sales', 'edit')}
+          lockedBefore={settings?.booksLockedBefore ?? null}
           expiryBlocksSales={settings?.expiryBlocksSales ?? true}
           cartSeed={randomUUID()}
         />

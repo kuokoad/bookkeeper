@@ -16,7 +16,7 @@ import {
 import { parseMoney, type Minor } from '@/domain/money';
 import { parseQty } from '@/domain/quantity';
 import { isDomainError, ValidationError } from '@/domain/errors';
-import { isValidBusinessDate } from '@/lib/format';
+import { isValidBusinessDate, toBusinessDate } from '@/lib/format';
 import type { FormState } from './auth.actions';
 
 /**
@@ -207,7 +207,6 @@ export async function cancelQuotationAction(
 }
 
 const convertSchema = z.object({
-  businessDate: z.string().refine(isValidBusinessDate, 'Enter a valid date.'),
   customerId: z.number().int().positive().nullable(),
   createCustomer: z.boolean(),
   termsDays: z.number().int().min(0).max(365).optional(),
@@ -240,7 +239,6 @@ export async function convertQuotationAction(
   }
 
   const parsed = convertSchema.safeParse({
-    businessDate: formData.get('businessDate'),
     customerId: formData.get('customerId') ? Number(formData.get('customerId')) : null,
     createCustomer: formData.get('createCustomer') === 'on',
     termsDays: formData.get('termsDays') ? Number(formData.get('termsDays')) : undefined,
@@ -255,7 +253,9 @@ export async function convertQuotationAction(
       db,
       quotationId,
       {
-        businessDate: parsed.data.businessDate,
+        // Always the server's day. The form used to send one, which made it a
+        // way to put a sale on any date without the right the till asks for.
+        businessDate: toBusinessDate(),
         customerId: parsed.data.customerId,
         createCustomer: parsed.data.createCustomer,
         tenders: parsed.data.tenders.map((tender) => {
