@@ -190,6 +190,65 @@ export const ownerMovements = sqliteTable(
   ],
 );
 
+/**
+ * Money moved from one of the shop's own accounts to another — cash banked,
+ * MoMo withdrawn into the drawer.
+ *
+ * Not income, not an expense and not owner money: the shop holds exactly as
+ * much afterwards as before, only in a different place. Recording it as a pair
+ * of owner movements kept the balances right but put a deposit at the bank on
+ * the owner's capital and drawings lines, which is why this has its own table
+ * and its own journal source.
+ */
+export const accountTransfers = sqliteTable(
+  'account_transfers',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    transferNo: text('transfer_no').notNull(),
+
+    businessDate: businessDate('business_date').notNull(),
+    occurredAt: timestampMs('occurred_at').notNull(),
+
+    fromAccountId: integer('from_account_id')
+      .notNull()
+      .references(() => paymentAccounts.id, { onDelete: 'restrict' }),
+    toAccountId: integer('to_account_id')
+      .notNull()
+      .references(() => paymentAccounts.id, { onDelete: 'restrict' }),
+
+    amountMinor: moneyMinor('amount_minor').notNull(),
+    reference: text('reference'),
+    note: text('note'),
+
+    status: text('status', { enum: CASHBOOK_STATUSES }).notNull().default('POSTED'),
+    journalEntryId: integer('journal_entry_id').references(() => journalEntries.id, {
+      onDelete: 'restrict',
+    }),
+
+    voidedAt: timestampMs('voided_at'),
+    voidReason: text('void_reason'),
+
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    isDemo: isDemo(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('uq_account_transfers_no').on(t.transferNo),
+    index('idx_account_transfers_date').on(t.businessDate),
+    index('idx_account_transfers_from').on(t.fromAccountId),
+    index('idx_account_transfers_to').on(t.toAccountId),
+    check('ck_account_transfers_status', oneOf(t.status, CASHBOOK_STATUSES)),
+    check('ck_account_transfers_amount_positive', sql`${t.amountMinor} > 0`),
+    check('ck_account_transfers_distinct', sql`${t.fromAccountId} <> ${t.toAccountId}`),
+    check(
+      'ck_account_transfers_date_format',
+      sql`${t.businessDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`,
+    ),
+  ],
+);
+
+export type AccountTransfer = typeof accountTransfers.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type Income = typeof incomes.$inferSelect;
 export type OwnerMovement = typeof ownerMovements.$inferSelect;

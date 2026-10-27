@@ -401,6 +401,8 @@ const FLOW_LABELS: Record<string, string> = {
   INCOME: 'Other income',
   CAPITAL: 'Owner put money in',
   DRAWINGS: 'Owner took money out',
+  // Equal in and out across the shop, so it never moves the net figure.
+  TRANSFER: 'Moved between your own accounts',
   RECONCILIATION: 'Cash count differences',
   OPENING_BALANCE: 'Opening balances',
   REVERSAL: 'Reversals',

@@ -142,6 +142,7 @@ export const JOURNAL_SOURCE_TYPES = [
   'OPENING_BALANCE',
   'CAPITAL',
   'DRAWINGS',
+  'TRANSFER',
   'REVERSAL',
   'YEAR_END_CLOSE',
 ] as const;

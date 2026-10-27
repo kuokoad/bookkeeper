@@ -52,6 +52,7 @@ const SOURCE_LABELS: Record<string, string> = {
   OPENING_BALANCE: 'Opening balance',
   CAPITAL: 'Owner capital',
   DRAWINGS: 'Owner drawings',
+  TRANSFER: 'Transfer',
   REVERSAL: 'Reversal',
   YEAR_END_CLOSE: 'Year-end close',
 };
@@ -68,6 +69,8 @@ function sourceHref(sourceType: string, sourceId: number | null): string | null 
       return `/purchases/${sourceId}`;
     case 'STOCK_ADJUSTMENT':
       return `/inventory/adjustments/${sourceId}`;
+    case 'TRANSFER':
+      return '/accounts/transfers';
     default:
       return null;
   }
