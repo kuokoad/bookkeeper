@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
-import { auditLogs, businessSettings, journalEntries, paymentAccounts, sales } from '@/db/schema';
+import {
+  auditLogs,
+  businessSettings,
+  journalEntries,
+  paymentAccounts,
+  productBatches,
+  sales,
+} from '@/db/schema';
 import { writeTransaction } from '@/db/transaction';
 import { createProduct } from '@/services/catalog.service';
 import { recordStockMovement } from '@/services/inventory.service';
@@ -272,5 +279,34 @@ describe('the audit trail', () => {
       .all()
       .find((row) => row.entityType === 'sale' && row.action === 'CREATE');
     expect(entry?.summary).not.toMatch(/dated/);
+  });
+});
+
+describe('backdating and later deliveries', () => {
+  it('takes stock that was on the shelf that day, not a delivery that came after', async () => {
+    // 10 Milo arrived on 1 August (beforeEach). Five more, dated, arrive on
+    // the 15th and expire first, so an ordinary pick would reach for them.
+    writeTransaction(context.db, (tx) =>
+      recordStockMovement(tx, {
+        productId: milo,
+        direction: 'IN',
+        qty: fromUnits(5),
+        totalCost: minor(2_500),
+        movementType: 'PURCHASE',
+        sourceType: 'TEST',
+        businessDate: '2026-08-15',
+        occurredAt: new Date(2026, 7, 15, 8, 0),
+        batch: { kind: 'NEW', expiryDate: '2026-12-31' },
+      }),
+    );
+
+    await sellOn('2026-08-14');
+
+    const later = context.db
+      .select()
+      .from(productBatches)
+      .all()
+      .find((batch) => batch.productId === milo && batch.receivedDate === '2026-08-15');
+    expect(later?.qtyMilli).toBe(5_000);
   });
 });

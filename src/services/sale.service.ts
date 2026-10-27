@@ -138,6 +138,11 @@ export interface CreateSaleInput {
    * expired since still need `allowExpiredStock`.
    */
   expiryAsAt?: string;
+  /**
+   * Take only stock that had arrived by this day. The till sets it to the
+   * sale's own date when the sale is recorded on an earlier day.
+   */
+  arrivedBy?: string;
   /** What the person approving it said, if anything. Recorded in the audit. */
   overrideReason?: string | undefined;
 }
@@ -410,6 +415,7 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
             kind: 'PICK',
             allowExpired: input.allowExpiredStock === true,
             ...(input.expiryAsAt !== undefined ? { expiryAsAt: input.expiryAsAt } : {}),
+            ...(input.arrivedBy !== undefined ? { arrivedBy: input.arrivedBy } : {}),
           },
         });
         unitCost = movement.unitCost;
