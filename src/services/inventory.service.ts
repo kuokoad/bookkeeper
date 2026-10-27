@@ -31,6 +31,7 @@ import {
 } from '@/domain/errors';
 import { assertPeriodOpen } from '@/domain/accounting/period-lock';
 import { addDays, assertBusinessDate, daysBetween } from '@/domain/business-date';
+import { formatDate } from '@/lib/format';
 import { readLockDate } from './journal.service';
 import { writeAudit } from './audit.service';
 import { writeTransaction } from '@/db/transaction';
@@ -135,6 +136,12 @@ export type BatchDirective =
        * now still needs approving rather than passing as it stood back then.
        */
       expiryAsAt?: string;
+      /**
+       * Take only stock that had arrived by this day. Set for a sale the till
+       * records on an earlier day, so it cannot draw on a delivery that came
+       * in after it. Left unset, every open batch is a candidate.
+       */
+      arrivedBy?: string;
     };
 
 export interface StockMovementResult {
@@ -351,16 +358,35 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
 
   if (directive?.kind === 'SOURCE') return allocateOutToSource(tx, input, directive.allocations);
 
-  const open = tx
+  const all = tx
     .select({
       id: productBatches.id,
       batchRef: productBatches.batchRef,
       expiryDate: productBatches.expiryDate,
       qtyMilli: productBatches.qtyMilli,
+      receivedDate: productBatches.receivedDate,
+      sourceType: productBatches.sourceType,
     })
     .from(productBatches)
     .where(and(eq(productBatches.productId, input.productId), eq(productBatches.isClosed, false)))
     .all();
+
+  // A sale the till records on an earlier day leaves from what was on the
+  // shelf that day (`arrivedBy`). It must not draw on a delivery that came in
+  // after it: the money would not change (cost is a pooled average), but the
+  // recall trail would name customers who bought from a crate before it
+  // arrived. Other movements take from every open batch, as they always have.
+  //
+  // OPENING batches predate batches altogether — migration 0019 stamped them
+  // with the day it ran — so they count as on the shelf for any day. The
+  // shared undated batch is dated by its FIRST receipt, so it is excluded only
+  // when nothing in it had arrived yet, which is the one thing its date proves.
+  const arrivedBy = directive?.kind === 'PICK' ? directive.arrivedBy : undefined;
+  const open =
+    arrivedBy === undefined
+      ? all
+      : all.filter((batch) => batch.sourceType === 'OPENING' || batch.receivedDate <= arrivedBy);
+  const later = all.filter((batch) => !open.includes(batch));
 
   // Expiry is judged as at the SHOP'S day for this movement, not the wall
   // clock — unless the caller names another day. The till does, for a sale
@@ -376,9 +402,11 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
       allowExpired: true,
       expiredFirst: true,
     });
-    return written.shortfall > 0
-      ? withShortfall(tx, input, written)
-      : written.allocations;
+    if (written.shortfall > 0) {
+      refuseIfOnlyLaterStock(tx, input, written, later);
+      return withShortfall(tx, input, written);
+    }
+    return written.allocations;
   }
 
   let plan = allocateFefo(open, input.qty, { today: expiryAsAt, allowExpired: false });
@@ -405,9 +433,45 @@ function allocateOut(tx: Tx, input: StockMovementInput): Allocation[] {
     plan = allocateFefo(open, input.qty, { today: expiryAsAt, allowExpired: true });
   }
 
-  if (plan.shortfall > 0) return withShortfall(tx, input, plan);
+  if (plan.shortfall > 0) {
+    refuseIfOnlyLaterStock(tx, input, plan, later);
+    return withShortfall(tx, input, plan);
+  }
 
   return plan.allocations;
+}
+
+/**
+ * Refuse a backdated sale that only stock received after its date could cover.
+ *
+ * The product's total says there is enough, so without this the shortfall
+ * would reach `withShortfall` and read as stock no batch owns. It is not: the
+ * stock exists, it just had not arrived on the day this movement is dated,
+ * which is nearly always a wrong date. A shop that allows negative stock
+ * carries the gap instead, exactly as it does for any other shortfall.
+ */
+function refuseIfOnlyLaterStock(
+  tx: Tx,
+  input: StockMovementInput,
+  plan: FefoPlan,
+  later: readonly { qtyMilli: number }[],
+): void {
+  if (input.allowNegative === true) return;
+  if (!later.some((batch) => batch.qtyMilli > 0)) return;
+
+  const product = tx
+    .select({ name: products.name, unit: products.unit })
+    .from(products)
+    .where(eq(products.id, input.productId))
+    .get();
+  const onShelf = makeQty(input.qty - plan.shortfall);
+
+  throw new ValidationError(
+    `On ${formatDate(input.businessDate)} there was only ${formatQty(onShelf)} ` +
+      `${product?.unit ?? ''} of ${product?.name ?? 'this product'} in stock; the rest ` +
+      'arrived later. Check the date.',
+    { productId: input.productId, businessDate: input.businessDate, shortfall: plan.shortfall },
+  );
 }
 
 /**

@@ -216,8 +216,9 @@ export async function createSaleAction(
         allowExpiredStock: sellExpired === true && maySellExpired,
         // A backdated sale has its stock judged as it stands now. Judged on the
         // chosen day, a crate that expired since would pass as good, and
-        // picking an earlier date would be a way round the right above.
-        ...(businessDate !== today ? { expiryAsAt: today } : {}),
+        // picking an earlier date would be a way round the right above. And it
+        // takes only stock that had arrived by its own day.
+        ...(businessDate !== today ? { expiryAsAt: today, arrivedBy: businessDate } : {}),
         ...(overrideReason && overrideReason.length > 0
           ? { overrideReason }
           : {}),
