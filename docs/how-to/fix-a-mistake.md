@@ -22,6 +22,7 @@ So there is no Delete button anywhere, and you should not go looking for one.
 | The customer brought goods back | **Return** | the sale's own page |
 | You recorded an expense twice | **Void** it | the row on Expenses |
 | A payment was recorded against the wrong customer | **Void** the payment | the payment row |
+| You banked the wrong amount, or into the wrong account | **Void** the transfer, then record it again | the row on Accounts → Transfers |
 | The shelf count does not match the app | **Stock adjustment** | Inventory → New adjustment |
 | Goods were damaged, lost or expired | **Stock adjustment** | Inventory → New adjustment |
 

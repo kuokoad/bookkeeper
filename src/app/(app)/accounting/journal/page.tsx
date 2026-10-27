@@ -32,6 +32,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   OPENING_BALANCE: 'Opening balance',
   CAPITAL: 'Owner capital',
   DRAWINGS: 'Owner drawings',
+  TRANSFER: 'Transfer',
   REVERSAL: 'Reversal',
 };
 
@@ -44,6 +45,7 @@ const FILTERS = [
   { value: 'CUSTOMER_PAYMENT', label: 'Customer payments' },
   { value: 'SUPPLIER_PAYMENT', label: 'Supplier payments' },
   { value: 'STOCK_ADJUSTMENT', label: 'Stock adjustments' },
+  { value: 'TRANSFER', label: 'Transfers' },
 ];
 
 export default async function JournalPage({

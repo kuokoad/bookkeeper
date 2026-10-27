@@ -29,6 +29,7 @@ export const DOC_TYPES = {
   RECONCILIATION: 'RECONCILIATION',
   BATCH: 'BATCH',
   QUOTE: 'QUOTE',
+  TRANSFER: 'TRANSFER',
 } as const;
 
 export type DocType = (typeof DOC_TYPES)[keyof typeof DOC_TYPES];
@@ -52,6 +53,7 @@ export const DEFAULT_SEQUENCES: readonly { docType: DocType; prefix: string; pad
   // A quote is handed to somebody who may ring back weeks later asking about
   // "that price you gave me". It needs a number they can quote back.
   { docType: DOC_TYPES.QUOTE, prefix: 'QTE-', padding: 5 },
+  { docType: DOC_TYPES.TRANSFER, prefix: 'TRF-', padding: 5 },
 ];
 
 export function formatDocumentNumber(prefix: string, value: number, padding: number): string {

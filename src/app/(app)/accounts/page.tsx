@@ -17,6 +17,8 @@ import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { TableWrap, TD, TH, THead, TR } from '@/components/ui/table';
 import { NewAccountForm } from './new-account-form';
 import { OwnerMoneyForm } from './owner-money-form';
+import { TransferForm } from './transfer-form';
+import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = { title: 'Accounts' };
 export const dynamic = 'force-dynamic';
@@ -45,6 +47,13 @@ export default async function AccountsPage() {
       <PageHeader
         title="Accounts"
         description="Every pot of money the shop holds — cash, mobile money, bank."
+        actions={
+          <Link href="/accounts/transfers">
+            <Button variant="secondary" size="sm">
+              Transfers
+            </Button>
+          </Link>
+        }
       />
 
       {!trial.balanced && (
@@ -146,6 +155,17 @@ export default async function AccountsPage() {
           <div className="flex flex-wrap gap-2">
             <NewAccountForm />
           </div>
+          <TransferForm
+            accounts={active.map((account) => ({
+              id: account.id,
+              name: account.name,
+              kind: account.kind,
+              isDefault: account.isDefault,
+            }))}
+            today={toBusinessDate()}
+            lockedBefore={settings?.booksLockedBefore ?? null}
+            currencyCode={currency}
+          />
           <OwnerMoneyForm
             accounts={active.map((account) => ({
               id: account.id,
