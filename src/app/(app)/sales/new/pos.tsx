@@ -185,10 +185,13 @@ export function Pos({
   const [customerId, setCustomerId] = useState<string>('');
   const [invoiceDiscount, setInvoiceDiscount] = useState('');
   const [note, setNote] = useState('');
-  // Kept across sales on purpose, so a day's paper receipts can be entered in
-  // one sitting. The warning below says so on every one of them.
-  const [saleDate, setSaleDate] = useState(today);
-  const backdated = saleDate !== today;
+  // The day somebody picked, or null for "today" — which the server decides,
+  // so a till page left open overnight does not keep sending yesterday. Kept
+  // across sales on purpose, so a day's paper receipts can be entered in one
+  // sitting; the warning below says so on every one of them.
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
+  const saleDate = pickedDate ?? today;
+  const backdated = pickedDate !== null;
   const [tenderAccountId, setTenderAccountId] = useState<string>(
     String(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? ''),
   );
@@ -458,7 +461,7 @@ export function Pos({
 
   const cartPayload = JSON.stringify({
     clientRef: cartRef,
-    businessDate: mayBackdate ? saleDate : today,
+    ...(mayBackdate && pickedDate !== null ? { businessDate: pickedDate } : {}),
     customerId: customerId === '' ? null : Number(customerId),
     note: note.trim() || undefined,
     invoiceDiscount: invoiceDiscount.trim() || undefined,
@@ -974,7 +977,7 @@ export function Pos({
                   id="sale-date"
                   label="Sale date"
                   value={saleDate}
-                  onChange={setSaleDate}
+                  onChange={(value) => setPickedDate(value === today ? null : value)}
                   today={today}
                   max={today}
                   min={lockedBefore ? addDays(lockedBefore, 1) : undefined}
@@ -989,7 +992,7 @@ export function Pos({
                     This sale will be recorded on {formatDate(saleDate)}, not today.{' '}
                     <button
                       type="button"
-                      onClick={() => setSaleDate(today)}
+                      onClick={() => setPickedDate(null)}
                       className="font-medium text-accent hover:underline"
                     >
                       Use today

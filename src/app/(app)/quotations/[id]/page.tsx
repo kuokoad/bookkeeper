@@ -223,7 +223,6 @@ export default async function QuotationPage({
           currencyCode={currency}
           expired={expired}
           validUntil={quote.validUntil}
-          today={today}
           canCancel={can(user, 'quotations', 'void')}
           accounts={listPaymentAccounts(db).map((account) => ({
             id: account.id,

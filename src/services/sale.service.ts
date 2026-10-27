@@ -22,6 +22,7 @@ import { calculateSale, calculateTender, exceedsCreditLimit } from '@/domain/sal
 import { formatMoney, isZero, minor, subtract, sum, ZERO, type Minor } from '@/domain/money';
 import { qty as makeQty, type Qty } from '@/domain/quantity';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/domain/errors';
+import { formatDate } from '@/lib/format';
 import { writeAudit } from './audit.service';
 import { postJournalEntry, reverseJournalEntry, type Actor } from './journal.service';
 import { readBatchSplits, recordStockMovement } from './inventory.service';
@@ -131,6 +132,12 @@ export interface CreateSaleInput {
    * the same level of trust over the same goods. Owners always hold it.
    */
   allowExpiredStock?: boolean;
+  /**
+   * The day stock expiry is judged against, when it is not `businessDate`.
+   * The till sets it to today for a sale dated earlier, so goods that have
+   * expired since still need `allowExpiredStock`.
+   */
+  expiryAsAt?: string;
   /** What the person approving it said, if anything. Recorded in the audit. */
   overrideReason?: string | undefined;
 }
@@ -399,7 +406,11 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
           // First-expiry-first-out. Without the flag this throws
           // `ExpiredStockError` rather than quietly selling stock that has
           // passed its date — and only when there is no good stock left.
-          batch: { kind: 'PICK', allowExpired: input.allowExpiredStock === true },
+          batch: {
+            kind: 'PICK',
+            allowExpired: input.allowExpiredStock === true,
+            ...(input.expiryAsAt !== undefined ? { expiryAsAt: input.expiryAsAt } : {}),
+          },
         });
         unitCost = movement.unitCost;
         totalCost = movement.totalCost;
@@ -570,8 +581,15 @@ export function createSale(db: Db, input: CreateSaleInput, actor: Actor): Create
       entityId: sale.id,
       userId: actor.id,
       username: actor.username,
-      summary: `${receiptNo}: ${input.items.length} item(s), total ${formatMoney(totals.total, settings.currencyCode)}`,
+      // A sale put on another day than the one it was rung up says so here,
+      // so "who moved a sale into last week" has an answer in the audit log.
+      summary:
+        `${receiptNo}: ${input.items.length} item(s), total ${formatMoney(totals.total, settings.currencyCode)}` +
+        (input.businessDate !== toBusinessDateString(occurredAt)
+          ? `, dated ${formatDate(input.businessDate)}`
+          : ''),
       metadata: {
+        businessDate: input.businessDate,
         totalMinor: totals.total,
         cogsMinor: cogs,
         outstandingMinor: tender.outstanding,

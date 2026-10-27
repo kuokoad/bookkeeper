@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/test-db';
-import { businessSettings, journalEntries, paymentAccounts, sales } from '@/db/schema';
+import { auditLogs, businessSettings, journalEntries, paymentAccounts, sales } from '@/db/schema';
+import { writeTransaction } from '@/db/transaction';
 import { createProduct } from '@/services/catalog.service';
+import { recordStockMovement } from '@/services/inventory.service';
 import { createStockAdjustment } from '@/services/stock-adjustment.service';
 import { minor } from '@/domain/money';
 import { fromUnits } from '@/domain/quantity';
@@ -89,16 +91,20 @@ afterEach(() => {
 
 let carts = 0;
 
-/** One Milo, paid in cash, dated `businessDate`. */
-function sellOn(businessDate: string) {
+/**
+ * One Milo, paid in cash. `businessDate` is the day somebody picked on the
+ * till; leave it out for a sale nobody re-dated, which is how the till sends
+ * every ordinary sale.
+ */
+function sellOn(businessDate?: string, productId = milo) {
   const form = new FormData();
   form.set(
     'cart',
     JSON.stringify({
       clientRef: `test-cart-${carts++}`,
-      businessDate,
+      ...(businessDate !== undefined ? { businessDate } : {}),
       customerId: null,
-      items: [{ productId: milo, qty: '1', unitPrice: '8.00' }],
+      items: [{ productId, qty: '1', unitPrice: '8.00' }],
       tenders: [{ paymentAccountId: cash, amount: '8.00' }],
     }),
   );
@@ -178,5 +184,93 @@ describe('a sale dated in the future', () => {
 
     expect(state.error).toMatch(/future/i);
     expect(salesOnRecord()).toHaveLength(0);
+  });
+});
+
+describe('a till left open overnight', () => {
+  // The till page was loaded yesterday and never reloaded. It sends no date
+  // for an ordinary sale, so the server's day is the one that counts.
+  it('records a cashier’s sale on the day it is rung up', async () => {
+    signedIn.current = CASHIER;
+    vi.setSystemTime(new Date(2026, 7, 17, 8, 15));
+
+    const state = await sellOn();
+
+    expect(state.error).toBeUndefined();
+    expect(salesOnRecord().map((sale) => sale.businessDate)).toEqual(['2026-08-17']);
+  });
+
+  it('records an owner’s sale on the day it is rung up, not the day the page opened', async () => {
+    vi.setSystemTime(new Date(2026, 7, 17, 8, 15));
+
+    await sellOn();
+
+    expect(salesOnRecord().map((sale) => sale.businessDate)).toEqual(['2026-08-17']);
+  });
+});
+
+describe('backdating and expired stock', () => {
+  /** A product whose only stock is a crate that expired yesterday. */
+  function expiredCrate(): number {
+    const id = createProduct(
+      context.db,
+      { name: 'Fresh Milk 1L', costPrice: minor(500), sellingPrice: minor(800), unit: 'pcs' },
+      ACTOR,
+    );
+    writeTransaction(context.db, (tx) =>
+      recordStockMovement(tx, {
+        productId: id,
+        direction: 'IN',
+        qty: fromUnits(5),
+        totalCost: minor(2_500),
+        movementType: 'PURCHASE',
+        sourceType: 'TEST',
+        businessDate: '2026-08-01',
+        occurredAt: new Date(2026, 7, 1, 8, 0),
+        batch: { kind: 'NEW', expiryDate: '2026-08-15' },
+      }),
+    );
+    return id;
+  }
+
+  it('still stops a manager without the right to sell expired stock', async () => {
+    const milk = expiredCrate();
+    signedIn.current = MANAGER;
+
+    // Dated before the crate expired, it would look like good stock.
+    const state = await sellOn('2026-08-14', milk);
+
+    expect(state.expired).toBeDefined();
+    expect(state.expired?.mayOverride).toBe(false);
+    expect(salesOnRecord()).toHaveLength(0);
+  });
+});
+
+describe('the audit trail', () => {
+  it('says when a sale was put on an earlier day', async () => {
+    await sellOn('2026-08-14');
+
+    const [sale] = salesOnRecord();
+    const entry = context.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.entityId, String(sale!.id)))
+      .all()
+      .find((row) => row.entityType === 'sale' && row.action === 'CREATE');
+    expect(entry?.summary).toMatch(/dated 14 Aug 2026/);
+    expect(JSON.parse(String(entry?.metadata)).businessDate).toBe('2026-08-14');
+  });
+
+  it('says nothing extra about an ordinary sale', async () => {
+    await sellOn();
+
+    const [sale] = salesOnRecord();
+    const entry = context.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.entityId, String(sale!.id)))
+      .all()
+      .find((row) => row.entityType === 'sale' && row.action === 'CREATE');
+    expect(entry?.summary).not.toMatch(/dated/);
   });
 });

@@ -467,7 +467,7 @@ describe('the reference field asks for the right thing', () => {
 
 describe('the sale date', () => {
   /** Submit the cart and hand back the date it was sent with. */
-  async function submittedDate(): Promise<string> {
+  async function submittedDate(): Promise<string | undefined> {
     let sent: FormData | undefined;
     action.current = async (formData) => {
       sent = formData;
@@ -477,7 +477,7 @@ describe('the sale date', () => {
     payExact();
     fireEvent.submit(submitButton().closest('form')!);
     await vi.waitFor(() => expect(sent).toBeDefined());
-    return JSON.parse(String(sent!.get('cart'))).businessDate as string;
+    return JSON.parse(String(sent!.get('cart'))).businessDate as string | undefined;
   }
 
   /** Type a date into the three boxes, the way a manager does. */
@@ -487,18 +487,18 @@ describe('the sale date', () => {
     fireEvent.change(screen.getByLabelText('Sale date year'), { target: { value: year } });
   }
 
-  it('is not offered to a cashier, whose sales are always today', async () => {
+  it('is not offered to a cashier, whose till sends no date so the server’s day is used', async () => {
     renderTill();
 
     expect(screen.queryByLabelText('Sale date day')).toBeNull();
-    expect(await submittedDate()).toBe('2026-08-26');
+    expect(await submittedDate()).toBeUndefined();
   });
 
-  it('starts on today for a manager, with nothing to warn about', async () => {
+  it('starts on today for a manager, sending no date until one is picked', async () => {
     renderTill({}, { mayBackdate: true });
 
     expect(screen.queryByText(/not today/i)).toBeNull();
-    expect(await submittedDate()).toBe('2026-08-26');
+    expect(await submittedDate()).toBeUndefined();
   });
 
   it('records an earlier day, and says plainly that it is not today', async () => {
@@ -517,7 +517,7 @@ describe('the sale date', () => {
     fireEvent.click(screen.getByRole('button', { name: /use today/i }));
 
     expect(screen.queryByText(/not today/i)).toBeNull();
-    expect(await submittedDate()).toBe('2026-08-26');
+    expect(await submittedDate()).toBeUndefined();
   });
 
   it('greys out the days inside the books lock and every day after today', () => {
