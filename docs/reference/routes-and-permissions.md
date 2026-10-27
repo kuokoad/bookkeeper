@@ -68,6 +68,7 @@ for someone who typed an address.
 |---|---|
 | `/accounts` | `accounts` view |
 | `/accounts/[id]` | `accounts` view — one account's statement |
+| `/accounts/transfers` | `accounts` view — recording one needs `accounts` create, voiding one `accounts` void |
 | `/accounting` | `accounts` view |
 | `/accounting/chart` | `accounts` view |
 | `/accounting/journal`, `/accounting/journal/[id]` | `accounts` view |

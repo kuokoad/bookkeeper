@@ -56,7 +56,7 @@ const tradingTables = [
   'stock_ledger_batches', 'quotation_items', 'sale_items', 'sale_payments', 'purchase_items',
   'purchase_payments', 'stock_adjustment_items', 'journal_lines', 'reconciliations',
   'year_end_closings', 'customer_payments', 'supplier_payments', 'expenses', 'incomes',
-  'owner_movements', 'quotations', 'sales', 'purchases', 'stock_adjustments', 'stock_ledger',
+  'owner_movements', 'account_transfers', 'quotations', 'sales', 'purchases', 'stock_adjustments', 'stock_ledger',
   'product_batches', 'journal_entries', 'products', 'categories', 'customers', 'suppliers',
 ];
 

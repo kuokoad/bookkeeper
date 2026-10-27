@@ -1,3 +1,8 @@
+-- HAND-EDITED below the generated statements. Do not regenerate over this.
+--
+-- The TRF- numbering is DATA, which drizzle-kit cannot write. Startup seeding
+-- would add it too; this keeps a database migrated by `npm run db:migrate`
+-- alone from refusing its first transfer for want of a number.
 CREATE TABLE `account_transfers` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`transfer_no` text NOT NULL,
@@ -61,4 +66,7 @@ CREATE UNIQUE INDEX `uq_journal_entries_no` ON `journal_entries` (`entry_no`);--
 CREATE INDEX `idx_journal_entries_date` ON `journal_entries` (`entry_date`);--> statement-breakpoint
 CREATE INDEX `idx_journal_entries_source` ON `journal_entries` (`source_type`,`source_id`);--> statement-breakpoint
 CREATE INDEX `idx_journal_entries_occurred` ON `journal_entries` (`occurred_at`);--> statement-breakpoint
-CREATE INDEX `idx_journal_entries_reverses` ON `journal_entries` (`reverses_entry_id`);
+CREATE INDEX `idx_journal_entries_reverses` ON `journal_entries` (`reverses_entry_id`);--> statement-breakpoint
+-- OR IGNORE so a database that already has the row is left alone.
+INSERT OR IGNORE INTO `sequences` ("doc_type", "prefix", "next_number", "padding")
+VALUES ('TRANSFER', 'TRF-', 1, 5);

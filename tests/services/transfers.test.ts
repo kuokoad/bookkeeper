@@ -115,20 +115,26 @@ describe('banking cash', () => {
     expect(bankIn?.inMinor).toBe(60_000);
   });
 
-  it('nets to nothing on the shop-wide cash flow, but shows in and out per account', () => {
-    bankCash(60_000);
+  it('is not money in or out of the shop on the cash flow, only between its accounts', () => {
+    const { id } = bankCash(60_000);
+    // A void posts a second TRANSFER entry; that is not money moving either.
+    voidTransfer(context.db, id, 'Wrong amount', ACTOR, new Date(2026, 7, 20, 9, 0));
+    bankCash(25_000, '2026-08-21');
     const period = { from: '2026-08-01', to: '2026-08-31' };
 
     const shop = getCashFlow(context.db, period);
-    const line = shop.lines.find((l) => l.sourceType === 'TRANSFER');
-    expect(line?.inMinor).toBe(60_000);
-    expect(line?.outMinor).toBe(60_000);
-    expect(line?.net).toBe(0);
+    expect(shop.lines.find((l) => l.sourceType === 'TRANSFER')).toBeUndefined();
     // Only the owner's GHS 1,000 actually came into the business.
+    expect(shop.totalIn).toBe(100_000);
+    expect(shop.totalOut).toBe(0);
     expect(shop.netMovement).toBe(100_000);
+    expect(shop.reconciles).toBe(true);
 
-    expect(getCashFlow(context.db, period, bank).netMovement).toBe(60_000);
-    expect(getCashFlow(context.db, period, cash).netMovement).toBe(40_000);
+    // Each account on its own still shows the money arriving or leaving.
+    const bankOnly = getCashFlow(context.db, period, bank);
+    expect(bankOnly.lines.find((l) => l.sourceType === 'TRANSFER')?.inMinor).toBe(85_000);
+    expect(bankOnly.netMovement).toBe(25_000);
+    expect(getCashFlow(context.db, period, cash).netMovement).toBe(75_000);
   });
 });
 

@@ -27,8 +27,14 @@ vi.mock('@/lib/auth/current-user', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: () => undefined }));
+vi.mock('next/navigation', () => ({
+  redirect: (url: string) => {
+    throw new Error(`REDIRECT ${url}`);
+  },
+}));
 
-const { recordTransferAction } = await import('@/actions/cashbook.actions');
+const { recordTransferAction, voidTransferAction } = await import('@/actions/cashbook.actions');
+const { ForbiddenError } = await import('@/domain/errors');
 
 let context: TestDatabase;
 let cash = 0;
@@ -103,7 +109,48 @@ describe('the transfer form', () => {
   it('is refused to someone without the right to record account movements', async () => {
     denied.add('accounts');
 
-    await expect(post({})).rejects.toThrow();
+    await expect(post({})).rejects.toThrow(ForbiddenError);
     expect(transfersOnRecord()).toHaveLength(0);
+  });
+});
+
+describe('voiding from the Transfers page', () => {
+  /** Record one transfer and return its id. */
+  async function recorded(): Promise<number> {
+    await post({});
+    return transfersOnRecord()[0]!.id;
+  }
+
+  function voidIt(id: number, reason: string, returnTo = '') {
+    const form = new FormData();
+    form.set('reason', reason);
+    form.set('returnTo', returnTo);
+    return voidTransferAction(id, {}, form);
+  }
+
+  it('voids it and goes back to the page the row was on', async () => {
+    const id = await recorded();
+
+    await expect(voidIt(id, 'Wrong amount', 'page=2')).rejects.toThrow(
+      'REDIRECT /accounts/transfers?page=2&voided=1',
+    );
+    expect(transfersOnRecord()[0]?.status).toBe('VOIDED');
+  });
+
+  it('asks for a reason on the reason box, and leaves the transfer alone', async () => {
+    const id = await recorded();
+
+    const state = await voidIt(id, 'no');
+
+    expect(state.fieldErrors?.['reason']).toMatch(/reason/i);
+    expect(transfersOnRecord()[0]?.status).toBe('POSTED');
+  });
+
+  it('is refused to someone without the right to void, and leaves the transfer alone', async () => {
+    const id = await recorded();
+    denied.add('accounts');
+
+    await expect(voidIt(id, 'Wrong amount')).rejects.toThrow(ForbiddenError);
+    expect(transfersOnRecord()[0]?.status).toBe('POSTED');
   });
 });

@@ -30,6 +30,8 @@ function sourceHref(sourceType: string, sourceId: number | null): string | null 
       return `/purchases/${sourceId}`;
     case 'STOCK_ADJUSTMENT':
       return `/inventory/adjustments/${sourceId}`;
+    case 'TRANSFER':
+      return '/accounts/transfers';
     default:
       return null;
   }
