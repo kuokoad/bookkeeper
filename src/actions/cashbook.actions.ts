@@ -23,6 +23,7 @@ import {
   setPaymentAccountActive,
   updatePaymentAccount,
 } from '@/services/payment-account.service';
+import { recordTransfer, voidTransfer } from '@/services/transfer.service';
 import { PAYMENT_ACCOUNT_KINDS } from '@/db/schema/accounting';
 import { parseMoney, type Minor } from '@/domain/money';
 import { isDomainError } from '@/domain/errors';
@@ -282,6 +283,91 @@ export async function recordOwnerDrawingsAction(
   formData: FormData,
 ): Promise<FormState> {
   return handleOwnerMovement('DRAWINGS', formData);
+}
+
+// --- transfers between accounts --------------------------------------------
+
+const transferSchema = z
+  .object({
+    businessDate: z.string().refine(isValidBusinessDate, 'Enter a valid date.'),
+    fromAccountId: z.coerce.number().int().positive('Choose where the money came from.'),
+    toAccountId: z.coerce.number().int().positive('Choose where the money went.'),
+    amount: z.string().trim().min(1, 'Enter an amount.'),
+    reference: z.string().trim().max(80).optional(),
+    note: z.string().trim().max(300).optional(),
+  })
+  .refine((data) => data.fromAccountId !== data.toAccountId, {
+    path: ['toAccountId'],
+    message: 'Choose a different account from the one the money came out of.',
+  });
+
+export async function recordTransferAction(
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  // The same right as recording owner money: both move money between pots
+  // without a sale or a bill behind it.
+  const actor = await requirePermission('accounts', 'create');
+
+  const parsed = transferSchema.safeParse({
+    businessDate: formData.get('businessDate'),
+    fromAccountId: formData.get('fromAccountId'),
+    toAccountId: formData.get('toAccountId'),
+    amount: formData.get('amount'),
+    reference: formData.get('reference') ?? undefined,
+    note: formData.get('note') ?? undefined,
+  });
+  if (!parsed.success) return { fieldErrors: fieldErrorsFrom(parsed.error) };
+
+  let amount: Minor;
+  try {
+    amount = parseMoney(parsed.data.amount);
+  } catch (error) {
+    return {
+      fieldErrors: { amount: isDomainError(error) ? error.userMessage : 'Invalid amount.' },
+    };
+  }
+
+  let transferNo: string;
+  try {
+    transferNo = recordTransfer(
+      db,
+      { ...parsed.data, amount },
+      { id: actor.id, username: actor.username },
+    ).transferNo;
+  } catch (error) {
+    if (isDomainError(error)) return { error: error.userMessage };
+    throw error;
+  }
+
+  revalidatePath('/accounts');
+  revalidatePath('/accounting');
+  revalidatePath('/reports');
+  revalidatePath('/dashboard');
+  return { success: `Transfer ${transferNo} recorded.` };
+}
+
+export async function voidTransferAction(
+  id: number,
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await requirePermission('accounts', 'void');
+  const reason = String(formData.get('reason') ?? '').trim();
+  if (reason.length < 3) return { fieldErrors: { reason: 'Give a reason for voiding this.' } };
+
+  try {
+    voidTransfer(db, id, reason, { id: actor.id, username: actor.username });
+  } catch (error) {
+    if (isDomainError(error)) return { error: error.userMessage };
+    throw error;
+  }
+
+  revalidatePath('/accounts');
+  revalidatePath('/accounting');
+  revalidatePath('/reports');
+  revalidatePath('/dashboard');
+  redirect(backTo('/accounts/transfers', formData, 'voided=1'));
 }
 
 // --- payment accounts -----------------------------------------------------

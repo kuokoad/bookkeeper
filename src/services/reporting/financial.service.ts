@@ -401,6 +401,8 @@ const FLOW_LABELS: Record<string, string> = {
   INCOME: 'Other income',
   CAPITAL: 'Owner put money in',
   DRAWINGS: 'Owner took money out',
+  // Only shown for a single account; shop-wide it is left out (see getCashFlow).
+  TRANSFER: 'Moved between your own accounts',
   RECONCILIATION: 'Cash count differences',
   OPENING_BALANCE: 'Opening balances',
   REVERSAL: 'Reversals',
@@ -449,7 +451,13 @@ export function getCashFlow(db: Db, period: Period, paymentAccountId?: number): 
     .groupBy(journalEntries.sourceType)
     .all();
 
+  // Shop-wide, a transfer is money changing pockets: it nets to nothing, and
+  // counting it as both in and out would swell the headline totals by every
+  // deposit the shop makes. One account on its own does see it arrive or leave.
+  const shopWide = paymentAccountId === undefined;
+
   const lines: CashFlowLine[] = rows
+    .filter((row) => !(shopWide && row.sourceType === 'TRANSFER'))
     .map((row) => ({
       sourceType: row.sourceType,
       label: FLOW_LABELS[row.sourceType] ?? row.sourceType,
