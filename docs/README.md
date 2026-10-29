@@ -39,6 +39,9 @@ Specific jobs, assuming you already know your way around.
   exports across every list and report.
 - **[Fix a mistake](how-to/fix-a-mistake.md)** — void, return, adjust. Nothing is
   ever edited or deleted, so this is how corrections work.
+- **[Buy and sell on credit](how-to/credit-and-payments.md)** — credit purchases and
+  sales, paying suppliers, taking customer payments, and which invoice a payment
+  settles.
 - **[Manage tax](how-to/manage-tax.md)** — Ghana's three taxes as editable data, and
   what to do when a budget moves a rate.
 - **[Close a period](how-to/close-a-period.md)** — lock the books for a month, close
