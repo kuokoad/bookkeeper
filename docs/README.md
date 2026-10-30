@@ -42,6 +42,10 @@ Specific jobs, assuming you already know your way around.
 - **[Buy and sell on credit](how-to/credit-and-payments.md)** — credit purchases and
   sales, paying suppliers, taking customer payments, and which invoice a payment
   settles.
+- **[Move money between accounts](how-to/transfer-between-accounts.md)** — bank the
+  day's cash or move money between Cash, MoMo and the bank without touching profit.
+- **[Record a sale on an earlier day](how-to/backdate-a-sale.md)** — who can backdate
+  a till sale, and what the app refuses.
 - **[Manage tax](how-to/manage-tax.md)** — Ghana's three taxes as editable data, and
   what to do when a budget moves a rate.
 - **[Close a period](how-to/close-a-period.md)** — lock the books for a month, close

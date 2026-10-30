@@ -70,6 +70,31 @@ export const HELP_PAGES: readonly HelpPage[] = [
     read: () => readFileSync(join(process.cwd(), 'docs/how-to/fix-a-mistake.md'), 'utf8'),
   },
   {
+    slug: 'credit-and-payments',
+    title: 'Buying and selling on credit',
+    blurb:
+      'Take goods before paying, sell to customers who pay later, and see which invoice a payment settles.',
+    file: 'docs/how-to/credit-and-payments.md',
+    read: () => readFileSync(join(process.cwd(), 'docs/how-to/credit-and-payments.md'), 'utf8'),
+  },
+  {
+    slug: 'moving-money',
+    title: 'Moving money between accounts',
+    blurb:
+      "Bank the day's cash, or move money between Cash, MoMo and the bank without touching profit.",
+    file: 'docs/how-to/transfer-between-accounts.md',
+    read: () =>
+      readFileSync(join(process.cwd(), 'docs/how-to/transfer-between-accounts.md'), 'utf8'),
+  },
+  {
+    slug: 'backdating-a-sale',
+    title: 'Recording a sale on an earlier day',
+    blurb:
+      'Enter paper receipts on the day they happened, and what the till refuses.',
+    file: 'docs/how-to/backdate-a-sale.md',
+    read: () => readFileSync(join(process.cwd(), 'docs/how-to/backdate-a-sale.md'), 'utf8'),
+  },
+  {
     slug: 'managing-tax',
     title: 'Managing tax',
     blurb:
